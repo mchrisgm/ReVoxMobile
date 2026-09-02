@@ -207,6 +207,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox
+        TARGETED_DEVICE_FAMILY: "1"
         PRODUCT_NAME: ReVoxMobile
         INFOPLIST_FILE: ReVoxMobile/Info.plist
         CODE_SIGN_ENTITLEMENTS: ReVoxMobile/ReVoxMobile.entitlements
@@ -234,6 +235,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox.broadcast
+        TARGETED_DEVICE_FAMILY: "1"
         PRODUCT_NAME: ReVoxBroadcast
         INFOPLIST_FILE: ReVoxBroadcast/Info.plist
         CODE_SIGN_ENTITLEMENTS: ReVoxBroadcast/ReVoxBroadcast.entitlements
@@ -250,6 +252,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox.tests
+        TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: ReVoxMobile
@@ -1035,6 +1038,8 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/revox-signing.keychain-db" || true
           fi
 ```
+
+Rulings recorded during execution: (1) `TARGETED_DEVICE_FAMILY` must be set per target because XcodeGen's iOS platform preset overrides the project-level value with `1,2` (an iPad-capable archive is rejected by App Store Connect, ITMS-90474). (2) The upload step uses a second `xcodebuild -exportArchive` with `destination = upload` instead of `xcrun altool --upload-app`, because altool is deprecated and can exit 0 after printing errors; `docs/release.md` documents altool as the alternative.
 
 Note on `plutil -insert "provisioningProfiles.<bundle id>"`: `plutil` uses `.` as a key-path separator, so a bundle id containing dots cannot be inserted that way. Instead, build the manual-signing dictionary with a small Python snippet using `plistlib` (Python 3 is on the runner): load the plist, set `signingStyle`, `signingCertificate`, `provisioningProfiles = {app_id: app_profile, ext_id: ext_profile}`, and write it back. Replace the four `plutil -insert/-replace` lines for the manual branch with that snippet, keep `plutil -lint`.
 
