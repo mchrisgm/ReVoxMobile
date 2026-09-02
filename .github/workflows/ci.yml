@@ -1,9 +1,12 @@
 name: CI
 
+# push-only: a `pull_request` trigger would run this job a second time (in a
+# different concurrency group) for every push to a branch with an open PR,
+# since the push-event run on the head commit already appears as a check on
+# that PR.
 on:
   push:
     branches: ["**"]
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -59,6 +62,9 @@ jobs:
             -scheme ReVoxMobile \
             -clonedSourcePackagesDirPath .spm
 
+      - name: Show resolved package versions
+        run: cat ReVoxMobile.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
       - name: Pick simulator
         id: sim
         run: scripts/ci/pick-simulator.sh >> "$GITHUB_OUTPUT"
@@ -84,5 +90,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: xcodebuild-log
-          path: xcodebuild.log
+          path: |
+            xcodebuild.log
+            ReVoxMobile.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           retention-days: 7

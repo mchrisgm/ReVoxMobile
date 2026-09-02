@@ -4,8 +4,3 @@
 import FluidAudio
 import ReVoxCore
 import WhisperKit
-
-enum LinkedDependencies {
-    static let whisperKitVersion = "1.1.0"
-    static let fluidAudioVersion = "0.15.6"
-}
