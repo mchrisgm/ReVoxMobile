@@ -24,3 +24,8 @@ ExportOptions.generated.plist
 # Tooling scratch
 .superpowers/
 .DS_Store
+.spm/
+ci/ExportOptions.generated.plist
+
+# Python
+__pycache__/

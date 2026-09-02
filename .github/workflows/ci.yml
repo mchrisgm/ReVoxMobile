@@ -1,0 +1,96 @@
+name: CI
+
+# push-only: a `pull_request` trigger would run this job a second time (in a
+# different concurrency group) for every push to a branch with an open PR,
+# since the push-event run on the head commit already appears as a check on
+# that PR.
+on:
+  push:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "26.6"
+
+jobs:
+  core-linux:
+    name: ReVoxCore tests (Linux)
+    runs-on: ubuntu-24.04
+    container: swift:6.3-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Swift version
+        run: swift --version
+      - name: swift test
+        working-directory: ReVoxCore
+        run: swift test
+
+  ios-simulator:
+    name: App and extension (iOS simulator)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh "$XCODE_VERSION"
+
+      - name: Install XcodeGen and xcbeautify
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache Swift package checkouts
+        uses: actions/cache@v5
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -clonedSourcePackagesDirPath .spm
+
+      - name: Show resolved package versions
+        run: cat ReVoxMobile.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Pick simulator
+        id: sim
+        run: scripts/ci/pick-simulator.sh >> "$GITHUB_OUTPUT"
+
+      - name: Build and test on the simulator
+        env:
+          DESTINATION: ${{ steps.sim.outputs.destination }}
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -destination "$DESTINATION" \
+            -clonedSourcePackagesDirPath .spm \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee xcodebuild.log | xcbeautify --renderer github-actions
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: xcodebuild-log
+          path: |
+            xcodebuild.log
+            ReVoxMobile.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          retention-days: 7

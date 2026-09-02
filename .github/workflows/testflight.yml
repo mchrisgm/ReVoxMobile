@@ -1,0 +1,313 @@
+name: TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: "Signing path (automatic = cloud-managed via the App Store Connect API key; manual = certificate and profiles from secrets)"
+        type: choice
+        options: [automatic, manual]
+        default: automatic
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "26.6"
+  SIGNING: ${{ github.event.inputs.signing || 'automatic' }}
+
+jobs:
+  preflight:
+    name: Check secrets
+    runs-on: ubuntu-24.04
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          [ -n "$ASC_KEY_ID" ] || missing="$missing ASC_KEY_ID"
+          [ -n "$ASC_ISSUER_ID" ] || missing="$missing ASC_ISSUER_ID"
+          [ -n "$ASC_KEY_P8" ] || missing="$missing ASC_KEY_P8"
+          [ -n "$APPLE_TEAM_ID" ] || missing="$missing APPLE_TEAM_ID"
+          if [ -n "$missing" ]; then
+            echo "::notice::TestFlight upload skipped: missing repository secrets:$missing (see docs/release.md)"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  upload:
+    name: Archive and upload to TestFlight
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      REVOX_BUNDLE_PREFIX: ${{ vars.REVOX_BUNDLE_PREFIX || 'com.mchrisgm' }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh "$XCODE_VERSION"
+
+      - name: Install XcodeGen and xcbeautify
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache Swift package checkouts
+        uses: actions/cache@v5
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -clonedSourcePackagesDirPath .spm
+
+      - name: Pick simulator
+        id: sim
+        run: scripts/ci/pick-simulator.sh >> "$GITHUB_OUTPUT"
+
+      - name: Run tests (a failure blocks the upload)
+        env:
+          DESTINATION: ${{ steps.sim.outputs.destination }}
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -destination "$DESTINATION" \
+            -clonedSourcePackagesDirPath .spm \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee test.log | xcbeautify --renderer github-actions
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$ASC_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          chmod 600 ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          echo "ASC_KEY_PATH=$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+
+      - name: Create a temporary signing keychain (both signing paths)
+        # Both archives need an unlocked, writable keychain that is the user's
+        # default: manual signing imports the distribution certificate into it,
+        # and automatic signing lets xcodebuild store the private key of the
+        # Apple Development certificate it creates for this run there (the
+        # runner image's login keychain is not guaranteed unlocked or writable).
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/revox-signing.keychain-db"
+          keychain_password=$(uuidgen)
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PASSWORD=$keychain_password" >> "$GITHUB_ENV"
+          security list-keychains -d user
+
+      - name: Import distribution certificate and profiles (manual signing only)
+        if: env.SIGNING == 'manual'
+        env:
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          PROFILE_APP: ${{ secrets.PROFILE_APP }}
+          PROFILE_EXTENSION: ${{ secrets.PROFILE_EXTENSION }}
+        run: |
+          set -euo pipefail
+          for v in DIST_CERT_P12 DIST_CERT_PASSWORD PROFILE_APP PROFILE_EXTENSION; do
+            [ -n "${!v}" ] || { echo "::error::Manual signing needs secret $v"; exit 1; }
+          done
+          keychain="$SIGNING_KEYCHAIN"
+          keychain_password="$SIGNING_KEYCHAIN_PASSWORD"
+          printf '%s' "$DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          rm -f "$RUNNER_TEMP/dist.p12"
+
+          install_profile() {  # $1 = secret value (base64), $2 = GITHUB_ENV key for the profile name
+            local file="$RUNNER_TEMP/$2.mobileprovision"
+            printf '%s' "$1" | base64 --decode > "$file"
+            local plist uuid name
+            plist=$(security cms -D -i "$file")
+            uuid=$(printf '%s' "$plist" | plutil -extract UUID raw -o - -)
+            name=$(printf '%s' "$plist" | plutil -extract Name raw -o - -)
+            for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+              mkdir -p "$dir"
+              cp "$file" "$dir/$uuid.mobileprovision"
+            done
+            echo "$2=$name" >> "$GITHUB_ENV"
+            echo "Installed profile '$name' ($uuid)"
+          }
+          install_profile "$PROFILE_APP" REVOX_PROFILE_APP
+          install_profile "$PROFILE_EXTENSION" REVOX_PROFILE_EXTENSION
+
+      - name: Archive (automatic signing)
+        if: env.SIGNING == 'automatic'
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ReVoxMobile.xcarchive \
+            -clonedSourcePackagesDirPath .spm \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            REVOX_BUNDLE_PREFIX="$REVOX_BUNDLE_PREFIX" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            2>&1 | tee archive.log | xcbeautify --renderer github-actions
+
+      - name: Archive (manual signing)
+        if: env.SIGNING == 'manual'
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project ReVoxMobile.xcodeproj \
+            -scheme ReVoxMobile \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ReVoxMobile.xcarchive \
+            -clonedSourcePackagesDirPath .spm \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            REVOX_PROFILE_APP="$REVOX_PROFILE_APP" \
+            REVOX_PROFILE_EXTENSION="$REVOX_PROFILE_EXTENSION" \
+            REVOX_BUNDLE_PREFIX="$REVOX_BUNDLE_PREFIX" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            2>&1 | tee archive.log | xcbeautify --renderer github-actions
+
+      - name: Write export options
+        run: |
+          set -euo pipefail
+          out=ci/ExportOptions.generated.plist
+          cp ci/ExportOptions.plist "$out"
+          plutil -replace teamID -string "$APPLE_TEAM_ID" "$out"
+          if [ "$SIGNING" = "manual" ]; then
+            # plutil treats "." as a key-path separator, so bundle ids cannot be
+            # inserted with -insert; build the manual-signing dictionary with plistlib.
+            python3 - "$out" <<'PY'
+          import os
+          import plistlib
+          import sys
+
+          path = sys.argv[1]
+          prefix = os.environ["REVOX_BUNDLE_PREFIX"]
+          with open(path, "rb") as f:
+              options = plistlib.load(f)
+          options["signingStyle"] = "manual"
+          options["signingCertificate"] = "Apple Distribution"
+          options["provisioningProfiles"] = {
+              f"{prefix}.revox": os.environ["REVOX_PROFILE_APP"],
+              f"{prefix}.revox.broadcast": os.environ["REVOX_PROFILE_EXTENSION"],
+          }
+          with open(path, "wb") as f:
+              plistlib.dump(options, f)
+          PY
+          fi
+          plutil -lint "$out"
+          cat "$out"
+
+      - name: Export IPA
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/ReVoxMobile.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ci/ExportOptions.generated.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee export.log | xcbeautify --renderer github-actions
+          ls -la build/export
+
+      - name: Upload to TestFlight
+        # Not `xcrun altool`: `--upload-app` is deprecated and on Xcode 26.0.1+
+        # altool can print "ERROR:" lines yet exit 0, so a failed upload would
+        # pass. `xcodebuild -exportArchive` with `destination = upload` performs
+        # the upload itself, authenticated with the same API key, and returns a
+        # real exit code (pipefail carries it through tee and xcbeautify).
+        run: |
+          set -euo pipefail
+          upload_options="$RUNNER_TEMP/ExportOptions.upload.plist"
+          cp ci/ExportOptions.generated.plist "$upload_options"
+          plutil -replace destination -string upload "$upload_options"
+          plutil -lint "$upload_options"
+          xcodebuild -exportArchive \
+            -archivePath build/ReVoxMobile.xcarchive \
+            -exportPath build/upload \
+            -exportOptionsPlist "$upload_options" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee upload.log | xcbeautify --renderer github-actions
+          grep -q '\*\* EXPORT SUCCEEDED \*\*' upload.log || {
+            echo "::error::xcodebuild -exportArchive (destination=upload) did not report EXPORT SUCCEEDED; see upload.log"
+            exit 1
+          }
+          echo "Uploaded build $BUILD_NUMBER to App Store Connect. It appears in TestFlight after processing (usually 5-15 minutes)."
+
+      - name: Keep the IPA and logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: revox-mobile-build-${{ github.run_number }}
+          path: |
+            build/export/*.ipa
+            build/upload/DistributionSummary.plist
+            test.log
+            archive.log
+            export.log
+            upload.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -rf ~/private_keys ci/ExportOptions.generated.plist "$RUNNER_TEMP/ExportOptions.upload.plist"
+          security list-keychains -d user -s login.keychain-db || true
+          security default-keychain -d user -s login.keychain-db || true
+          security delete-keychain "$RUNNER_TEMP/revox-signing.keychain-db" || true
