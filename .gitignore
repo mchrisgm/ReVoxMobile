@@ -1,0 +1,26 @@
+# Xcode / XcodeGen (project is generated from project.yml)
+*.xcodeproj/
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+xcuserdata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcarchive
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved.bak
+
+# Release artefacts and secrets (never commit)
+AuthKey_*.p8
+*.p12
+*.mobileprovision
+ExportOptions.generated.plist
+
+# Tooling scratch
+.superpowers/
+.DS_Store
