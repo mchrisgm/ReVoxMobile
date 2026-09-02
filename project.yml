@@ -1,0 +1,95 @@
+name: ReVoxMobile
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  groupSortPosition: top
+
+settings:
+  base:
+    # Single source of truth for every bundle identifier and the App Group.
+    # Override on the command line (REVOX_BUNDLE_PREFIX=com.example) or in CI.
+    REVOX_BUNDLE_PREFIX: com.mchrisgm
+    # Provisioning profile names, only used by the manual signing path in testflight.yml.
+    REVOX_PROFILE_APP: ""
+    REVOX_PROFILE_EXTENSION: ""
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+packages:
+  ReVoxCore:
+    path: ReVoxCore
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    exactVersion: 1.1.0
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    exactVersion: 0.15.6
+
+targets:
+  ReVoxMobile:
+    type: application
+    platform: iOS
+    sources:
+      - path: ReVoxMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox
+        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_NAME: ReVoxMobile
+        INFOPLIST_FILE: ReVoxMobile/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ReVoxMobile/ReVoxMobile.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: $(REVOX_PROFILE_APP)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    dependencies:
+      - target: ReVoxBroadcast
+      - package: ReVoxCore
+      - package: WhisperKit
+        product: WhisperKit
+      - package: FluidAudio
+        product: FluidAudio
+    scheme:
+      testTargets:
+        - ReVoxMobileTests
+      gatherCoverageData: false
+
+  ReVoxBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ReVoxBroadcast
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox.broadcast
+        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_NAME: ReVoxBroadcast
+        INFOPLIST_FILE: ReVoxBroadcast/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ReVoxBroadcast/ReVoxBroadcast.entitlements
+        PROVISIONING_PROFILE_SPECIFIER: $(REVOX_PROFILE_EXTENSION)
+        APPLICATION_EXTENSION_API_ONLY: YES
+    dependencies:
+      - package: ReVoxCore
+
+  ReVoxMobileTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ReVoxMobileTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox.tests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: ReVoxMobile
+      - package: ReVoxCore
