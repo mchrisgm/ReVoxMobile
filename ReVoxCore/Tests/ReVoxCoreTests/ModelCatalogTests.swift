@@ -52,7 +52,7 @@ final class ModelCatalogTests: XCTestCase {
             "models/openai/whisper-small/tokenizer_config.json",
             "models/openai/whisper-small/config.json",
         ])
-        XCTAssertEqual(ModelCatalog.vad.requiredRelativePaths, ["Models/silero-vad/silero-vad-unified-v6.0.0.mlmodelc/coremldata.bin"])
+        XCTAssertEqual(ModelCatalog.vad.requiredRelativePaths, ["fluid/Models/silero-vad/silero-vad-unified-v6.0.0.mlmodelc/coremldata.bin"])
     }
 
     func testVADAndPocketTTSDescriptors() {

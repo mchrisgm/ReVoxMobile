@@ -2,13 +2,20 @@ import Foundation
 import ReVoxCore
 
 /// Pure path and installed-check functions over the single model root (R5, §6.9).
-/// WhisperKit writes `root/models/...` (lower case), FluidAudio writes `root/Models/...`; on iOS's
-/// case-sensitive APFS they are distinct siblings.
+///
+/// WhisperKit writes `root/models/...` (lower case). FluidAudio's own convention is a `Models/` folder, which
+/// differs from WhisperKit's only by case — and that does not survive a case-insensitive volume: the simulator's
+/// container is one, and so is a Mac's boot volume by default. Measured on run 33779473300: with `root/models`
+/// present, `mkdir root/Models` fails as already existing while `stat` still reports it missing, so nothing can
+/// be created beneath it and the VAD bundle cannot be installed. FluidAudio therefore gets its own base folder
+/// and keeps its `Models` convention inside it, which is also the shape `PocketTtsResourceDownloader` produces
+/// when it is handed `fluidBaseDirectory` (it appends `Models` itself).
 struct ModelLayout: Sendable, Equatable {
     static let rootFolderName = "ReVox"
     static let modelsFolderName = "Models"
     static let whisperRepoPath = "models/argmaxinc/whisperkit-coreml"
     static let whisperSidecarPath = ".cache/huggingface/download"
+    static let fluidFolderName = "fluid"
     static let fluidModelsFolder = "Models"
     static let vadFolder = "silero-vad"
     static let pocketTTSFolder = "pocket-tts"
@@ -53,8 +60,13 @@ struct ModelLayout: Sendable, Equatable {
 
     // MARK: FluidAudio
 
+    /// What FluidAudio is handed as its base: `PocketTtsResourceDownloader` appends `Models` to it.
+    var fluidBaseDirectory: URL {
+        root.appendingPathComponent(Self.fluidFolderName, isDirectory: true)
+    }
+
     var fluidModelsDirectory: URL {
-        root.appendingPathComponent(Self.fluidModelsFolder, isDirectory: true)
+        fluidBaseDirectory.appendingPathComponent(Self.fluidModelsFolder, isDirectory: true)
     }
 
     var vadRepoDirectory: URL {
@@ -115,7 +127,8 @@ struct ModelLayout: Sendable, Equatable {
     /// Re-applied after every download and every verified load: file operations reset the flag (§6.9).
     func reapplyBackupExclusion(fileManager: FileManager = .default) {
         try? Self.excludeFromBackup(root)
-        let topLevel = [whisperRepoDirectory, vadRepoDirectory, fluidModelsDirectory.appendingPathComponent(Self.pocketTTSFolder, isDirectory: true)]
+        let topLevel = [whisperRepoDirectory, fluidBaseDirectory, vadRepoDirectory,
+                        fluidModelsDirectory.appendingPathComponent(Self.pocketTTSFolder, isDirectory: true)]
         for folder in topLevel where fileManager.fileExists(atPath: folder.path) {
             try? Self.excludeFromBackup(folder)
         }

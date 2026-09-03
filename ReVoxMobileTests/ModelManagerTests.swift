@@ -43,9 +43,9 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(layout.whisperFolder(small).path, root.appendingPathComponent("models/argmaxinc/whisperkit-coreml/openai_whisper-small").path)
         XCTAssertEqual(layout.tokenizerFolder(small).path, root.appendingPathComponent("models/openai/whisper-small").path)
         XCTAssertEqual(layout.whisperSidecarCache(small).path, root.appendingPathComponent("models/argmaxinc/whisperkit-coreml/.cache/huggingface/download/openai_whisper-small").path)
-        XCTAssertEqual(layout.vadRepoDirectory.path, root.appendingPathComponent("Models/silero-vad").path)
+        XCTAssertEqual(layout.vadRepoDirectory.path, root.appendingPathComponent("fluid/Models/silero-vad").path)
         XCTAssertEqual(layout.vadBundle.lastPathComponent, ModelCatalog.vad.subdirectory)
-        XCTAssertEqual(layout.pocketTTSLanguageFolder.path, root.appendingPathComponent("Models/pocket-tts/v2.1/english").path)
+        XCTAssertEqual(layout.pocketTTSLanguageFolder.path, root.appendingPathComponent("fluid/Models/pocket-tts/v2.1/english").path)
     }
 
     func testWhisperInstalledWhenAllRequiredFilesPresent() throws {
@@ -137,8 +137,8 @@ final class ModelManagerTests: XCTestCase {
     func testVADDirectoryIsCreatableAfterAWhisperTreeExists() throws {
         try fabricateWhisper(.tiny)
         let lower = layout.root.appendingPathComponent("models").path
-        let upper = layout.root.appendingPathComponent("Models").path
-        let state = "models=\(FileManager.default.fileExists(atPath: lower)) Models=\(FileManager.default.fileExists(atPath: upper))"
+        let upper = layout.root.appendingPathComponent(ModelLayout.fluidFolderName).path
+        let state = "models=\(FileManager.default.fileExists(atPath: lower)) fluid=\(FileManager.default.fileExists(atPath: upper))"
         do {
             try FileManager.default.createDirectory(at: layout.vadBundle, withIntermediateDirectories: true)
         } catch {
