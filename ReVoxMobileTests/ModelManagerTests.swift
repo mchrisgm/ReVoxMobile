@@ -323,7 +323,9 @@ final class ModelManagerTests: XCTestCase {
         await waitUntil("resumed and installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
         XCTAssertEqual(manager.pausedKinds, [])
         XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-tiny", "openai_whisper-tiny"])
-        XCTAssertEqual(host.begun.count, 3, "tiny twice plus the automatic VAD install")
+        // The row reports `.installed` from the installer's last progress report, which lands before the manager
+        // finishes the task and starts the automatic VAD install: that install is awaited, never assumed.
+        await waitUntil("the automatic VAD install began", details: { "begun \(host.begun.map(\.name))" }) { host.begun.count == 3 }
     }
 
     @MainActor
@@ -352,7 +354,10 @@ final class ModelManagerTests: XCTestCase {
         await waitUntil { host.isIdleTimerDisabled }
         fakeSteps.holdDownloads = false
         await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), whisper \(manager.state(for: .whisper(.tiny)).phase), vadDownloads \(self.fakeSteps.vadDownloads), paused \(manager.pausedKinds)" }) { manager.state(for: .vad).phase == .installed }
+        // Same ordering: `.installed` arrives with the last progress report, and the task is ended just after.
+        await waitUntil("every background task ended", details: { "begun \(host.begun.count), ended \(host.ended.count)" }) {
+            host.ended.count == host.begun.count
+        }
         XCTAssertFalse(host.isIdleTimerDisabled)
-        XCTAssertEqual(host.ended.count, host.begun.count, "every background task is ended")
     }
 }
