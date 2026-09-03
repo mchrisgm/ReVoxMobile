@@ -2,13 +2,18 @@ import Foundation
 import SwiftData
 import ReVoxCore
 
-/// The SwiftData `TranscriptSink` for one session (§6.10). The context created by `@ModelActor` has
+/// The SwiftData `TranscriptSink` for one session (§6.10). A context that is not `mainContext` has
 /// `autosaveEnabled == false`, so every write is followed by an explicit `save()`, coalesced to at most
 /// one per second while entries arrive faster than that; `close()` always saves.
-@ModelActor
+///
+/// The `@ModelActor` macro is deliberately not used: it synthesises `init(modelContainer:)`, which cannot
+/// initialise this actor's own `metadata` and `recorder` and so fails to compile. Actor isolation gives the
+/// context the serial access it needs — every use of `modelContext` below is isolated to this actor.
 actor TranscriptStore: TranscriptSink {
     static let saveInterval: TimeInterval = 1
 
+    nonisolated let modelContainer: ModelContainer
+    private let modelContext: ModelContext
     private let metadata: SessionMetadata
     private let recorder: TranscriptRecorder
     private var sessionID: PersistentIdentifier?
@@ -21,7 +26,7 @@ actor TranscriptStore: TranscriptSink {
         let context = ModelContext(modelContainer)
         context.autosaveEnabled = false
         self.modelContainer = modelContainer
-        self.modelExecutor = DefaultSerialModelExecutor(modelContext: context)
+        self.modelContext = context
         self.metadata = metadata
         self.recorder = TranscriptRecorder(startedAt: metadata.startedAt)
     }
