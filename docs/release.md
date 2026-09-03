@@ -39,10 +39,26 @@ You need a paid Apple Developer Program membership. Then, in this order:
    - `com.mchrisgm.revox` for the app;
    - `com.mchrisgm.revox.broadcast` for the broadcast extension.
 
-   On each one enable the **App Groups** capability and assign the group from step 1. Nothing else is required at this milestone (no push, no iCloud).
+   On each one enable the **App Groups** capability **and** assign the group from step 1 — two separate actions in that UI, and it is easy to do the first without the second. Ticking the capability without assigning the group produces a profile with no group in it, and the archive fails with:
+
+   ```
+   error: Provisioning profile "iOS Team Provisioning Profile: com.mchrisgm.revox" doesn't match
+   the entitlements file's value for the com.apple.security.application-groups entitlement
+   ```
+
+   To check an existing App ID: open it, confirm **App Groups** is ticked, then click **Edit**/**Configure** beside it and confirm `group.com.mchrisgm.revox` is selected. Nothing else is required at this milestone (no push, no iCloud).
 3. **Team ID.** Copy the 10-character Team ID from [Membership details](https://developer.apple.com/account#MembershipDetailsCard). It becomes the `APPLE_TEAM_ID` secret.
 4. **Agreements.** In App Store Connect open **Business** (or **Agreements, Tax, and Banking**) and make sure the Apple Developer Program License Agreement is accepted by the Account Holder. Uploads fail until it is, every time Apple issues a new version of the agreement.
-5. **App Store Connect API key with the App Manager role.** In App Store Connect go to **Users and Access** → **Integrations** → **App Store Connect API** → **Team Keys** and generate a key with access **App Manager**. Download the `AuthKey_XXXX.p8` file immediately (it can be downloaded only once) and note the **Key ID** and the **Issuer ID** shown on that page. App Manager is the lowest role that can both create signing assets and upload builds.
+5. **App Store Connect API key with the Admin role.** In App Store Connect go to **Users and Access** → **Integrations** → **App Store Connect API** → **Team Keys** and generate a key with access **Admin**. Download the `AuthKey_XXXX.p8` file immediately (it can be downloaded only once) and note the **Key ID** and the **Issuer ID** shown on that page.
+
+   **Admin, not App Manager.** App Manager can upload builds, and it is enough for [Path B](#path-b-manual-signing) where you supply the certificate yourself. It cannot create the *cloud-managed distribution certificate* that [Path A](#path-a-automatic-cloud-managed-signing) needs, and the failure comes at the export step, long after the archive has succeeded:
+
+   ```
+   error: exportArchive Cloud signing permission error
+   error: exportArchive No profiles for 'com.mchrisgm.revox' were found
+   ```
+
+   An Admin key is powerful — it can manage users, agreements and app records for the whole account — and it lives in a GitHub secret. If that breadth is unacceptable, use Path B and keep the key at App Manager, used only for the upload.
 6. **App record.** In **My Apps** click **+** → **New App**: platform iOS, name `ReVox`, primary language English, Bundle ID `com.mchrisgm.revox` (the app id, not the extension's), SKU `revox-mobile`, full user access. The extension does not get its own app record.
 
 ## GitHub configuration
@@ -150,6 +166,7 @@ Before every upload the CI job runs `scripts/ci/check-plists.py`, which verifies
   ```
 
   This is a manual fallback only, not what the workflow itself does: `altool` is deprecated, and it can print `ERROR:` lines yet still exit 0, so read its output carefully rather than trusting the exit code. `notarytool` is for macOS notarisation only and is not an alternative; Apple's Transporter app can also upload the `.ipa` from the run's artefact by hand.
-- **"No profiles for … were found" or an error mentioning `application-groups`.** See [Path A](#path-a-automatic-cloud-managed-signing) and switch to [Path B](#path-b-manual-signing).
+- **"No profiles for … were found" or an error mentioning `application-groups`.** First read the exact wording. `Cloud signing permission error` alongside it means the API key cannot create the distribution certificate: use an **Admin** key (step 5 of the one-time setup). An error naming `application-groups` at the *archive* step instead means the App IDs lack the group (step 2). Only if both are right does [Path A](#path-a-automatic-cloud-managed-signing) genuinely need switching to [Path B](#path-b-manual-signing).
+- **The `Check secrets` job fails in about a second, with no log to read.** This is not a secrets problem: that job's script cannot fail, because every branch exits 0 — missing secrets *skip* the upload with a notice rather than failing. A one-second failure with no retrievable log means the job never ran a step, which in practice means GitHub refused to start it — usually the **Actions spending limit**. Check **Settings** → **Billing and licensing** → **Plans and usage**, and note that macOS runners bill at 10× the minute rate, so a day of debugging on `macos-26` consumes an allowance quickly.
 - **Xcode 26.6 not on the runner image.** `scripts/ci/select-xcode.sh` prints a warning and falls back to the newest Xcode 26.x on the image. Update `XCODE_VERSION` in both workflows once you have verified the build with the newer Xcode.
 - **The run failed but you need the logs.** Every run keeps `test.log`, `archive.log`, `export.log` and `upload.log` (and the `.ipa` and `build/upload/DistributionSummary.plist` when the run got that far) as the artefact `revox-mobile-build-<run number>` for 14 days.
