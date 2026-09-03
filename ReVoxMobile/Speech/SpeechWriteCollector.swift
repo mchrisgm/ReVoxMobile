@@ -1,11 +1,14 @@
 import AVFAudio
 import Foundation
+import os
 
 /// `AVSpeechSynthesizer.write(_:toBufferCallback:)` collector (§6.6): buffers until the zero-length terminating
 /// buffer (ASSUMED; Task 42 measures it) or the timeout `max(3 s, 4 × characters / 15 s)`.
 final class SpeechWriteCollector: @unchecked Sendable {
     static let minimumTimeout: TimeInterval = 3
     static let charactersPerSecond: Double = 15
+
+    private static let logger = Logger(subsystem: "revox", category: "measurements")
 
     private let synthesizer = AVSpeechSynthesizer()   // retained for the life of the collector (Apple: retain until speech concludes)
     private let lock = NSLock()
@@ -26,13 +29,17 @@ final class SpeechWriteCollector: @unchecked Sendable {
             synthesizer.write(utterance) { buffer in
                 guard let pcm = buffer as? AVAudioPCMBuffer else { return }
                 if pcm.frameLength == 0 {
+                    SpeechWriteCollector.logger.info("write ended by terminating buffer")
                     finish()
                 } else {
                     state.append(pcm)
                 }
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                finish()
+                if state.finishIfPending() {
+                    SpeechWriteCollector.logger.error("write ended by timeout after \(timeout, privacy: .public) s")
+                    continuation.resume(returning: state.collected)
+                }
             }
         }
     }
@@ -42,6 +49,17 @@ final class SpeechWriteCollector: @unchecked Sendable {
         private let lock = NSLock()
         private var buffers: [AVAudioPCMBuffer] = []
         private var finished = false
+
+        private(set) var collected: [AVAudioPCMBuffer] = []
+
+        /// Timeout path: marks finished and reports whether it was the first to do so.
+        func finishIfPending() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !finished else { return false }
+            finished = true
+            collected = buffers
+            return true
+        }
 
         func append(_ buffer: AVAudioPCMBuffer) {
             lock.lock(); defer { lock.unlock() }

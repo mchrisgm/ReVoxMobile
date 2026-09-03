@@ -125,15 +125,19 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
         }
     }
 
+    private var loggedConversions = 0
+
     private func handleTap(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
         let resampler = self.resampler
+        let shouldLog = loggedConversions < 5
+        if shouldLog { loggedConversions += 1 }
         lock.unlock()
-        if let resampler {
-            deliver(resampler.convert(buffer))
-        } else {
-            deliver(Self.fallbackResample(buffer))
+        let samples = resampler.map { $0.convert(buffer) } ?? Self.fallbackResample(buffer)
+        if shouldLog {
+            Self.logger.info("tap frames=\(buffer.frameLength, privacy: .public) rate=\(buffer.format.sampleRate, privacy: .public) out=\(samples.count, privacy: .public) fallback=\(resampler == nil, privacy: .public)")
         }
+        deliver(samples)
     }
 
     /// Stamps the cumulative 16 kHz position on the run and yields it; internal so tests feed samples without hardware.
