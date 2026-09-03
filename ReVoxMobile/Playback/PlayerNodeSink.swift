@@ -6,20 +6,24 @@ import ReVoxCore
 /// started by `AudioSessionController.guardedPlay()` and re-started the same way after `stop()`.
 final class PlayerNodeSink: PlaybackSink, @unchecked Sendable {
     static let nodeSampleRate: Double = 24_000
+    /// Fixed gain for pocket-tts's un-normalised samples (§6.7; ASSUMED starting value, calibrated on device
+    /// against the system voice at the same voice volume). System-voice clips use 1.0.
+    static let pocketTTSEngineGain: Float = 0.7
 
     let playerNode = AVAudioPlayerNode()
     let format = AVAudioFormat(standardFormatWithSampleRate: PlayerNodeSink.nodeSampleRate, channels: 1)!
 
     private let lock = NSLock()
     private var converters: [Int: AVAudioConverter] = [:]
-    private var voiceVolume: Float = 1
+    let voiceVolume: VoiceVolume
     private var engineGain: Float = 1
     private var scheduledFrameLength: AVAudioFrameCount = 0
     private let onStopped: @Sendable () -> Void
     private let completionQueue = DispatchQueue(label: "revox.playback.completion")
 
-    init(onStopped: @escaping @Sendable () -> Void) {
+    init(onStopped: @escaping @Sendable () -> Void, voiceVolume: VoiceVolume = VoiceVolume()) {
         self.onStopped = onStopped
+        self.voiceVolume = voiceVolume
     }
 
     func attach(to engine: AVAudioEngine) {
@@ -30,17 +34,17 @@ final class PlayerNodeSink: PlaybackSink, @unchecked Sendable {
     // MARK: Gain (§6.7: voiceVolume × engineGain, clamped to ±1 in the float domain)
 
     func setVoiceVolume(_ volume: Float) {
-        lock.lock(); voiceVolume = min(max(volume, 0), 1); lock.unlock()
+        voiceVolume.current = volume
     }
 
-    /// 1.0 for system-voice clips; M4 sets 0.7 for pocket-tts samples (ASSUMED starting value, calibrated in M4).
+    /// 1.0 for system-voice clips, `pocketTTSEngineGain` while pocket-tts speaks (§6.7).
     func setEngineGain(_ gain: Float) {
         lock.lock(); engineGain = max(gain, 0); lock.unlock()
     }
 
     var gain: Float {
         lock.lock(); defer { lock.unlock() }
-        return voiceVolume * engineGain
+        return voiceVolume.current * engineGain
     }
 
     var lastScheduledFrameLength: AVAudioFrameCount {

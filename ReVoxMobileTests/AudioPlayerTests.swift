@@ -134,4 +134,63 @@ final class AudioPlayerTests: XCTestCase {
 
         XCTAssertEqual(PCMConverterDriver.outputCapacity(inputFrames: 4_800, inputRate: 48_000, outputRate: 16_000), 1_664)
     }
+
+    // MARK: voice volume box, engine gain, mute for both engines (§6.7, F11)
+
+    func testSharedVoiceVolumeBoxIsReadAtEnqueueTime() throws {
+        let volume = VoiceVolume(1)
+        let sink = PlayerNodeSink(onStopped: {}, voiceVolume: volume)
+        XCTAssertEqual(PlayerNodeSink.pocketTTSEngineGain, 0.7, accuracy: 0.0001)
+        sink.setEngineGain(PlayerNodeSink.pocketTTSEngineGain)
+        volume.current = 0.5
+        XCTAssertEqual(sink.gain, 0.35, accuracy: 0.0001)
+        let buffer = try XCTUnwrap(sink.makeBuffer(for: AudioClip(samples: [1.0, -1.0], sampleRate: 24_000)))
+        XCTAssertEqual(buffer.monoFloatSamples[0], 0.35, accuracy: 0.0001)
+        XCTAssertEqual(buffer.monoFloatSamples[1], -0.35, accuracy: 0.0001)
+
+        volume.current = 2
+        XCTAssertEqual(volume.current, 1, "clamped to 0…1")
+        volume.current = -1
+        XCTAssertEqual(volume.current, 0)
+        XCTAssertEqual(VoiceVolume(0.25).current, 0.25, accuracy: 0.0001)
+    }
+
+    func testPlayerForwardsEngineGainAndSharesTheBox() {
+        let volume = VoiceVolume(0.8)
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let player = AudioPlayer(controller: controller, onSpeaking: { _ in }, voiceVolume: volume)
+        XCTAssertTrue(player.voiceVolume === volume)
+        player.setEngineGain(0.7)
+        XCTAssertEqual(player.sink.gain, 0.56, accuracy: 0.0001)
+        player.setVoiceVolume(0.5)
+        XCTAssertEqual(volume.current, 0.5, "setVoiceVolume writes the shared box")
+        XCTAssertEqual(player.sink.gain, 0.35, accuracy: 0.0001)
+    }
+
+    func testMuteDiscardsClipsFromBothEnginesAndNeverPauses() async {
+        // The core PlaybackQueue decides (W7, §5.4): a muted clip is discarded whatever its sample rate, nothing is
+        // scheduled on the node, no speaking edge fires, and unmuting plays only what arrives afterwards.
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let edges = LockedBox<[Bool]>([])
+        let player = AudioPlayer(controller: controller, onSpeaking: { speaking in edges.mutate { $0.append(speaking) } })
+
+        await player.setMuted(true)
+        await player.enqueue(AudioClip(samples: sine(count: 2_400, rate: 24_000), sampleRate: 24_000))   // pocket-tts rate
+        await player.enqueue(AudioClip(samples: sine(count: 2_205, rate: 22_050), sampleRate: 22_050))   // system-voice rate
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(player.sink.lastScheduledFrameLength, 0, "nothing reached the node")
+        var speaking = await player.isSpeaking
+        XCTAssertFalse(speaking)
+        XCTAssertEqual(edges.value, [])
+
+        await player.setMuted(false)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(player.sink.lastScheduledFrameLength, 0, "discarded clips are not replayed after unmuting")
+        speaking = await player.isSpeaking
+        XCTAssertFalse(speaking)
+        await player.stop()
+    }
+
 }
