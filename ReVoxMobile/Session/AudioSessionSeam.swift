@@ -55,3 +55,12 @@ final class LiveAudioSessionSeam: AudioSessionSeam, @unchecked Sendable {
         LiveAudioEngineSeam()
     }
 }
+
+extension SessionMask {
+    /// The same category, mode and route options with `option` added — the "duck on" masks of §6.8.
+    func adding(_ option: AVAudioSession.CategoryOptions) -> SessionMask {
+        var copy = self
+        copy.options.insert(option)
+        return copy
+    }
+}

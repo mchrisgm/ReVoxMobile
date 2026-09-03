@@ -161,18 +161,6 @@ final class AudioSessionControllerTests: XCTestCase {
         XCTAssertEqual(seam.calls, [], "publishing a status touches neither the session nor the engine")
     }
 
-    func testDuckAndRestoreOnlyRecordTheRequestInM3() async {
-        let seam = RecordingAudioSessionSeam()
-        let controller = AudioSessionController(session: seam)
-        await controller.duck()
-        var pending = await controller.pendingDuck
-        XCTAssertTrue(pending)
-        await controller.restore()
-        pending = await controller.pendingDuck
-        XCTAssertFalse(pending)
-        XCTAssertEqual(seam.calls, [], "no session call before M4 implements the cycles")
-    }
-
     func testInterruptionNotificationParsing() {
         let began = Notification(name: AVAudioSession.interruptionNotification, object: nil,
                                  userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
