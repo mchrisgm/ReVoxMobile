@@ -65,11 +65,14 @@ actor SystemSpeaker: Speaker {
         for buffer in nonEmpty {
             if buffer.format.commonFormat == .pcmFormatFloat32, !buffer.format.isInterleaved, buffer.format.channelCount == 1, buffer.format.sampleRate == rate {
                 samples.append(contentsOf: buffer.monoFloatSamples)
+            } else if buffer.format.sampleRate == rate, let mono = PCMConverterDriver.averagedMonoSamples(buffer) {
+                samples.append(contentsOf: mono)   // channels averaged as Windows does (P7), no rate change
             } else {
                 guard let converter = AVAudioConverter(from: buffer.format, to: target) else {
                     throw SpeakerError.synthesisFailed("unsupported voice buffer format \(buffer.format)")
                 }
-                samples.append(contentsOf: try PCMConverterDriver.convertToMono(buffer, with: converter))
+                // A synthesiser buffer is a finished piece of speech: flush rather than hold its tail back.
+                samples.append(contentsOf: try PCMConverterDriver.convertToMono(buffer, with: converter, endOfStream: true))
             }
         }
         return AudioClip(samples: samples, sampleRate: Int(rate))

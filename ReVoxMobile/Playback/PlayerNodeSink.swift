@@ -77,7 +77,9 @@ final class PlayerNodeSink: PlaybackSink, @unchecked Sendable {
         }
         lock.unlock()
         guard let converter else { throw PCMConversionError.conversionFailed }
-        return try PCMConverterDriver.convertToMono(input, with: converter)
+        // A clip is a whole utterance: flush the converter so its tail is played instead of being held
+        // back and smeared into the front of the next clip.
+        return try PCMConverterDriver.convertToMono(input, with: converter, endOfStream: true)
     }
 
     // MARK: PlaybackSink

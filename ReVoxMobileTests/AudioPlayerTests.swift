@@ -109,11 +109,25 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertEqual(player.sink.lastScheduledFrameLength, 0)
     }
 
-    func testConverterDriverDrainsUntilInputRanDry() throws {
+    /// Streaming keeps the converter's tail for the next buffer; end-of-stream flushes it, so a one-shot clip
+    /// keeps its last millisecond instead of leaving it inside the converter (§6.1).
+    func testConverterDriverDrainsUntilInputRanDryAndFlushesOnEndOfStream() throws {
         let input = try XCTUnwrap(AVAudioPCMBuffer.mono(samples: sine(count: 4_800, rate: 48_000), format: AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!))
-        let converter = try XCTUnwrap(AVAudioConverter(from: input.format, to: PCMConverterDriver.pipelineFormat))
-        let out = try PCMConverterDriver.convertToMono(input, with: converter)
-        XCTAssertEqual(Double(out.count), 1_600, accuracy: 16)
+
+        let streaming = try XCTUnwrap(AVAudioConverter(from: input.format, to: PCMConverterDriver.pipelineFormat))
+        let first = try PCMConverterDriver.convertToMono(input, with: streaming)
+        let second = try PCMConverterDriver.convertToMono(input, with: streaming)
+        XCTAssertGreaterThan(first.count, 0)
+        XCTAssertEqual(Double(first.count + second.count), 3_200, accuracy: 32, "counts \(first.count), \(second.count)")
+        XCTAssertEqual(Double(second.count), 1_600, accuracy: 16, "steady state after priming")
+
+        let oneShot = try XCTUnwrap(AVAudioConverter(from: input.format, to: PCMConverterDriver.pipelineFormat))
+        let flushed = try PCMConverterDriver.convertToMono(input, with: oneShot, endOfStream: true)
+        XCTAssertEqual(Double(flushed.count), 1_600, accuracy: 16, "the flush gives back the whole clip")
+        // Reset after the flush: the next clip starts clean rather than carrying this one's tail.
+        let again = try PCMConverterDriver.convertToMono(input, with: oneShot, endOfStream: true)
+        XCTAssertEqual(Double(again.count), 1_600, accuracy: 16)
+
         XCTAssertEqual(PCMConverterDriver.outputCapacity(inputFrames: 4_800, inputRate: 48_000, outputRate: 16_000), 1_664)
     }
 }

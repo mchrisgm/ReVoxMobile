@@ -87,7 +87,7 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(model.footerText, ModelsViewModel.keepOpenText)
         XCTAssertNotNil(model.rows[0].state.fraction, "determinate from the first callback")
         steps.holdDownloads = false
-        await waitUntil { model.rows[0].state.phase == .installed && model.vadRow.state.phase == .installed }
+        await waitUntil("tiny and vad installed", details: { "tiny \(model.rows[0].state.phase), vad \(model.vadRow.state.phase)" }) { model.rows[0].state.phase == .installed && model.vadRow.state.phase == .installed }
         XCTAssertNil(model.footerText)
     }
 

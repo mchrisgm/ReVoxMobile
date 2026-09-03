@@ -127,11 +127,25 @@ final class ModelManager {
     }
 
     /// Runs one install to completion, then the automatic VAD install after a Whisper install (§8.3).
+    ///
+    /// Progress crosses from the installer actor through one stream that a main-actor pump drains in order.
+    /// The pump is finished and awaited before the row is finalised, so a report that was in flight when the
+    /// install ended cannot land afterwards and paint `.downloading` over `.installed` or `.failed`.
     private func runInstall(_ kind: DownloadKind) async {
         let installer = self.installer
-        let report: @Sendable (ModelDownloadState) -> Void = { [weak self] state in
-            Task { @MainActor in self?.states[kind] = state }
+        let (reports, continuation) = AsyncStream<ModelDownloadState>.makeStream(bufferingPolicy: .unbounded)
+        let report: @Sendable (ModelDownloadState) -> Void = { state in continuation.yield(state) }
+        let pump = Task { @MainActor [weak self] in
+            for await state in reports {
+                self?.states[kind] = state
+            }
         }
+
+        func drainReports() async {
+            continuation.finish()
+            await pump.value
+        }
+
         do {
             switch kind {
             case .whisper(let id):
@@ -141,14 +155,17 @@ final class ModelManager {
             case .pocketTTS:
                 break   // M4
             }
+            await drainReports()
             finishTask(for: kind, cancelled: false)
             if case .whisper = kind, !layout.isVADInstalled(), tasks[.vad] == nil {
                 install(.vad)
             }
         } catch is CancellationError {
+            await drainReports()
             finishTask(for: kind, cancelled: true)
         } catch {
             // `.failed` was already reported by the installer; keep it on screen (Retry re-installs).
+            await drainReports()
             tasks[kind] = nil
             didEndTask(for: kind)
         }

@@ -143,7 +143,7 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(for: .whisper(.tiny)).phase, .idle)
         manager.install(.whisper(.tiny))
         await waitUntil("tiny installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
-        await waitUntil("vad installed") { manager.state(for: .vad).phase == .installed }
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), whisper \(manager.state(for: .whisper(.tiny)).phase), vadDownloads \(self.fakeSteps.vadDownloads), paused \(manager.pausedKinds)" }) { manager.state(for: .vad).phase == .installed }
         XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-tiny"])
         XCTAssertEqual(fakeSteps.vadDownloads, 1)
         XCTAssertEqual(manager.installedWhisper, [.tiny])
@@ -157,7 +157,7 @@ final class ModelManagerTests: XCTestCase {
     func testSecondWhisperInstallDoesNotRedownloadTheVAD() async {
         let manager = makeManager()
         manager.install(.whisper(.tiny))
-        await waitUntil { manager.state(for: .vad).phase == .installed }
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), vadDownloads \(self.fakeSteps.vadDownloads), paused \(manager.pausedKinds)" }) { manager.state(for: .vad).phase == .installed }
         manager.install(.whisper(.base))
         await waitUntil { manager.state(for: .whisper(.base)).phase == .installed }
         XCTAssertEqual(fakeSteps.vadDownloads, 1)
@@ -323,7 +323,7 @@ final class ModelManagerTests: XCTestCase {
         manager.install(.whisper(.tiny))
         await waitUntil { host.isIdleTimerDisabled }
         fakeSteps.holdDownloads = false
-        await waitUntil { manager.state(for: .vad).phase == .installed }
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), whisper \(manager.state(for: .whisper(.tiny)).phase), vadDownloads \(self.fakeSteps.vadDownloads), paused \(manager.pausedKinds)" }) { manager.state(for: .vad).phase == .installed }
         XCTAssertFalse(host.isIdleTimerDisabled)
         XCTAssertEqual(host.ended.count, host.begun.count, "every background task is ended")
     }

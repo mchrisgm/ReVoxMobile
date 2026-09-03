@@ -16,7 +16,10 @@ actor TranscriptStore: TranscriptSink {
     private let modelContext: ModelContext
     private let metadata: SessionMetadata
     private let recorder: TranscriptRecorder
-    private var sessionID: PersistentIdentifier?
+    /// The session row itself, not its `PersistentIdentifier`: the identifier of an unsaved model is temporary
+    /// and stops resolving once the insert is saved, which traps in `model(for:)` (run 33771885792). The actor
+    /// owns the context, so holding the model is safe and needs no re-fetch.
+    private var session: Session?
     private var lastSaveAt: Date = .distantPast
     private var pendingSave: Task<Void, Never>?
     private(set) var lastSaveError: String?
@@ -31,7 +34,8 @@ actor TranscriptStore: TranscriptSink {
         self.recorder = TranscriptRecorder(startedAt: metadata.startedAt)
     }
 
-    var sessionIdentifier: PersistentIdentifier? { sessionID }
+    /// Resolvable only after the first save; nil before the session row exists.
+    var sessionIdentifier: PersistentIdentifier? { session?.persistentModelID }
 
     // MARK: TranscriptSink
 
@@ -106,10 +110,8 @@ actor TranscriptStore: TranscriptSink {
     }
 
     private func ensureSession() -> Session {
-        if let sessionID, let existing = modelContext.model(for: sessionID) as? Session {
-            return existing
-        }
-        let session = Session(
+        if let session { return session }
+        let created = Session(
             startedAt: metadata.startedAt,
             captureMode: metadata.captureMode.rawValue,
             pinnedLanguage: metadata.pinnedLanguage,
@@ -117,9 +119,9 @@ actor TranscriptStore: TranscriptSink {
             voice: metadata.voice,
             joinedInProgress: metadata.joinedInProgress
         )
-        modelContext.insert(session)
-        sessionID = session.persistentModelID
-        return session
+        modelContext.insert(created)
+        session = created
+        return created
     }
 
     // MARK: Export (the M6 exporter reuses `items(from:)`)
