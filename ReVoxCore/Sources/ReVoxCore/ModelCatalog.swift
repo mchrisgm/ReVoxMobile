@@ -39,9 +39,11 @@ public struct VADModelDescriptor: Sendable, Equatable {
     public let subdirectory: String               // "silero-vad-unified-v6.0.0.mlmodelc"
     public let approximateBytes: Int64            // ≈ 950_000 (weight.bin 882 304 + model.mil 25 126 + metadata)
 
-    /// Under the model root: `Models/silero-vad/<subdirectory>/coremldata.bin`.
+    /// Under the model root: `fluid/Models/silero-vad/<subdirectory>/coremldata.bin`. FluidAudio's tree sits
+    /// under its own `fluid` folder because its `Models` differs from WhisperKit's `models` only by case, which
+    /// collides on a case-insensitive volume (app `ModelLayout`).
     public var requiredRelativePaths: [String] {
-        ["Models/silero-vad/\(subdirectory)/coremldata.bin"]
+        ["fluid/Models/silero-vad/\(subdirectory)/coremldata.bin"]
     }
 }
 
@@ -60,7 +62,7 @@ public struct LicenceNotice: Sendable, Equatable, Identifiable {
     public let attribution: String?
 }
 
-public enum DownloadKind: Sendable, Equatable {
+public enum DownloadKind: Sendable, Equatable, Hashable {
     case whisper(WhisperModelID), vad, pocketTTS
 }
 

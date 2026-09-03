@@ -23,21 +23,16 @@ From now on new builds arrive automatically. TestFlight shows a notification whe
 
 ## 3. First launch
 
-1. Connect to Wi-Fi.
-2. Open ReVox. On the first launch it downloads the Whisper translation model: about **480 MB** for the default `small` model. Keep the app open and the phone unlocked until the progress bar finishes; it takes a few minutes on a good connection. This happens only once.
-3. Optionally, download the **pocket-tts voice** (a more natural voice for reading the translations). Until you do, ReVox uses the built-in iPhone voice, which works fine. You can download the voice later from the app's settings.
-4. When you first start listening, iOS asks **"ReVox" Would Like to Access the Microphone**. Tap **Allow**. ReVox only listens while you tell it to. If you tapped Don't Allow by mistake, go to **Settings** → **Privacy & Security** → **Microphone** and switch ReVox on.
-
-After this, ReVox works without any internet connection.
+ReVox opens on the **Live** tab with "Ready to translate". Before the first translation it needs a Whisper model: go to **Settings → Models**, tap **Download** on **small** (about 487 MB; the row shows a progress bar and the phase). Keep ReVox open until the row says **Installed** — a download interrupted by leaving the app shows **Paused** and resumes when you come back. The **Voice detector** row installs by itself with the first model. Nothing else is downloaded afterwards; the app works in airplane mode from here on.
 
 ## 4. Translate from the microphone
 
-1. Open ReVox and choose the **Microphone** source if it is not already selected.
-2. Tap the large **Start** button (the microphone symbol).
-3. Speak, or hold the phone near the person or the sound you want translated. ReVox waits for a phrase to end, then shows the English text and reads it aloud a moment later. There is always a short delay; this is normal.
-4. Use the voice volume slider to make the spoken translation louder or quieter without changing anything else on the phone.
-
-You can lock the phone or switch to another app; ReVox keeps listening and translating in the background until you stop it.
+1. On **Live**, the source picker shows **Microphone** (the other-apps source arrives in a later build).
+2. Tap **Start**. iOS asks for microphone access the first time; allow it. If you refused, the screen shows a banner with **Open Settings**.
+3. Speak a sentence in Spanish, French, German or any other language. After a short pause the English text appears with the detected language badge, and the system voice reads it aloud. The status line shows the model ("small · ready") and the voice ("System voice — pocket-tts not downloaded").
+4. Long phrases are cut at about 10 seconds; if translation falls behind, a **Falling behind** badge appears and the transcript shows "… skipped: falling behind".
+5. The speaker icon in the toolbar mutes the voice; the transcript keeps running. **Settings** has the same toggle, the latency mode (Balanced / Fast) and a source-language pin for when auto-detect picks the wrong language.
+6. Lock the phone or switch apps: translation keeps running until you tap **Stop**.
 
 ## 5. Translate other apps (broadcast)
 

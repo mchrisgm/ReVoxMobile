@@ -3,6 +3,6 @@ import XCTest
 
 final class ReVoxCoreTests: XCTestCase {
     func testPipelineSampleRateIs16kHz() {
-        XCTAssertEqual(ReVoxCore.sampleRate, 16_000)
+        XCTAssertEqual(AudioFormat.pipelineSampleRate, 16_000)
     }
 }

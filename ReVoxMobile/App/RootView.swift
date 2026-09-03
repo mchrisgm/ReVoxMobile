@@ -1,0 +1,25 @@
+import SwiftUI
+
+/// The single tab container (§8.1, R14); `.tabItem` is the iOS 17 API (`Tab` is iOS 18) and the iOS 27 seam of §12.
+struct RootView: View {
+    let environment: AppEnvironment
+
+    var body: some View {
+        TabView {
+            NavigationStack {
+                LiveView(model: environment.live, models: environment.models)
+            }
+            .tabItem { Label("Live", systemImage: "waveform") }
+
+            NavigationStack {
+                HistoryPlaceholderView()
+            }
+            .tabItem { Label("History", systemImage: "clock") }
+
+            NavigationStack {
+                SettingsView(model: environment.settingsModel, models: environment.models)
+            }
+            .tabItem { Label("Settings", systemImage: "gearshape") }
+        }
+    }
+}

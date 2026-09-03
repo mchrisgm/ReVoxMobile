@@ -52,7 +52,7 @@ final class ModelCatalogTests: XCTestCase {
             "models/openai/whisper-small/tokenizer_config.json",
             "models/openai/whisper-small/config.json",
         ])
-        XCTAssertEqual(ModelCatalog.vad.requiredRelativePaths, ["Models/silero-vad/silero-vad-unified-v6.0.0.mlmodelc/coremldata.bin"])
+        XCTAssertEqual(ModelCatalog.vad.requiredRelativePaths, ["fluid/Models/silero-vad/silero-vad-unified-v6.0.0.mlmodelc/coremldata.bin"])
     }
 
     func testVADAndPocketTTSDescriptors() {
@@ -93,5 +93,23 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertFalse(ModelCatalog.hasRoomToInstall(expectedBytes: 400_000_000, availableBytes: 699_999_999))
         XCTAssertTrue(ModelCatalog.hasRoomToInstall(expectedBytes: 0, availableBytes: 200_000_000))
         XCTAssertFalse(ModelCatalog.hasRoomToInstall(expectedBytes: 0, availableBytes: 199_999_999))
+    }
+
+    /// Locks the values M2 pinned to the recorded 2026-09-02 listing (§6.9): a revision may only change
+    /// together with the byte sizes and `docs/model-revisions.md`, never on its own.
+    func testWhisperRevisionsMatchRecordedListing() {
+        let modelRevision = "0f63a7800b00dd0226abd051b906c246e1907482"
+        let tokenizerRevisions: [WhisperModelID: String] = [
+            .tiny: "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+            .base: "e37978b90ca9030d5170a5c07aadb050351a65bb",
+            .small: "973afd24965f72e36ca33b3055d56a652f456b4d",
+            .medium: "abdf7c39ab9d0397620ccaea8974cc764cd0953e",
+            .largeV3: "06f233fe06e710322aca913c1bc4249a0d71fce1",
+        ]
+        for descriptor in ModelCatalog.whisperModels {
+            XCTAssertEqual(descriptor.revision, modelRevision, descriptor.folderName)
+            XCTAssertEqual(descriptor.tokenizerRevision, tokenizerRevisions[descriptor.id], descriptor.folderName)
+            XCTAssertEqual(descriptor.modelRepo, "argmaxinc/whisperkit-coreml", descriptor.folderName)
+        }
     }
 }
