@@ -123,4 +123,208 @@ final class ModelManagerTests: XCTestCase {
         try touch(folder.appendingPathComponent("a/b/d.bin.partial"))
         XCTAssertTrue(ModelLayout.containsPartialFiles(under: folder))
     }
+
+    // MARK: ModelManager (Task 25)
+
+    private var fakeSteps: FakeInstallSteps!
+    private var defaults: UserDefaults!
+
+    @MainActor
+    private func makeManager(pipelineRunning: Bool = false, availableBytes: Int64? = 50_000_000_000) -> ModelManager {
+        fakeSteps = FakeInstallSteps()
+        defaults = UserDefaults(suiteName: "ReVoxModelManagerTests-\(UUID().uuidString)")
+        let installer = ModelInstaller(layout: layout, steps: fakeSteps.steps(layout: layout), verifiedLoads: VerifiedLoadRecord(defaults: defaults))
+        return ModelManager(layout: layout, installer: installer, isPipelineRunning: { pipelineRunning }, availableBytes: { availableBytes })
+    }
+
+    @MainActor
+    func testInstallWhisperInstallsTheVADBundleWithIt() async {
+        let manager = makeManager()
+        XCTAssertEqual(manager.state(for: .whisper(.tiny)).phase, .idle)
+        manager.install(.whisper(.tiny))
+        await waitUntil("tiny installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
+        await waitUntil("vad installed") { manager.state(for: .vad).phase == .installed }
+        XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-tiny"])
+        XCTAssertEqual(fakeSteps.vadDownloads, 1)
+        XCTAssertEqual(manager.installedWhisper, [.tiny])
+        XCTAssertTrue(manager.vadInstalled)
+        XCTAssertFalse(manager.hasActiveDownload)
+        let ready = await manager.isWhisperReady(.tiny)
+        XCTAssertTrue(ready)
+    }
+
+    @MainActor
+    func testSecondWhisperInstallDoesNotRedownloadTheVAD() async {
+        let manager = makeManager()
+        manager.install(.whisper(.tiny))
+        await waitUntil { manager.state(for: .vad).phase == .installed }
+        manager.install(.whisper(.base))
+        await waitUntil { manager.state(for: .whisper(.base)).phase == .installed }
+        XCTAssertEqual(fakeSteps.vadDownloads, 1)
+    }
+
+    @MainActor
+    func testCancelReturnsTheRowToIdleAndKeepsOfflineModeRestored() async {
+        let manager = makeManager()
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase == .downloading(completedFiles: nil, totalFiles: nil) }
+        XCTAssertTrue(manager.hasActiveDownload)
+        manager.cancel(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase == .idle }
+        XCTAssertFalse(manager.hasActiveDownload)
+        XCTAssertEqual(fakeSteps.offlineModeHistory.last, true)
+        XCTAssertFalse(layout.isWhisperInstalled(.small))
+    }
+
+    @MainActor
+    func testFailedInstallShowsFailedAndRetryInstallsAgain() async {
+        let manager = makeManager()
+        fakeSteps.failVariantOnce = true
+        manager.install(.whisper(.base))
+        await waitUntil { if case .failed = manager.state(for: .whisper(.base)).phase { return true } else { return false } }
+        manager.install(.whisper(.base))
+        await waitUntil { manager.state(for: .whisper(.base)).phase == .installed }
+        XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-base", "openai_whisper-base"])
+    }
+
+    @MainActor
+    func testDeleteRefusedWhileRunning() throws {
+        let manager = makeManager(pipelineRunning: true)
+        XCTAssertThrowsError(try manager.delete(.whisper(.small), activeModel: .small)) { error in
+            XCTAssertEqual(error as? ModelManagerError, .pipelineRunning)
+        }
+    }
+
+    @MainActor
+    func testDeleteActiveModelSwitchesToTheSmallestInstalledModelOrNone() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        manager.refreshInstalledStates()
+        XCTAssertEqual(manager.installedWhisper, [.base, .small])
+
+        var switchedTo: [WhisperModelID?] = []
+        manager.onActiveModelDeleted = { switchedTo.append($0) }
+        try manager.delete(.whisper(.small), activeModel: .small)
+        XCTAssertEqual(switchedTo, [.base])
+        XCTAssertEqual(manager.state(for: .whisper(.small)).phase, .idle)
+        XCTAssertFalse(layout.isWhisperInstalled(.small))
+
+        try manager.delete(.whisper(.base), activeModel: .base)
+        XCTAssertEqual(switchedTo, [.base, nil])
+        XCTAssertEqual(manager.installedWhisper, [])
+    }
+
+    @MainActor
+    func testDeleteInactiveModelDoesNotTouchTheActiveOne() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        manager.refreshInstalledStates()
+        var switched = 0
+        manager.onActiveModelDeleted = { _ in switched += 1 }
+        try manager.delete(.whisper(.tiny), activeModel: .small)
+        XCTAssertEqual(switched, 0)
+        XCTAssertEqual(manager.installedWhisper, [.small])
+    }
+
+    @MainActor
+    func testDeleteVADClearsCacheThroughTheSeam() throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        manager.refreshInstalledStates()
+        XCTAssertTrue(manager.vadInstalled)
+        try manager.delete(.vad, activeModel: .small)
+        XCTAssertEqual(fakeSteps.vadDeletes, 1)
+        XCTAssertFalse(manager.vadInstalled)
+    }
+
+    @MainActor
+    func testFreeSpaceRule() {
+        let small: Int64 = 486_500_000
+        // refuse: available < expected * 1.25 + 200 MB
+        XCTAssertEqual(ModelManager.freeSpaceVerdict(expectedBytes: small, availableBytes: 500_000_000),
+                       .refuse(message: "Not enough space: needs about 0.8 GB, 0.5 GB free"))
+        // low remaining: room to install but less than 1 GB would remain
+        XCTAssertEqual(ModelManager.freeSpaceVerdict(expectedBytes: small, availableBytes: 1_200_000_000),
+                       .lowRemaining(remainingBytes: 713_500_000))
+        XCTAssertEqual(ModelManager.freeSpaceVerdict(expectedBytes: small, availableBytes: 5_000_000_000), .ok)
+        // unknown capacity never blocks an install
+        XCTAssertEqual(ModelManager.freeSpaceVerdict(expectedBytes: small, availableBytes: nil), .ok)
+        XCTAssertEqual(ModelManager.gigabytesText(1_528_000_000), "1.5 GB")
+    }
+
+    @MainActor
+    func testInstallRefusedWithoutSpaceNeverTouchesTheSeam() async {
+        let manager = makeManager(availableBytes: 100_000_000)
+        manager.install(.whisper(.medium))
+        await waitUntil { if case .failed = manager.state(for: .whisper(.medium)).phase { return true } else { return false } }
+        XCTAssertEqual(manager.state(for: .whisper(.medium)).phase, .failed("Not enough space: needs about 2.1 GB, 0.1 GB free"))
+        XCTAssertEqual(fakeSteps.variantDownloads, [])
+    }
+
+    // MARK: Backgrounding (Task 26)
+
+    @MainActor
+    private func makeManager(host: FakeInstallHost) -> ModelManager {
+        fakeSteps = FakeInstallSteps()
+        defaults = UserDefaults(suiteName: "ReVoxModelManagerTests-\(UUID().uuidString)")
+        let installer = ModelInstaller(layout: layout, steps: fakeSteps.steps(layout: layout), verifiedLoads: VerifiedLoadRecord(defaults: defaults))
+        return ModelManager(layout: layout, installer: installer, isPipelineRunning: { false }, availableBytes: { 50_000_000_000 }, host: host)
+    }
+
+    @MainActor
+    func testExpirationPausesDownloadAndForegroundResumes() async {
+        let host = FakeInstallHost()
+        let manager = makeManager(host: host)
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.tiny))
+        await waitUntil { manager.state(for: .whisper(.tiny)).phase == .downloading(completedFiles: nil, totalFiles: nil) }
+        XCTAssertEqual(host.begun.count, 1)
+        XCTAssertEqual(host.begun.first?.name, "ReVox model install whisper.tiny")
+
+        host.expireAll()
+        await waitUntil("paused") { manager.state(for: .whisper(.tiny)).phase == .paused }
+        XCTAssertEqual(manager.pausedKinds, [.whisper(.tiny)])
+        XCTAssertEqual(host.ended, [1])
+        XCTAssertFalse(manager.hasActiveDownload)
+
+        fakeSteps.holdDownloads = false
+        manager.applicationDidBecomeActive()
+        await waitUntil("resumed and installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
+        XCTAssertEqual(manager.pausedKinds, [])
+        XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-tiny", "openai_whisper-tiny"])
+        XCTAssertEqual(host.begun.count, 3, "tiny twice plus the automatic VAD install")
+    }
+
+    @MainActor
+    func testUserCancelAfterPauseDoesNotResume() async {
+        let host = FakeInstallHost()
+        let manager = makeManager(host: host)
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.tiny))
+        await waitUntil { manager.state(for: .whisper(.tiny)).phase == .downloading(completedFiles: nil, totalFiles: nil) }
+        host.expireAll()
+        await waitUntil { manager.state(for: .whisper(.tiny)).phase == .paused }
+        manager.cancel(.whisper(.tiny))
+        XCTAssertEqual(manager.state(for: .whisper(.tiny)).phase, .idle)
+        manager.applicationDidBecomeActive()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-tiny"])
+    }
+
+    @MainActor
+    func testIdleTimerDisabledOnlyWhileADownloadIsActive() async {
+        let host = FakeInstallHost()
+        let manager = makeManager(host: host)
+        XCTAssertFalse(host.isIdleTimerDisabled)
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.tiny))
+        await waitUntil { host.isIdleTimerDisabled }
+        fakeSteps.holdDownloads = false
+        await waitUntil { manager.state(for: .vad).phase == .installed }
+        XCTAssertFalse(host.isIdleTimerDisabled)
+        XCTAssertEqual(host.ended.count, host.begun.count, "every background task is ended")
+    }
 }
