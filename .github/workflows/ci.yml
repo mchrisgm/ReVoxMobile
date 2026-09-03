@@ -39,6 +39,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+      - name: Verify Info.plists and privacy manifests
+        run: python3 scripts/ci/check-plists.py
 
       - name: Select Xcode
         run: scripts/ci/select-xcode.sh "$XCODE_VERSION"
