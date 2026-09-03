@@ -69,10 +69,20 @@ final class ModelManager {
         states.values.contains { $0.phase.isActive }
     }
 
-    /// Re-reads the disk: installed rows become `.installed`, everything else not in flight becomes `.idle`.
-    func refreshInstalledStates() {
+    /// Re-reads the disk for the derived flags alone, leaving every row's phase untouched.
+    ///
+    /// A row reaches `.installed` from the installer's last progress report, which lands before the task is
+    /// finished and `refreshInstalledStates()` runs. Without this the screen can show a row as installed while
+    /// `vadInstalled` and `installedWhisper` still say otherwise — a window a test caught (run 33811704361) and
+    /// a viewer could catch too.
+    func refreshInstalledFlags() {
         installedWhisper = layout.installedWhisperModels()
         vadInstalled = layout.isVADInstalled()
+    }
+
+    /// Re-reads the disk: installed rows become `.installed`, everything else not in flight becomes `.idle`.
+    func refreshInstalledStates() {
+        refreshInstalledFlags()
         for id in WhisperModelID.allCases {
             let kind = DownloadKind.whisper(id)
             guard tasks[kind] == nil, !pausedKinds.contains(kind) else { continue }
@@ -138,6 +148,9 @@ final class ModelManager {
         let pump = Task { @MainActor [weak self] in
             for await state in reports {
                 self?.states[kind] = state
+                if state.phase == .installed {
+                    self?.refreshInstalledFlags()   // the row and the flags become true together
+                }
             }
         }
 
