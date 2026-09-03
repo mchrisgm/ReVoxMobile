@@ -50,7 +50,7 @@ struct InstallSteps: Sendable {
         },
         downloadVAD: { repoDirectory, progress in
             try await ModelHub.download(
-                FluidAudio.Repo.vad,
+                Repo.vad,
                 subdirectory: ModelCatalog.vad.subdirectory,
                 to: repoDirectory,
                 config: .default,
@@ -87,7 +87,7 @@ struct InstallSteps: Sendable {
             _ = try MLModel(contentsOf: bundle, configuration: configuration)
         },
         deleteVAD: { fluidModelsDirectory in
-            ModelHub.clearCache(for: FluidAudio.Repo.vad, directory: fluidModelsDirectory)
+            ModelHub.clearCache(for: Repo.vad, directory: fluidModelsDirectory)
         },
         setOfflineMode: { offline in
             ModelHub.offlineMode = offline
