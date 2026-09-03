@@ -2,8 +2,8 @@ import Foundation
 import ReVoxCore
 
 /// Owns the `ModelHub.offlineMode` transitions and the three install sequences of §6.9 (Whisper + tokenizer,
-/// VAD; pocket-tts is added in M4). Offline mode is `true` for the whole life of the process except while
-/// at least one user-initiated install is transferring.
+/// VAD, pocket-tts). Offline mode is `true` for the whole life of the process except while at least one
+/// user-initiated install is transferring.
 actor ModelInstaller {
     nonisolated let layout: ModelLayout
     private nonisolated let stepsForDeletion: InstallSteps
@@ -27,6 +27,10 @@ actor ModelInstaller {
 
     func isVADReady() -> Bool {
         layout.isVADInstalled() && verifiedLoads.isRecorded(.vad)
+    }
+
+    func isPocketTTSReady() -> Bool {
+        layout.isPocketTTSInstalled() && verifiedLoads.isRecorded(.pocketTTS)
     }
 
     // MARK: Installs
@@ -94,6 +98,37 @@ actor ModelInstaller {
         }
     }
 
+    /// pocket-tts (§6.5, §6.9): listing → downloading → compiling inside the offline-mode window, then the installed
+    /// check (which requires every offered voice file and `bos_before_voice.bin`), then the verified load.
+    func installPocketTTS(progress: @escaping @Sendable (ModelDownloadState) -> Void) async throws {
+        let expected = ModelCatalog.download(for: .pocketTTS).expectedBytes
+        progress(ModelDownloadState(phase: .listing, fraction: 0, bytesExpected: expected))
+        do {
+            try await withOnlineAccess {
+                try await steps.downloadPocketTTS(layout.fluidBaseDirectory) { fraction, phase in
+                    progress(ModelDownloadState.fluidAudio(fractionCompleted: fraction, phase: phase, bytesExpected: expected))
+                }
+            }
+            try Task.checkCancellation()
+            layout.reapplyBackupExclusion()
+            guard layout.isPocketTTSInstalled() else {
+                throw ModelInstallError.filesMissingAfterDownload(ModelLayout.pocketTTSFolder)
+            }
+            progress(ModelDownloadState(phase: .verifying, fraction: 1, bytesExpected: expected))
+            try await steps.verifyPocketTTS(layout.fluidBaseDirectory)
+            verifiedLoads.record(.pocketTTS)
+            layout.reapplyBackupExclusion()
+            progress(ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: expected))
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch {
+            progress(ModelDownloadState(phase: .failed(String(describing: error)), fraction: nil, bytesExpected: expected))
+            throw error
+        }
+    }
+
     // MARK: Delete (§6.9)
 
     func deleteWhisper(_ id: WhisperModelID) throws {
@@ -102,6 +137,10 @@ actor ModelInstaller {
 
     func deleteVAD() {
         deleteVADSync()
+    }
+
+    func deletePocketTTS() {
+        deletePocketTTSSync()
     }
 
     // MARK: Offline-mode window
@@ -142,15 +181,23 @@ extension ModelInstaller {
         stepsForDeletion.deleteVAD(layout.fluidModelsDirectory)
         verifiedLoadsForDeletion.clear(.vad)
     }
+
+    nonisolated func deletePocketTTSSync() {
+        stepsForDeletion.deletePocketTTS(layout.fluidModelsDirectory)
+        verifiedLoadsForDeletion.clear(.pocketTTS)
+    }
 }
 
 enum ModelInstallError: Error, Equatable, CustomStringConvertible {
     case filesMissingAfterDownload(String)
+    case stepUnavailable(String)
 
     var description: String {
         switch self {
         case .filesMissingAfterDownload(let name):
             return "Download of \(name) finished but required files are missing; try again"
+        case .stepUnavailable(let step):
+            return "Install step \(step) is not configured in this build"
         }
     }
 }

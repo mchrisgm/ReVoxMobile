@@ -38,6 +38,7 @@ final class ModelManager {
     private(set) var states: [DownloadKind: ModelDownloadState] = [:]
     private(set) var installedWhisper: [WhisperModelID] = []
     private(set) var vadInstalled = false
+    private(set) var pocketTTSInstalled = false
     /// Called after the active Whisper model was deleted with the smallest installed model, or nil.
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
 
@@ -78,6 +79,7 @@ final class ModelManager {
     func refreshInstalledFlags() {
         installedWhisper = layout.installedWhisperModels()
         vadInstalled = layout.isVADInstalled()
+        pocketTTSInstalled = layout.isPocketTTSInstalled()
     }
 
     /// Re-reads the disk: installed rows become `.installed`, everything else not in flight becomes `.idle`.
@@ -90,6 +92,9 @@ final class ModelManager {
         }
         if tasks[.vad] == nil, !pausedKinds.contains(.vad) {
             setState(.vad, phase: vadInstalled ? .installed : .idle, fraction: vadInstalled ? 1 : nil)
+        }
+        if tasks[.pocketTTS] == nil, !pausedKinds.contains(.pocketTTS) {
+            setState(.pocketTTS, phase: pocketTTSInstalled ? .installed : .idle, fraction: pocketTTSInstalled ? 1 : nil)
         }
     }
 
@@ -166,7 +171,7 @@ final class ModelManager {
             case .vad:
                 try await installer.installVAD(progress: report)
             case .pocketTTS:
-                break   // M4
+                try await installer.installPocketTTS(progress: report)
             }
             await drainReports()
             finishTask(for: kind, cancelled: false)
@@ -217,7 +222,8 @@ final class ModelManager {
             installer.deleteVADSync()
             refreshInstalledStates()
         case .pocketTTS:
-            break   // M4
+            installer.deletePocketTTSSync()
+            refreshInstalledStates()
         }
     }
 
@@ -229,6 +235,10 @@ final class ModelManager {
 
     func isVADReady() async -> Bool {
         await installer.isVADReady()
+    }
+
+    func isPocketTTSReady() async -> Bool {
+        await installer.isPocketTTSReady()
     }
 
     // MARK: Backgrounding (§6.9)

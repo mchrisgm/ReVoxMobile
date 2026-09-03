@@ -8,6 +8,8 @@ final class InstallRecorder: @unchecked Sendable {
     private(set) var events: [String] = []
     var failVariant = false
     var vadFractions: [Double] = [0, 0.5, 1]
+    /// When set, the fabricated pocket-tts pack omits this voice's `.safetensors` file (the installed check must then fail).
+    var pocketTTSOmitsVoice: String?
 
     func note(_ event: String) {
         lock.lock(); events.append(event); lock.unlock()
@@ -61,6 +63,20 @@ final class ModelInstallerTests: XCTestCase {
         }
     }
 
+    static func fabricatePocketTTSFiles(in layout: ModelLayout, omittingVoice omitted: String?) throws {
+        let folder = layout.pocketTTSLanguageFolder
+        for bundle in ModelLayout.pocketTTSBundles {
+            try touch(folder.appendingPathComponent(bundle).appendingPathComponent(ModelLayout.compiledMarker))
+        }
+        let constants = folder.appendingPathComponent(ModelLayout.pocketTTSConstantsFolder)
+        for file in ModelLayout.pocketTTSConstantFiles {
+            try touch(constants.appendingPathComponent(file))
+        }
+        for voice in ModelCatalog.pocketTTS.offeredVoices where voice != omitted {
+            try touch(constants.appendingPathComponent(ModelLayout.pocketTTSVoiceFile(voice)))
+        }
+    }
+
     private func fabricateWhisperFiles(_ descriptor: WhisperModelDescriptor) throws {
         try Self.fabricateWhisperFiles(descriptor, in: layout)
     }
@@ -103,7 +119,22 @@ final class ModelInstallerTests: XCTestCase {
             verifyWhisper: { descriptor, _ in recorder.note("verifyWhisper:\(descriptor.folderName)") },
             verifyVAD: { _ in recorder.note("verifyVAD") },
             deleteVAD: { _ in recorder.note("deleteVAD") },
-            setOfflineMode: { offline in recorder.note(offline ? "offline" : "online") }
+            setOfflineMode: { offline in recorder.note(offline ? "offline" : "online") },
+            downloadPocketTTS: { fluidBaseDirectory, progress in
+                recorder.note("pocketTTS")
+                progress(0, .listing)
+                progress(0.5, .downloading(completedFiles: 3, totalFiles: 6))
+                // The production downloader appends `Models` to the base it is handed; the fake does the same
+                // by fabricating through a layout, so the paths the installed check reads are the real ones.
+                XCTAssertEqual(fluidBaseDirectory, layout.fluidBaseDirectory)
+                try Self.fabricatePocketTTSFiles(in: layout, omittingVoice: recorder.pocketTTSOmitsVoice)
+                progress(1, .compiling("flowlm_step_ane.mlmodelc"))
+            },
+            verifyPocketTTS: { _ in recorder.note("verifyPocketTTS") },
+            deletePocketTTS: { directory in
+                recorder.note("deletePocketTTS")
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(ModelLayout.pocketTTSFolder))
+            }
         )
     }
 
@@ -223,6 +254,96 @@ final class ModelInstallerTests: XCTestCase {
         let ready = await installer.isWhisperReady(.small)
         XCTAssertFalse(ready)
     }
+
+    // MARK: pocket-tts (Task 45, §6.5, §6.9)
+
+    func testPocketTTSInstallSequenceReportsPhasesAndBecomesReady() async throws {
+        let installer = makeInstaller()
+        let states = StateCollector()
+        try await installer.installPocketTTS { states.append($0) }
+
+        XCTAssertEqual(recorder.events, ["online", "pocketTTS", "offline", "verifyPocketTTS"])
+        let phases = states.all.map(\.phase)
+        XCTAssertEqual(phases.first, .listing)
+        XCTAssertTrue(phases.contains(.downloading(completedFiles: 3, totalFiles: 6)))
+        XCTAssertTrue(phases.contains(.compiling("flowlm_step_ane.mlmodelc")))
+        XCTAssertTrue(phases.contains(.verifying))
+        XCTAssertEqual(phases.last, .installed)
+        XCTAssertEqual(states.all.first?.bytesExpected, ModelCatalog.download(for: .pocketTTS).expectedBytes)
+        for state in states.all {
+            XCTAssertNotNil(state.fraction, "the pocket-tts bar is determinate from the first callback")
+        }
+        let ready = await installer.isPocketTTSReady()
+        XCTAssertTrue(ready)
+        XCTAssertTrue(layout.isPocketTTSInstalled())
+        XCTAssertTrue(VerifiedLoadRecord(defaults: defaults).isRecorded(.pocketTTS))
+    }
+
+    func testPocketTTSInstallFailsWhenAVoiceFileIsMissingAfterDownload() async {
+        recorder.pocketTTSOmitsVoice = "cosette"
+        let installer = makeInstaller()
+        let states = StateCollector()
+        do {
+            try await installer.installPocketTTS { states.append($0) }
+            XCTFail("expected filesMissingAfterDownload")
+        } catch let error as ModelInstallError {
+            XCTAssertEqual(error, .filesMissingAfterDownload(ModelLayout.pocketTTSFolder))
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        XCTAssertEqual(recorder.events, ["online", "pocketTTS", "offline"], "no verified load without the full file set")
+        if case .failed(let message) = states.all.last?.phase {
+            XCTAssertTrue(message.contains(ModelLayout.pocketTTSFolder))
+        } else {
+            XCTFail("last state should be .failed, got \(String(describing: states.all.last))")
+        }
+        let ready = await installer.isPocketTTSReady()
+        XCTAssertFalse(ready)
+    }
+
+    func testPocketTTSReadyRequiresInstalledFilesAndARecordedVerifiedLoad() async throws {
+        let installer = makeInstaller()
+        try Self.fabricatePocketTTSFiles(in: layout, omittingVoice: nil)
+        var ready = await installer.isPocketTTSReady()
+        XCTAssertFalse(ready, "installed but never verified")
+        VerifiedLoadRecord(defaults: defaults).record(.pocketTTS)
+        ready = await installer.isPocketTTSReady()
+        XCTAssertTrue(ready)
+        XCTAssertEqual(VerifiedLoadRecord.entryKey(for: .pocketTTS), "pocketTTS:\(LibraryVersions.fluidAudio)")
+    }
+
+    func testDeletePocketTTSClearsTheCacheAndTheRecord() async throws {
+        let installer = makeInstaller()
+        try await installer.installPocketTTS { _ in }
+        await installer.deletePocketTTS()
+        XCTAssertEqual(recorder.events.last, "deletePocketTTS")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: layout.pocketTTSLanguageFolder.path))
+        XCTAssertFalse(VerifiedLoadRecord(defaults: defaults).isRecorded(.pocketTTS))
+        let ready = await installer.isPocketTTSReady()
+        XCTAssertFalse(ready)
+    }
+
+    func testDefaultPocketTTSStepsRefuseInsteadOfSilentlySucceeding() async {
+        let bare = InstallSteps(
+            downloadWhisperVariant: { _, _, _ in throw URLError(.notConnectedToInternet) },
+            downloadTokenizer: { _, _, _ in throw URLError(.notConnectedToInternet) },
+            downloadVAD: { _, _ in throw URLError(.notConnectedToInternet) },
+            verifyWhisper: { _, _ in },
+            verifyVAD: { _ in },
+            deleteVAD: { _ in },
+            setOfflineMode: { _ in }
+        )
+        let installer = ModelInstaller(layout: layout, steps: bare, verifiedLoads: VerifiedLoadRecord(defaults: defaults))
+        do {
+            try await installer.installPocketTTS { _ in }
+            XCTFail("the default closure must throw")
+        } catch let error as ModelInstallError {
+            XCTAssertEqual(error, .stepUnavailable("downloadPocketTTS"))
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+
 }
 
 /// Thread-safe collector for the progress closure, which the installer may call off the main actor.
