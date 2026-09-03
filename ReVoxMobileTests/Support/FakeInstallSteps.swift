@@ -26,8 +26,33 @@ final class FakeInstallSteps: @unchecked Sendable {
         }
     }
 
-    /// Each ancestor of `url`, innermost first, as `name(exists,dir)`: a create that fails with ENOTDIR names
-    /// the ancestor in its error but not what that ancestor actually is.
+    /// Creates every missing component of `directory` one at a time with the path-based API.
+    ///
+    /// `createDirectory(at:withIntermediateDirectories:)` fails on the simulator with ENOTDIR naming the model
+    /// root, while `fileExists` reports that same root as an existing directory and the folders below it as
+    /// missing (run 33777714285). Creating each component separately avoids whatever that URL-based call does
+    /// with the path, and names the exact component if one is genuinely rejected.
+    static func makeDirectory(_ directory: URL) throws {
+        var components: [String] = []
+        var probe = directory
+        while probe.path != "/", !FileManager.default.fileExists(atPath: probe.path) {
+            components.append(probe.path)
+            probe = probe.deletingLastPathComponent()
+        }
+        for path in components.reversed() {
+            do {
+                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false, attributes: nil)
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
+                continue   // another task created it first
+            } catch {
+                throw NSError(domain: "FakeInstallSteps", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "mkdir \(path) failed: \(error); ancestors: \(ancestorReport(URL(fileURLWithPath: path)))",
+                ])
+            }
+        }
+    }
+
+    /// Each ancestor of `url`, innermost first, as `name(exists,dir)`.
     static func ancestorReport(_ url: URL) -> String {
         var parts: [String] = []
         var probe = url.deletingLastPathComponent()
@@ -41,20 +66,14 @@ final class FakeInstallSteps: @unchecked Sendable {
     }
 
     /// Errors name the step and the path: a bare Cocoa write error names only the volume's top folder, which
-    /// is not enough to tell which fabricated file failed (run 33774147954).
+    /// is not enough to tell which fabricated file failed.
     static func touch(_ url: URL) throws {
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        } catch {
-            throw NSError(domain: "FakeInstallSteps", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "createDirectory \(url.deletingLastPathComponent().path) failed: \(error); ancestors: \(ancestorReport(url))",
-            ])
-        }
+        try makeDirectory(url.deletingLastPathComponent())
         do {
             try Data([0]).write(to: url)
         } catch {
             throw NSError(domain: "FakeInstallSteps", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "write \(url.path) failed: \(error)",
+                NSLocalizedDescriptionKey: "write \(url.path) failed: \(error); ancestors: \(ancestorReport(url))",
             ])
         }
     }

@@ -124,6 +124,34 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(ModelLayout.containsPartialFiles(under: folder))
     }
 
+    // MARK: The simulator's filesystem, isolated (run 33777714285)
+
+    /// The VAD folder is creatable on its own.
+    func testVADDirectoryIsCreatableInAFreshRoot() throws {
+        try FileManager.default.createDirectory(at: layout.vadBundle, withIntermediateDirectories: true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: layout.vadBundle.path))
+    }
+
+    /// And after a Whisper tree exists beside it. `models` (WhisperKit) and `Models` (FluidAudio) differ only
+    /// by case, so this is where a case-insensitive volume would show itself.
+    func testVADDirectoryIsCreatableAfterAWhisperTreeExists() throws {
+        try fabricateWhisper(.tiny)
+        let lower = layout.root.appendingPathComponent("models").path
+        let upper = layout.root.appendingPathComponent("Models").path
+        let state = "models=\(FileManager.default.fileExists(atPath: lower)) Models=\(FileManager.default.fileExists(atPath: upper))"
+        do {
+            try FileManager.default.createDirectory(at: layout.vadBundle, withIntermediateDirectories: true)
+        } catch {
+            XCTFail("createDirectory(at:) after a whisper tree: \(error); \(state)")
+        }
+        do {
+            try FakeInstallSteps.makeDirectory(layout.vadBundle)
+        } catch {
+            XCTFail("component-by-component after a whisper tree: \(error); \(state)")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: layout.vadBundle.path), state)
+    }
+
     // MARK: ModelManager (Task 25)
 
     private var fakeSteps: FakeInstallSteps!
