@@ -29,3 +29,6 @@ ci/ExportOptions.generated.plist
 
 # Python
 __pycache__/
+
+# Harness-created worktrees for parallel agents (transient, never committed)
+.claude/worktrees/

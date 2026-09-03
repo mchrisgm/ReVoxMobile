@@ -30,6 +30,8 @@ jobs:
       - name: swift test
         working-directory: ReVoxCore
         run: swift test
+      - name: Every ported constant is asserted
+        run: bash scripts/ci/check-constant-coverage.sh
 
   ios-simulator:
     name: App and extension (iOS simulator)
@@ -40,6 +42,10 @@ jobs:
 
       - name: Select Xcode
         run: scripts/ci/select-xcode.sh "$XCODE_VERSION"
+
+      - name: ReVoxCore tests on macOS (Apple Foundation)
+        working-directory: ReVoxCore
+        run: swift test
 
       - name: Install XcodeGen and xcbeautify
         run: brew install xcodegen xcbeautify
@@ -84,6 +90,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee xcodebuild.log | xcbeautify --renderer github-actions
+
+      # The bare target name appears while xcodebuild merely *builds* the package test bundle (the scheme's
+      # Testables section forces that), so grep for the XCTest run banner instead: `tee` captures raw
+      # xcodebuild output before xcbeautify, and only an executed suite prints `Test Suite 'ReVoxCoreTests…`.
+      - name: Core tests ran on the simulator
+        run: |
+          grep -q "Test Suite 'ReVoxCoreTests" xcodebuild.log || {
+            echo "::error::xcodebuild.log has no ReVoxCoreTests test suite; the package test target did not run on the simulator"
+            exit 1
+          }
 
       - name: Upload build log
         if: always()

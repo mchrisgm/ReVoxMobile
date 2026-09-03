@@ -57,7 +57,7 @@ Every task's requirements implicitly include this section. Values are copied fro
   | `.tiny` | `openai_whisper-tiny` | `76_600_000` | `openai/whisper-tiny` | nil |
   | `.base` | `openai_whisper-base` | `146_700_000` | `openai/whisper-base` | nil |
   | `.small` (`defaultWhisperModel`) | `openai_whisper-small` | `486_500_000` | `openai/whisper-small` | nil |
-  | `.medium` | `openai_whisper-medium` | `1_528_000_000` | `openai/whisper-medium` | nil |
+  | `.medium` | `openai_whisper-medium` | `1_528_000_000` | `openai/whisper-medium` | `"Long load time and heat on eligible devices"` (catalog data only; §8.3 renders `note` for large-v3 alone, and the medium heat caption comes from `DeviceRecommendation.warnings`) |
   | `.largeV3` (`rawValue "large-v3"`) | `openai_whisper-large-v3_947MB` | `948_000_000` | `openai/whisper-large-v3` | `"Compressed weights Argmax ships for iPhone"` |
 
 - Every `WhisperModelDescriptor.revision` and `.tokenizerRevision` is a 40-character lowercase hex commit SHA, never `"main"`; no folder name contains `turbo` or `distil`; the three tokenizer files (`tokenizer.json`, `tokenizer_config.json`, `config.json`) are part of every Whisper install (§6.9).
