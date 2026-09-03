@@ -26,9 +26,23 @@ final class FakeInstallSteps: @unchecked Sendable {
         }
     }
 
+    /// Errors name the step and the path: a bare Cocoa write error names only the volume's top folder, which
+    /// is not enough to tell which fabricated file failed (run 33774147954).
     static func touch(_ url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data([0]).write(to: url)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            throw NSError(domain: "FakeInstallSteps", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "createDirectory \(url.deletingLastPathComponent().path) failed: \(error)",
+            ])
+        }
+        do {
+            try Data([0]).write(to: url)
+        } catch {
+            throw NSError(domain: "FakeInstallSteps", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "write \(url.path) failed: \(error)",
+            ])
+        }
     }
 
     static func fabricateWhisper(_ id: WhisperModelID, in layout: ModelLayout) throws {

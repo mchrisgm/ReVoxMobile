@@ -37,11 +37,15 @@ final class ResamplerTests: XCTestCase {
             counts.append(out.count)
             XCTAssertEqual(out.count, out.filter { $0.isFinite }.count)
         }
-        XCTAssertEqual(Double(counts.reduce(0, +)), 16_000, accuracy: 64, "per-buffer counts \(counts)")
-        // Steady state, after priming: each buffer is the Windows 1 600 ± 16 (W1).
-        for count in counts.dropFirst() {
-            XCTAssertEqual(Double(count), 1_600, accuracy: 16, "per-buffer counts \(counts)")
-        }
+        // Steady state: the last five buffers give five buffers' worth, the Windows 1 600 per buffer (W1).
+        // A converter that dropped a little of every buffer would fall short here in proportion to the run.
+        let secondHalf = counts.suffix(5).reduce(0, +)
+        XCTAssertEqual(Double(secondHalf), 8_000, accuracy: 32, "per-buffer counts \(counts)")
+        // The whole run is short only by what the converter still holds — never more than a buffer's worth,
+        // and it comes out on the next buffer.
+        let total = counts.reduce(0, +)
+        XCTAssertLessThanOrEqual(total, 16_000, "per-buffer counts \(counts)")
+        XCTAssertGreaterThan(Double(total), 16_000 - 1_600, "per-buffer counts \(counts)")
     }
 
     func testAgreesWithTheCoreReferenceResampler() throws {

@@ -93,9 +93,11 @@ enum PCMConverterDriver {
                 throw conversionError ?? PCMConversionError.conversionFailed
             }
             samples.append(contentsOf: output.monoFloatSamples)
-            // `.inputRanDry` and `.endOfStream` are both the end; the frame-count guard stops a `.haveData`
-            // that produced nothing from spinning.
-            if status != .haveData || output.frameLength == 0 {
+            // One call emits at most `capacity` frames, and `.inputRanDry` can come back with the buffer
+            // full and more still queued inside the converter (measured, run 33774147954: 1 664 frames — the
+            // capacity — per 4 800-frame buffer instead of 1 600). So the loop ends on the first call that
+            // produces nothing, not on the first call that is not `.haveData`.
+            if output.frameLength == 0 || status == .endOfStream {
                 break
             }
         }
