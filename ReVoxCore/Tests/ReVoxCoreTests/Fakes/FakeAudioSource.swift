@@ -12,6 +12,8 @@ final class FakeAudioSource: AudioSource, @unchecked Sendable {
     private var position: Int64 = 0
     private var framesCallCount = 0
     private var startedModes: [CaptureMode] = []
+    /// Set by the ordering test; see `StartOrderLog`.
+    nonisolated(unsafe) var startOrder: StartOrderLog?
     private var stopCount = 0
 
     var framesCalls: Int { synced { framesCallCount } }
@@ -33,6 +35,7 @@ final class FakeAudioSource: AudioSource, @unchecked Sendable {
     }
 
     func start(_ mode: CaptureMode) async throws {
+        startOrder?.record("source")
         synced { startedModes.append(mode) }
     }
 

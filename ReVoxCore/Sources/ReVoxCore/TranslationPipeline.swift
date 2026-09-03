@@ -106,16 +106,22 @@ actor PipelineActor {
         }
         self.player = player
         await player.setMuted(isMuted)
-        do {
-            try await player.start()
-        } catch {
-            fail(error, run: run)
-            return
-        }
+
+        // The source starts before the player, and the order is load-bearing rather than incidental. On iOS the
+        // source's `start` installs the capture tap on the audio engine's input node, and the player's `start`
+        // starts that engine: an engine started with no tap on its input never pulls the microphone, and adding
+        // the tap afterwards does not make it begin. Build 8 recorded silence on device for exactly this reason.
         let frames = deps.source.frames()              // fresh stream for this run, before start(_:)
         do {
             try await deps.source.start(configuration.captureMode)
         } catch {
+            fail(error, run: run)
+            return
+        }
+        do {
+            try await player.start()
+        } catch {
+            await deps.source.stop()                   // the tap is installed; do not leave it behind
             fail(error, run: run)
             return
         }

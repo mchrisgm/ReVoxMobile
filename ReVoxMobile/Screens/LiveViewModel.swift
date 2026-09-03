@@ -87,9 +87,23 @@ final class LiveViewModel {
         guard state == .idle || state == .error else { return }
         banner = nil
         sessionStatus = nil
-        if captureMode == .microphone, permission.status() == .denied {
-            banner = .permissionDenied
-            return
+        // The answer must be known before anything activates the audio session: a `.playAndRecord` session
+        // activated while permission is undetermined comes up with a dead input, and granting permission after
+        // the fact does not revive it (observed on device, build 8). Building the pipeline is what configures
+        // and activates the session, so the prompt happens strictly before that.
+        if captureMode == .microphone {
+            switch permission.status() {
+            case .denied:
+                banner = .permissionDenied
+                return
+            case .undetermined:
+                guard await permission.request() else {
+                    banner = .permissionDenied
+                    return
+                }
+            case .granted:
+                break
+            }
         }
         let model = settings.settings.whisperModel
         let ready = await modelReady(model)

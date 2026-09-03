@@ -20,6 +20,39 @@ final class TranslationPipelineTests: XCTestCase {
         var player: FakePlayer? { players.value.first }
     }
 
+    /// The capture source must be started before the player.
+    ///
+    /// On iOS the source's `start` installs the tap on the audio engine's input node and the player's `start`
+    /// starts that engine. An engine started with no tap on its input never pulls the microphone, and installing
+    /// the tap afterwards does not make it start — the app shipped in build 8 recorded silence for exactly this
+    /// reason. The order is a contract of the pipeline, not an accident of the adapters.
+    func testSourceIsStartedBeforeThePlayerSoTheTapPrecedesTheEngine() async {
+        let order = StartOrderLog()
+        let source = FakeAudioSource()
+        source.startOrder = order
+        let players = LockedBox<[FakePlayer]>([])
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: FakeTranslator(),
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in
+                let player = FakePlayer(onSpeaking: onSpeaking, startOrder: order)
+                players.update { $0.append(player) }
+                return player
+            },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, _ in FakeSegmenter() }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+
+        await pipeline.start(PipelineConfiguration(captureMode: .microphone, preset: .balanced))
+        defer { Task { await pipeline.stop() } }
+
+        XCTAssertEqual(order.recorded, ["source", "player"],
+                       "the tap must be installed before the engine is started")
+    }
+
     private func makeHarness(translator: FakeTranslator = FakeTranslator(), realSegmenter: Bool = false) -> Harness {
         let source = FakeAudioSource()
         let vad = EnergyVAD()

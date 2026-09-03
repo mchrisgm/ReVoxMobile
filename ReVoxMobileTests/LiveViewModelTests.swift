@@ -33,6 +33,54 @@ final class LiveViewModelTests: XCTestCase {
 
     private var first: FakeLivePipeline { pipelines.value[0] }
 
+    /// Microphone permission is requested before the pipeline is built.
+    ///
+    /// Building the pipeline configures and activates the audio session. Activating a `.playAndRecord` session
+    /// while permission is still undetermined gives a live session with a dead input, and granting permission
+    /// afterwards does not revive it — the microphone stays silent for the whole run (observed on device,
+    /// build 8). So the prompt has to come first, and the session is only activated once the answer is known.
+    func testPermissionIsRequestedBeforeThePipelineIsBuilt() async {
+        let events = LockedBox<[String]>([])
+        let permission = MicrophonePermission(
+            status: { .undetermined },
+            request: { events.mutate { $0.append("request") }; return true }
+        )
+        let pipelines = self.pipelines!
+        let model = LiveViewModel(
+            settings: store, mute: PlaybackMute(), permission: permission,
+            modelReady: { _ in true },
+            supplier: { _, _ in
+                events.mutate { $0.append("build") }
+                let pipeline = FakeLivePipeline()
+                pipelines.mutate { $0.append(pipeline) }
+                return pipeline
+            }
+        )
+
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+
+        XCTAssertEqual(events.value, ["request", "build"],
+                       "the session must not be activated before the microphone answer is known")
+    }
+
+    /// A refusal at the prompt is the same outcome as a standing denial: a banner, and nothing started.
+    func testDenyingThePromptShowsTheBannerAndBuildsNothing() async {
+        let built = LockedBox<Int>(0)
+        let model = LiveViewModel(
+            settings: store, mute: PlaybackMute(),
+            permission: MicrophonePermission(status: { .undetermined }, request: { false }),
+            modelReady: { _ in true },
+            supplier: { _, _ in built.mutate { $0 += 1 }; return FakeLivePipeline() }
+        )
+
+        await model.start()
+
+        XCTAssertEqual(model.banner, .permissionDenied)
+        XCTAssertEqual(built.value, 0)
+        XCTAssertEqual(model.state, .idle)
+    }
+
     func testStartGoesPreparingThenRunning() async {
         let model = makeModel()
         await model.start()

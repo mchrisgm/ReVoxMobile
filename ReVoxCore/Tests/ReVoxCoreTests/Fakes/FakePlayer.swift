@@ -5,16 +5,19 @@ import Foundation
 /// like `players[0].on_speaking(True)`.
 actor FakePlayer: AudioPlayer {
     nonisolated let onSpeaking: SpeakingCallback
+    nonisolated let startOrder: StartOrderLog?
     private(set) var enqueued: [AudioClip] = []
     private(set) var muted: Bool?
     private(set) var started = false
     private(set) var stopped = false
 
-    init(onSpeaking: @escaping SpeakingCallback) {
+    init(onSpeaking: @escaping SpeakingCallback, startOrder: StartOrderLog? = nil) {
         self.onSpeaking = onSpeaking
+        self.startOrder = startOrder
     }
 
     func start() async throws {
+        startOrder?.record("player")
         started = true
     }
 
