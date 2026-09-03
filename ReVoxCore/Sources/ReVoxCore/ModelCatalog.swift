@@ -60,7 +60,7 @@ public struct LicenceNotice: Sendable, Equatable, Identifiable {
     public let attribution: String?
 }
 
-public enum DownloadKind: Sendable, Equatable {
+public enum DownloadKind: Sendable, Equatable, Hashable {
     case whisper(WhisperModelID), vad, pocketTTS
 }
 

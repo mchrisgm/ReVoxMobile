@@ -4,6 +4,6 @@ import ReVoxCore
 
 final class SmokeTests: XCTestCase {
     func testCoreIsLinkedIntoTheApp() {
-        XCTAssertEqual(ReVoxCore.sampleRate, 16_000)
+        XCTAssertEqual(AudioFormat.pipelineSampleRate, 16_000)
     }
 }
