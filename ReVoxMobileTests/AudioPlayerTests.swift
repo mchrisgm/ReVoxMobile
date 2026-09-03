@@ -120,7 +120,10 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertGreaterThan(first.count, 0)
         XCTAssertLessThanOrEqual(first.count + second.count, 3_200, "counts \(first.count), \(second.count)")
         XCTAssertGreaterThan(Double(first.count + second.count), 3_200 - 1_600, "counts \(first.count), \(second.count)")
-        XCTAssertEqual(Double(second.count), 1_600, accuracy: 32, "steady state after priming: \(first.count), \(second.count)")
+        // Two buffers are not steady state: the converter is still catching up on its priming and emits up to
+        // the output capacity per call. `ResamplerTests.testStereo48kTo16k` asserts the steady state over ten.
+        XCTAssertLessThanOrEqual(second.count, Int(PCMConverterDriver.outputCapacity(inputFrames: 4_800, inputRate: 48_000, outputRate: 16_000)),
+                                 "counts \(first.count), \(second.count)")
 
         let oneShot = try XCTUnwrap(AVAudioConverter(from: input.format, to: PCMConverterDriver.pipelineFormat))
         let flushed = try PCMConverterDriver.convertToMono(input, with: oneShot, endOfStream: true)
