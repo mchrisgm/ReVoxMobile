@@ -278,6 +278,17 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertEqual(installed, SystemVoiceOption.sorted(installed))
     }
 
+    /// M10: the download row names the voices from the catalog, so a catalog change can never leave a stale list.
+    func testTheDownloadRowNamesTheCatalogVoices() {
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "azelma", "cosette", "javert"]), "Voices alba, azelma, cosette and javert.")
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "javert"]), "Voices alba and javert.")
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba"]), "Voice alba.")
+        XCTAssertEqual(VoicesViewModel.voiceListText([]), "No voices.")
+        XCTAssertEqual(VoicesViewModel.downloadRowDescription,
+                       "Voices alba, azelma, cosette and javert. Downloaded on demand; the system voice is used until then.")
+        XCTAssertTrue(VoicesViewModel.downloadRowDescription.hasPrefix(VoicesViewModel.voiceListText(ModelCatalog.pocketTTS.offeredVoices)))
+    }
+
     func testTexts() {
         XCTAssertEqual(VoicesViewModel.sampleText, "This is ReVox.")
         XCTAssertEqual(VoicesViewModel.engineFooterText, "ReVox uses the system voice until pocket-tts is downloaded, and falls back to it automatically if pocket-tts fails.")

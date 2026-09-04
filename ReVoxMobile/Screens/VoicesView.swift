@@ -159,7 +159,7 @@ private struct PocketTTSDownloadRow: View {
                 Spacer()
                 Text(VoicesViewModel.pocketTTSSizeText).font(.subheadline).foregroundStyle(.secondary)
             }
-            Text("Voices alba, azelma, cosette and javert. Downloaded on demand; the system voice is used until then.")
+            Text(VoicesViewModel.downloadRowDescription)
                 .font(.caption).foregroundStyle(.secondary)
             stateView
         }

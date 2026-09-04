@@ -19,6 +19,20 @@ final class VoicesViewModel {
     static var pocketTTSSizeText: String { ModelsViewModel.sizeText(ModelCatalog.pocketTTS.approximateBytes) }
     static var confirmDeleteTitle: String { "Delete \(pocketTTSName) (\(pocketTTSSizeText))?" }
 
+    /// M10: the not-installed row's caption, with the voice list read from the catalog rather than typed in.
+    static var downloadRowDescription: String {
+        "\(voiceListText(ModelCatalog.pocketTTS.offeredVoices)) Downloaded on demand; the system voice is used until then."
+    }
+
+    /// "Voices alba, azelma, cosette and javert." for the catalog's list; degrades sensibly for one or none.
+    static func voiceListText(_ voices: [String]) -> String {
+        switch voices.count {
+        case 0: return "No voices."
+        case 1: return "Voice \(voices[0])."
+        default: return "Voices \(voices.dropLast().joined(separator: ", ")) and \(voices[voices.count - 1])."
+        }
+    }
+
     private let manager: ModelManager
     private let settings: SettingsStore
     private let memoryTierGB: Int
