@@ -8,6 +8,7 @@ import SwiftUI
 /// State is never colour alone (§8.8): an "on" pill also says so in its title and swaps to a filled symbol.
 struct LiveControlPill: View {
     static let minimumHeight: CGFloat = 44
+    static let horizontalPadding: CGFloat = 10
     static let lockedOpacity = 0.45
 
     let systemImage: String
@@ -33,7 +34,7 @@ struct LiveControlPill: View {
         }
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Self.horizontalPadding)
         .frame(minHeight: Self.minimumHeight)
         .background(isOn ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground), in: Capsule())
         .overlay(Capsule().strokeBorder(isOn ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1))

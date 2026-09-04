@@ -25,7 +25,7 @@ final class OnboardingScreenshotTests: XCTestCase {
     }
 
     @discardableResult
-    func capture<V: View>(_ name: String, _ view: V) throws -> URL {
+    func capture<V: View>(_ name: String, settle: TimeInterval = 0.25, _ view: V) throws -> URL {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
         let window = ScreenshotTests.makeWindow()
@@ -41,7 +41,7 @@ final class OnboardingScreenshotTests: XCTestCase {
         controller.view.frame = window.bounds
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.25))   // one turn for async text and symbol work
+        RunLoop.current.run(until: Date().addingTimeInterval(settle))   // one turn for async text and symbol work
 
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 2
@@ -65,7 +65,9 @@ final class OnboardingScreenshotTests: XCTestCase {
 
     func testCapturesTheWelcomeAndTranscriptPages() throws {
         let model = OnboardingViewModel(defaults: defaults)
-        try capture("onboarding-welcome", OnboardingView(model: model))
+        // The welcome card's lines land one after another (`OnboardingPointsList.stagger` plus a 0.4 s spring), so
+        // this capture waits for the last one; at 0.25 s CI's image showed them mid-fade (run 106).
+        try capture("onboarding-welcome", settle: 1.5, OnboardingView(model: model))
 
         // The transcript demo mid-conversation: the script played through with the rows a few seconds apart, so
         // the ages read "27 s … now" as they would on the Live screen, and the capsule is the red Stop.

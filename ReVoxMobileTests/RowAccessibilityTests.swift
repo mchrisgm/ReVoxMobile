@@ -53,13 +53,13 @@ final class RowAccessibilityTests: XCTestCase {
         let installed = ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: 1)
         let selected = ModelRow(id: .small, name: "small", sizeText: "487 MB", isRecommended: true, isSuitable: true, warning: nil, note: nil,
                                 state: installed, isSelected: true)
-        XCTAssertEqual(ModelRowView.accessibilityText(for: selected), "Model small. 487 MB. Installed. Recommended.")
+        XCTAssertEqual(ModelRowView.accessibilityText(for: selected), "Model small. 487 MB. Installed. Recommended")
         XCTAssertNil(ModelRowView.selectHint(for: selected), "already in use: a tap does nothing, so no hint")
 
         let idleInstalled = ModelRow(id: .base, name: "base", sizeText: "145 MB", isRecommended: false, isSuitable: true, warning: nil, note: nil,
                                      state: installed, isSelected: false)
         XCTAssertEqual(ModelRowView.selectHint(for: idleInstalled), "Uses this model for the next session")
-        XCTAssertEqual(ModelRowView.accessibilityText(for: idleInstalled), "Model base. 145 MB. Installed.")
+        XCTAssertEqual(ModelRowView.accessibilityText(for: idleInstalled), "Model base. 145 MB. Installed")
 
         let downloading = ModelRow(id: .largeV3, name: "large-v3", sizeText: "≈ 948 MB", isRecommended: false, isSuitable: false, warning: nil, note: nil,
                                    state: ModelDownloadState(phase: .downloading(completedFiles: 2, totalFiles: 6), fraction: 0.42, bytesExpected: 1),
@@ -70,7 +70,7 @@ final class RowAccessibilityTests: XCTestCase {
 
         let paused = ModelRow(id: .tiny, name: "tiny", sizeText: "≈ 77 MB", isRecommended: false, isSuitable: true, warning: nil, note: nil,
                               state: ModelDownloadState(phase: .paused, fraction: 0.5, bytesExpected: 1), isSelected: false)
-        XCTAssertEqual(ModelRowView.accessibilityText(for: paused), "Model tiny. ≈ 77 MB. Paused.",
+        XCTAssertEqual(ModelRowView.accessibilityText(for: paused), "Model tiny. ≈ 77 MB. Paused",
                        "a paused fraction is not spoken as progress: nothing is moving")
     }
 }

@@ -13,14 +13,14 @@ enum UserFacingErrorText {
         if let localized = error as? LocalizedError, let text = localized.errorDescription, !text.isEmpty {
             return text
         }
+        // Before the description check, not after: an `NSError` describes itself as
+        // `Error Domain=NSURLErrorDomain Code=-1009 "(null)"`, and `URLError`, `CocoaError` and every other
+        // `CustomNSError` reach `CustomStringConvertible` through that bridge (CI run 106 showed the domain line).
+        if error is CustomNSError || type(of: error) is NSError.Type {
+            return (error as NSError).localizedDescription
+        }
         if let described = error as? CustomStringConvertible {
             return described.description
-        }
-        // A native Swift error bridges to an `NSError` whose domain is its qualified type name; an `NSError`, a
-        // `URLError`, a `CocoaError` or any `CustomNSError` carries a Foundation domain and a localized sentence.
-        let bridged = error as NSError
-        if bridged.domain != String(reflecting: type(of: error)) {
-            return bridged.localizedDescription
         }
         return String(describing: error)
     }

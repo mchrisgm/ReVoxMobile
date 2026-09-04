@@ -1,16 +1,17 @@
 import SwiftUI
 import ReVoxCore
 
-/// M10: the Live screen's controls as one row of pills, so the transcript gets the height the three cards used to
-/// take. Source and latency are menus; ducking, Learning and two-way are toggle pills; the voice volume opens an
-/// inline slider under the row; More unfolds the explanations (`LiveDetailsPanel`). Everything the pipeline reads
-/// once at Start — source, latency, ducking, Learning, two-way and its languages — is locked while a run is going:
-/// dimmed, with one shared "Stop to change" pill at the head of the row instead of a caption per control. The
-/// volume stays live because the players read it per clip (M9).
+/// M10: the Live screen's controls as pills that wrap into two rows (`PillFlowLayout`), so the transcript gets the
+/// height the three cards used to take and every control is on screen — nothing to scroll to. Source and latency
+/// are menus; ducking, Learning and two-way are toggle pills; the voice volume opens an inline slider under the
+/// rows; the ⓘ button unfolds the explanations (`LiveDetailsPanel`). Everything the pipeline reads once at Start
+/// — source, latency, ducking, Learning, two-way and its languages — is locked while a run is going: dimmed, with
+/// one shared "Stop to change" pill at the head of the row instead of a caption per control. The volume stays live
+/// because the players read it per clip (M9).
 ///
-/// Smarter: the two-way language row exists only while two-way is on, the reply pill's symbol turns into a
-/// crossed speaker when this iPhone has no voice for the reply language, and the value each pill shows is the
-/// one thing a glance needs ("Mic", "Fast", "Duck on", "80%").
+/// Smarter: the two language pills exist only while two-way is on, the reply pill's symbol turns into a crossed
+/// speaker when this iPhone has no voice for the reply language, and the value each pill shows is the one thing a
+/// glance needs ("Mic", "Fast", "Duck on", "80%").
 struct LiveControlStrip: View {
     @Bindable var model: LiveViewModel
     @Binding var showsVolumeSlider: Bool
@@ -21,24 +22,25 @@ struct LiveControlStrip: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if isLocked {
-                        lockedPill
-                    }
-                    sourcePill
-                    latencyPill
-                    duckingPill
-                    learningPill
-                    twoWayPill
-                    volumePill
-                    morePill
+            PillFlowLayout(spacing: Self.pillSpacing) {
+                if isLocked {
+                    lockedPill
                 }
-                .padding(.horizontal)
+                sourcePill
+                latencyPill
+                duckingPill
+                learningPill
+                twoWayPill
+                if model.isTwoWay {
+                    languagePill(title: Self.leaveAloneTitle, systemImage: "hand.raised", selection: $model.ignoredLanguage,
+                                 hint: Self.leaveAloneHintText)
+                    languagePill(title: Self.replyInTitle, systemImage: model.twoWayVoiceNote == nil ? "bubble.left" : "speaker.slash",
+                                 selection: $model.twoWayLanguage, hint: model.twoWayVoiceNote ?? Self.replyInHintText)
+                }
+                volumePill
+                morePill
             }
-            if model.isTwoWay {
-                twoWayRow
-            }
+            .padding(.horizontal)
             if showsVolumeSlider {
                 volumeRow
             }
@@ -56,7 +58,7 @@ struct LiveControlStrip: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, LiveControlPill.horizontalPadding)
             .frame(minHeight: LiveControlPill.minimumHeight)
             .accessibilityLabel(LiveView.lockedWhileRunningText)
     }
@@ -132,49 +134,40 @@ struct LiveControlStrip: View {
         Button {
             toggleWithMotion { showsVolumeSlider.toggle() }
         } label: {
-            LiveControlPill(systemImage: Self.volumeSymbol(for: model.voiceVolume), title: Self.volumePillName,
-                            value: Self.volumePillText(model.voiceVolume), isOn: showsVolumeSlider)
+            LiveControlPill(systemImage: Self.volumeSymbol(for: model.voiceVolume), title: Self.volumePillText(model.voiceVolume),
+                            isOn: showsVolumeSlider)
         }
         .buttonStyle(LivePillButtonStyle())
-        .accessibilityLabel("Voice volume")
+        .accessibilityLabel(Self.volumePillName)
         .accessibilityValue(Self.volumePercentText(model.voiceVolume))
         .accessibilityHint(showsVolumeSlider ? Self.hideVolumeHintText : Self.showVolumeHintText)
     }
 
+    /// Symbol only, 44 pt round: the one control whose glyph says it all (ⓘ, the system's own "details"), and the
+    /// pill that made the second row wrap on a 393 pt phone with a title.
     private var morePill: some View {
         Button {
             toggleWithMotion { isMoreExpanded.toggle() }
         } label: {
-            LiveControlPill(systemImage: isMoreExpanded ? "chevron.up.circle" : "info.circle",
-                            title: Self.moreTitle(expanded: isMoreExpanded), isOn: isMoreExpanded)
+            Label(Self.moreTitle(expanded: isMoreExpanded), systemImage: isMoreExpanded ? "chevron.up.circle" : "info.circle")
+                .labelStyle(.iconOnly)
+                .font(.subheadline)
+                .foregroundStyle(isMoreExpanded ? Color.accentColor : Color.secondary)
+                .frame(width: LiveControlPill.minimumHeight, height: LiveControlPill.minimumHeight)
+                .background(isMoreExpanded ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground), in: Circle())
+                .overlay(Circle().strokeBorder(isMoreExpanded ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1))
+                .contentShape(Circle())
         }
         .buttonStyle(LivePillButtonStyle())
         .accessibilityLabel(Self.moreAccessibilityLabel)
-        .accessibilityValue(isMoreExpanded ? "Expanded" : "Collapsed")
+        .accessibilityValue(Self.moreTitle(expanded: isMoreExpanded))
         .accessibilityHint(isMoreExpanded ? Self.lessHintText : Self.moreHintText)
     }
 
-    // MARK: The rows that exist only when they matter
+    // MARK: The pills that exist only when they matter
 
-    /// The two-way languages, as two menu pills on a second row: they matter only while two-way is on, and the
-    /// pipeline reads them at Start like everything else on the first row.
-    private var twoWayRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                languagePill(title: Self.leaveAloneTitle, systemImage: "hand.raised", selection: $model.ignoredLanguage,
-                             hint: Self.leaveAloneHintText)
-                Image(systemName: "arrow.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                languagePill(title: Self.replyInTitle, systemImage: model.twoWayVoiceNote == nil ? "bubble.left" : "speaker.slash",
-                             selection: $model.twoWayLanguage, hint: model.twoWayVoiceNote ?? Self.replyInHintText)
-            }
-            .padding(.horizontal)
-        }
-        .disabled(isLocked)
-    }
-
+    /// The two-way languages: they matter only while two-way is on, and the pipeline reads them at Start like
+    /// everything else, so they lock with the rest.
     private func languagePill(title: String, systemImage: String, selection: Binding<String?>, hint: String) -> some View {
         let name = LanguageCatalog.displayName(selection.wrappedValue, whenNil: LiveView.noLanguageTitle)
         return Menu {
@@ -187,6 +180,7 @@ struct LiveControlStrip: View {
         } label: {
             LiveControlPill(systemImage: systemImage, title: title, value: name)
         }
+        .disabled(isLocked)
         .accessibilityLabel(title)
         .accessibilityValue(name)
         .accessibilityHint(isLocked ? LiveView.lockedWhileRunningText : hint)
@@ -213,13 +207,16 @@ struct LiveControlStrip: View {
 
     // MARK: Copy and layout decisions (pure, read by the tests)
 
+    /// 6 pt between pills and 10 pt inside them: with these, the seven pills fit two rows on a 393 pt phone at the
+    /// default type size (`PillFlowLayoutTests`); a narrower phone or a larger type size wraps to three.
+    static let pillSpacing: CGFloat = 6
     static let lockedText = "Stop to change"
     static let sourceAccessibilityLabel = "Audio source"
     static let latencyAccessibilityLabel = "Latency mode"
     static let duckingPillName = "Duck"
     static let learningPillName = "Learn"
     static let twoWayPillName = "Two-way"
-    static let volumePillName = "Volume"
+    static let volumePillName = "Voice volume"
     static let moreAccessibilityLabel = "Details"
     static let leaveAloneTitle = "Leave alone"
     static let replyInTitle = "Reply in"
