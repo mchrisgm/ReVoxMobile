@@ -56,6 +56,7 @@ struct SettingsView: View {
                         Text(option.displayName).tag(option.code)
                     }
                 }
+                .disabled(!model.canIgnoreLanguage)
                 SettingExample(symbol: "hand.raised",
                                text: SettingExamples.skipLanguageText(ignored: model.ignoredLanguage.map { LanguageCatalog.displayName($0, whenNil: "") },
                                                                       pinned: model.language.map { LanguageCatalog.displayName($0, whenNil: "") }))

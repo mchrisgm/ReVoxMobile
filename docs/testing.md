@@ -55,7 +55,7 @@ When ReVox is stopped it does not listen, and the red indicator disappears.
 
 ## 7. Transcripts
 
-Everything ReVox translated is kept on the phone. Open **History** (the clock symbol) to see past sessions: each row shows the time, the source (Microphone or Other apps), how long it ran, how many lines were translated and the first English line. Type in the search field to find sessions by an English word; the matching line is shown under each session. Tap a session to read the whole transcript; the **Share** button (the square with the arrow) sends it as a text file to Files, Mail, AirDrop or any other app; the **Delete** button removes it after a confirmation. Swipe a row in History to delete just that session, or use **Clear All**. Transcripts contain the English text only, are stored only on your iPhone and are never uploaded anywhere.
+Everything ReVox translated is kept on the phone. Open **History** (the clock symbol) to see past sessions: each row shows the time, the source (Microphone or Other apps), how long it ran, how many lines were translated and the first English line. Type in the search field to find sessions by an English word; the matching line is shown under each session. Tap a session to read the whole transcript; the **Share** button (the square with the arrow) sends it as a text file to Files, Mail, AirDrop or any other app; the **Delete** button removes it after a confirmation. Swipe a row in History to delete just that session, or use **Clear All**. Transcripts contain the translation, and the words as spoken when **Learning** was on; they are stored only on your iPhone and are never uploaded anywhere.
 
 ## 8. Send feedback
 

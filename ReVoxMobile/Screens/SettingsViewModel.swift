@@ -117,6 +117,12 @@ final class SettingsViewModel {
         [LanguageOption(code: nil, displayName: Self.noIgnoredLanguageTitle)] + LanguageCatalog.concrete
     }
 
+    /// M10: a pinned source language is never detected, so nothing can be skipped beside it, and skipping the
+    /// pinned language itself drops every phrase with two-way off (`TranslationStage`). The picker is disabled
+    /// while a language is pinned; the footer says why. A skip chosen before the pin stays and the example
+    /// under it says what that does.
+    var canIgnoreLanguage: Bool { language == nil }
+
     static let noIgnoredLanguageTitle = "None"
     static let ignoredLanguageHelpText = "ReVox neither translates nor transcribes this language. Turn on Two-way on the Live screen to have it spoken back in another language instead."
     static let ignoredLanguageNeedsAutoDetectText = "Ignoring a language needs Source language set to Auto-detect, because a pinned language is never detected."

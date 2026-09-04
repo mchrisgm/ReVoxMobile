@@ -194,8 +194,12 @@ final class DuckingCoordinatorTests: XCTestCase {
         let coordinator = DuckingCoordinator(ducker: ducker, enabled: true, hold: 1_000, sleep: sleep.sleep)
         await coordinator.speakingChanged(true)
         await coordinator.speakingChanged(false)
-        let requested = await eventually { sleep.requested == [1_000] }
-        XCTAssertTrue(requested)
+        // The fake records the duration before it registers the continuation, so wait for the sleeper to be
+        // pending before resuming, or `resumeAll()` can run between the two and the hold never elapses (this test
+        // failed once in six local runs when it waited on `requested` alone).
+        let pending = await eventually { sleep.pendingCount == 1 }
+        XCTAssertTrue(pending)
+        XCTAssertEqual(sleep.requested, [1_000])
         sleep.resumeAll()
         let restored = await eventually { await ducker.restored == 1 }
         XCTAssertTrue(restored)

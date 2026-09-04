@@ -186,4 +186,15 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(SettingExamples.romanizeText(on: false, learning: false), SettingExamples.romanizeNeedsLearning)
         XCTAssertTrue(SettingExamples.romanizeNeedsLearning.contains("Learning"))
     }
+
+    /// M10: the skip picker is disabled while a source language is pinned (a pinned language is never detected).
+    func testTheSkipPickerNeedsAutoDetect() {
+        let store = makeStore()
+        let model = SettingsViewModel(store: store, mute: PlaybackMute())
+        XCTAssertTrue(model.canIgnoreLanguage)
+        model.language = "es"
+        XCTAssertFalse(model.canIgnoreLanguage)
+        model.language = nil
+        XCTAssertTrue(model.canIgnoreLanguage)
+    }
 }
