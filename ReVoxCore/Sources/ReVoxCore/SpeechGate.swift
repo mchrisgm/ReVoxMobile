@@ -36,23 +36,29 @@ public struct Translation: Sendable, Equatable, Codable {
     /// The language `english` is written in: "en" for every one-way phrase, the chosen target for the second
     /// direction of a two-way conversation. The speaker picks its voice from this.
     public var spokenLanguage: String
+    /// M9 Learning mode: the words as spoken, in `language`. "" unless learning asked for them — a transcribe
+    /// pass costs a second decode per phrase, so it is never run unasked.
+    public var original: String
 
-    public init(english: String, language: String, spokenLanguage: String = "en") {
+    public init(english: String, language: String, spokenLanguage: String = "en", original: String = "") {
         self.english = english
         self.language = language
         self.spokenLanguage = spokenLanguage
+        self.original = original
     }
 
     enum CodingKeys: String, CodingKey {
-        case english, language, spokenLanguage
+        case english, language, spokenLanguage, original
     }
 
-    /// A transcript written before M8 has no `spokenLanguage`; those entries were all English.
+    /// A transcript written before M8 has no `spokenLanguage` (those entries were all English); before M9 no
+    /// `original`.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         english = try container.decode(String.self, forKey: .english)
         language = try container.decode(String.self, forKey: .language)
         spokenLanguage = try container.decodeIfPresent(String.self, forKey: .spokenLanguage) ?? "en"
+        original = try container.decodeIfPresent(String.self, forKey: .original) ?? ""
     }
 }
 

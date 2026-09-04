@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 import ReVoxCore
 
-/// The History tab (§8.6): sessions newest first, search over the English text, swipe-to-delete, confirmed Clear All.
+/// The History tab (§8.6): sessions newest first, search over the English text, swipe-to-delete, confirmed Clear
+/// All, and (M9) an edit mode that selects sessions to merge into one or delete together.
 struct HistoryView: View {
     static let emptyTitle = "No Transcripts"
     static let emptyDescription = "Sessions you translate appear here."
@@ -18,12 +19,19 @@ struct HistoryView: View {
     @State private var result = SearchResult(hits: [], usedFallback: false)
     @State private var searchError: String?
     @State private var confirmingClearAll = false
+    @State private var confirmingMerge = false
     @State private var actionError: String?
+    @State private var selection = Set<PersistentIdentifier>()
+    @State private var editMode: EditMode
 
-    init(initialQuery: String = "", exporter: TranscriptExporter = TranscriptExporter()) {
+    init(initialQuery: String = "", exporter: TranscriptExporter = TranscriptExporter(), editing: Bool = false) {
         _query = State(initialValue: initialQuery)
+        _editMode = State(initialValue: editing ? .active : .inactive)
         self.exporter = exporter
     }
+
+    /// The sessions behind the selection, in the list's order.
+    private var selectedSessions: [Session] { sessions.filter { selection.contains($0.persistentModelID) } }
 
     private var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -40,12 +48,34 @@ struct HistoryView: View {
         .navigationTitle("History")
         .searchable(text: $query, prompt: Self.searchPrompt)
         .task(id: query) { runSearch() }
+        .onChange(of: editMode) { _, mode in
+            if !mode.isEditing { selection.removeAll() }
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton().disabled(sessions.isEmpty)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(HistoryActions.clearAllTitle) { confirmingClearAll = true }
                     .disabled(sessions.isEmpty)
                     .accessibilityHint("Deletes every session after a confirmation")
             }
+            ToolbarItemGroup(placement: .bottomBar) {
+                if editMode.isEditing {
+                    Button(Self.mergeButtonTitle(count: selection.count)) { confirmingMerge = true }
+                        .disabled(selection.count < 2)
+                        .accessibilityHint("Combines the selected sessions into one, in time order")
+                    Spacer()
+                    Button(Self.deleteButtonTitle(count: selection.count), role: .destructive) { deleteSelected() }
+                        .disabled(selection.isEmpty)
+                }
+            }
+        }
+        .confirmationDialog(HistoryActions.mergeConfirmationTitle(count: selection.count), isPresented: $confirmingMerge, titleVisibility: .visible) {
+            Button(HistoryActions.mergeTitle) { mergeSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(HistoryActions.mergeMessage)
         }
         .confirmationDialog(HistoryActions.clearAllConfirmationTitle(count: sessions.count), isPresented: $confirmingClearAll, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { clearAll() }
@@ -53,25 +83,32 @@ struct HistoryView: View {
         } message: {
             Text(HistoryActions.clearAllMessage)
         }
-        .alert("Couldn't delete", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+        .alert("Couldn't change the transcripts", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(actionError ?? "")
         }
+        // Outermost on purpose: the toolbar's EditButton and the list both read this binding, and a modifier only
+        // reaches the views inside it.
+        .environment(\.editMode, $editMode)
     }
 
     private var sessionList: some View {
-        List {
+        List(selection: $selection) {
             ForEach(sessions) { session in
                 NavigationLink {
                     SessionDetailView(session: session, exporter: exporter)
                 } label: {
                     SessionRowView(summary: SessionSummary(session: session))
                 }
+                .tag(session.persistentModelID)
             }
             .onDelete(perform: deleteRows)   // unconfirmed: a common single-row action (§8.6)
         }
     }
+
+    static func mergeButtonTitle(count: Int) -> String { count > 0 ? "Merge (\(count))" : "Merge" }
+    static func deleteButtonTitle(count: Int) -> String { count > 0 ? "Delete (\(count))" : "Delete" }
 
     @ViewBuilder
     private var searchResults: some View {
@@ -124,6 +161,29 @@ struct HistoryView: View {
                 actionError = String(describing: error)
             }
         }
+    }
+
+    private func mergeSelected() {
+        do {
+            try HistoryActions(context: context).merge(selectedSessions)
+            selection.removeAll()
+            editMode = .inactive
+        } catch {
+            actionError = String(describing: error)
+        }
+    }
+
+    private func deleteSelected() {
+        let actions = HistoryActions(context: context)
+        for session in selectedSessions {
+            do {
+                try actions.delete(session)
+            } catch {
+                actionError = String(describing: error)
+            }
+        }
+        selection.removeAll()
+        editMode = .inactive
     }
 
     private func clearAll() {

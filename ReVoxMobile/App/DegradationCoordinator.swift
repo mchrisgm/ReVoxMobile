@@ -28,6 +28,8 @@ final class DegradationCoordinator {
     @ObservationIgnored private let selectedModel: @MainActor () -> WhisperModelID
     @ObservationIgnored private let installedModels: @MainActor () -> [WhisperModelID]
     @ObservationIgnored private let usesPocketTTS: @MainActor () -> Bool
+    /// M9: the owner's "keep my model when hot" setting, read at every signal so a change applies at once.
+    @ObservationIgnored private let keepModelWhenHot: @MainActor () -> Bool
     @ObservationIgnored private let actions: DegradationActions
     @ObservationIgnored private var task: Task<Void, Never>?
 
@@ -35,11 +37,13 @@ final class DegradationCoordinator {
          selectedModel: @escaping @MainActor () -> WhisperModelID,
          installedModels: @escaping @MainActor () -> [WhisperModelID],
          usesPocketTTS: @escaping @MainActor () -> Bool,
+         keepModelWhenHot: @escaping @MainActor () -> Bool = { false },
          actions: DegradationActions) {
         self.signals = signals
         self.selectedModel = selectedModel
         self.installedModels = installedModels
         self.usesPocketTTS = usesPocketTTS
+        self.keepModelWhenHot = keepModelWhenHot
         self.actions = actions
     }
 
@@ -61,7 +65,8 @@ final class DegradationCoordinator {
     /// One signal: decide, then apply the effects in order.
     func handle(_ signal: DeviceSignal) async {
         let effects = DegradationPolicy.react(to: signal, state: &state, selectedModel: selectedModel(),
-                                              installedModels: installedModels(), usesPocketTTS: usesPocketTTS())
+                                              installedModels: installedModels(), usesPocketTTS: usesPocketTTS(),
+                                              keepModelWhenHot: keepModelWhenHot())
         guard !effects.isEmpty else {
             Self.logger.info("signal with no effect thermal=\(String(describing: self.state.thermalState), privacy: .public)")
             return

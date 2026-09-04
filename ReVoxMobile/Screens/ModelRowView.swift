@@ -7,9 +7,16 @@ struct ModelRowView: View {
     let onCancel: () -> Void
     let onSelect: () -> Void
 
+    /// M9: the selected row is tinted as a whole and marked with a checkmark, and an installed row selects on a
+    /// tap anywhere — the "Select" button alone left it unclear which model was in use.
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
+                if row.isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
                 Text(row.name).font(.headline)
                 if row.isRecommended {
                     Text("Recommended")
@@ -32,8 +39,15 @@ struct ModelRowView: View {
             stateView
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if row.state.phase == .installed, !row.isSelected { onSelect() }
+        }
+        .listRowBackground(row.isSelected ? Color.accentColor.opacity(0.12) : nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(row.isSelected ? .isSelected : [])
+        .accessibilityHint(row.state.phase == .installed && !row.isSelected ? "Double tap to use this model" : "")
     }
 
     @ViewBuilder

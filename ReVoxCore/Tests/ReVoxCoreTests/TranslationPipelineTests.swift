@@ -552,4 +552,19 @@ final class TranslationPipelineTests: XCTestCase {
         XCTAssertTrue(spoken.isEmpty, "nothing is spoken when no engine can reach the target language")
         await h.pipeline.stop()
     }
+
+    /// M9: with Learning on, the words as spoken reach the transcript row next to the translation.
+    func testLearningPutsTheOriginalInTheTranscriptEntry() async throws {
+        let h = makeHarness(transcriber: StubTranscriber())
+        var config = configuration()
+        config.wantsOriginal = true
+        await h.pipeline.start(config)
+        h.source.feed(segment())
+        let recorded = await eventually { await h.transcript.entries.isEmpty == false }
+        XCTAssertTrue(recorded)
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.first?.original, "Good morning.")
+        XCTAssertFalse(entries.first?.english.isEmpty ?? true)
+        await h.pipeline.stop()
+    }
 }

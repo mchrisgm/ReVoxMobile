@@ -91,6 +91,7 @@ final class AppEnvironment {
                                   broadcast: broadcast,
                                   installedModels: { manager.installedWhisper })
         activity.live = live
+        live.volume = voiceVolume   // the Live screen's volume slider writes the players' box (M9)
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
         let liveForRelease = live
         modelManager.onModelFilesChanged = { [weak liveForRelease] in
@@ -106,6 +107,7 @@ final class AppEnvironment {
             selectedModel: { settingsForDegradation.settings.whisperModel },
             installedModels: { manager.installedWhisper },
             usesPocketTTS: { statusForDegradation.status.usesPocketTTS },
+            keepModelWhenHot: { settingsForDegradation.settings.keepModelWhenHot },
             actions: DegradationActions(
                 unloadPocketTTS: { await assemblyForDegradation.speaker.unloadPocketTTS() },
                 useModel: { [weak liveForDegradation] model, restartRunning in

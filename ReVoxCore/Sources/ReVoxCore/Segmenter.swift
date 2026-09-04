@@ -11,20 +11,26 @@ public protocol SpeechProbabilityModel: Sendable {
 /// Port of `PRESETS` in `revox/pipeline/segmenter.py`.
 public enum SegmenterPreset: String, CaseIterable, Codable, Sendable {
     case balanced, fast
+    /// M9, an iOS addition rather than a port: Windows has two presets. 200 ms of silence ends a phrase and a
+    /// phrase is cut at 3 s, so a running conversation lands in the transcript sooner at the cost of more,
+    /// shorter phrases — and more Whisper calls.
+    case veryFast = "very_fast"
 
-    /// `silence_ms`: balanced 500, fast 300.
+    /// `silence_ms`: balanced 500, fast 300, very fast 200.
     public var silenceMs: Int {
         switch self {
         case .balanced: return 500
         case .fast: return 300
+        case .veryFast: return 200
         }
     }
 
-    /// `max_segment_s`: balanced 10.0, fast 4.0.
+    /// `max_segment_s`: balanced 10.0, fast 4.0, very fast 3.0.
     public var maxSegmentSeconds: Double {
         switch self {
         case .balanced: return 10.0
         case .fast: return 4.0
+        case .veryFast: return 3.0
         }
     }
 }
