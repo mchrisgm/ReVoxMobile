@@ -23,6 +23,22 @@ final class DarwinNotificationObserverTests: XCTestCase {
         XCTAssertEqual(second, observed, "each post is one element; the unobserved name never appears")
     }
 
+    /// docs/security-review-m5.md (second pass): the pointer CF holds must stay valid even if the observer is
+    /// deallocated from another thread while a delivery is in flight on the main run loop. The registered box is
+    /// retained for the life of the process and invalidated by `stop`, so a post to a name whose observer is gone
+    /// reaches a live object that does nothing — rather than a freed one.
+    func testAPostAfterTheObserverIsGoneIsHarmless() async {
+        let name = "group.test.revox-\(UUID().uuidString).broadcast.audio"
+        do {
+            let observer = DarwinNotificationObserver(names: [name])
+            observer.start()
+            observer.stop()
+        }                                          // the observer is deallocated here
+        DarwinNotificationPoster(name: name).post()
+        // The assertion is that this does not crash; a run loop turn gives any in-flight delivery time to land.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+
     func testStopIsIdempotentAndStopsDelivery() async {
         let name = "group.test.revox-\(UUID().uuidString).broadcast.started"
         let observer = DarwinNotificationObserver(names: [name])

@@ -177,6 +177,7 @@ final class TapProbe: @unchecked Sendable {
     private var formats = 0
     private var installs = 0
     private var removals = 0
+    private var calls: [String] = []
 
     init(format: AVAudioFormat) {
         self.format = format
@@ -190,6 +191,23 @@ final class TapProbe: @unchecked Sendable {
     var formatCalls: Int { lock.lock(); defer { lock.unlock() }; return formats }
     var installCount: Int { lock.lock(); defer { lock.unlock() }; return installs }
     var removeCount: Int { lock.lock(); defer { lock.unlock() }; return removals }
+    /// "install" / "remove" in the order AVFAudio saw them, so a second install with no remove between is visible.
+    var operations: [String] { lock.lock(); defer { lock.unlock() }; return calls }
+
+    /// True when the recorded order ever installs twice with no remove in between — the state in which the real
+    /// `installTapOnBus` raises an NSException, which is uncatchable and therefore a crash.
+    var installedOverALiveTap: Bool {
+        var live = false
+        for call in operations {
+            if call == "install" {
+                if live { return true }
+                live = true
+            } else {
+                live = false
+            }
+        }
+        return false
+    }
 
     func seam() -> TapSeam {
         TapSeam(
@@ -200,8 +218,8 @@ final class TapProbe: @unchecked Sendable {
                 lock.unlock()
                 return ok ? format : nil
             },
-            install: { [self] _, _, _, _ in lock.lock(); installs += 1; lock.unlock() },
-            remove: { [self] _ in lock.lock(); removals += 1; lock.unlock() }
+            install: { [self] _, _, _, _ in lock.lock(); installs += 1; calls.append("install"); lock.unlock() },
+            remove: { [self] _ in lock.lock(); removals += 1; calls.append("remove"); lock.unlock() }
         )
     }
 }
@@ -212,4 +230,85 @@ final class StatusRecorder: @unchecked Sendable {
     private var values: [String?] = []
     func record(_ status: String?) { lock.lock(); values.append(status); lock.unlock() }
     var all: [String?] { lock.lock(); defer { lock.unlock() }; return values }
+
+    // MARK: TestFlight build 15 crash — `installTapOnBus` raising NSException on a route change
+
+    /// The crash: `TapSeam.live` guarded on `inputNode.inputFormat(forBus: 0).sampleRate` and then returned
+    /// `outputFormat(forBus: 0)`. iOS does not move the two together while a route changes, so the guard could
+    /// pass while the returned format still had a zero sample rate or zero channels — and `installTapOnBus`
+    /// answers an invalid format with an NSException, which Swift cannot catch, so the process aborts.
+    /// A format is only usable if the value actually handed to `install` is valid.
+    func testTheLiveSeamRejectsAFormatItWouldNotBeAbleToInstall() throws {
+        let engine = AVAudioEngine()
+        let format = TapSeam.live.inputFormat(engine)
+        if let format {
+            XCTAssertGreaterThan(format.sampleRate, 0, "a format offered for installTap must have a real rate")
+            XCTAssertGreaterThan(format.channelCount, 0, "installTapOnBus raises on a zero-channel format")
+        }
+        // The seam reports the node's own output format, which is the only format the input node accepts.
+        XCTAssertEqual(format?.sampleRate, engine.inputNode.outputFormat(forBus: 0).sampleRate)
+        XCTAssertEqual(format?.channelCount, engine.inputNode.outputFormat(forBus: 0).channelCount)
+    }
+
+    /// The second half of the same crash: `installTapOnBus` also raises when a tap is already on the bus. A run
+    /// that started, was interrupted, and started again — or a rebuild that raced `stop` — could leave one there.
+    /// Every install is now preceded by a remove, so the sequence AVFAudio sees never has two installs in a row.
+    func testEveryInstallIsPrecededByARemoveAcrossStartRebuildAndRestart() async throws {
+        let engine = AVAudioEngine()
+        let seam = RecordingAudioSessionSeam()
+        seam.engineFactory = {
+            let fake = FakeEngineSeam()
+            fake.engine = engine
+            return fake
+        }
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let probe = TapProbe(format: format)
+        let capture = MicrophoneCapture(controller: controller, permission: .fixed(.granted), tap: probe.seam())
+
+        _ = capture.frames()
+        try await capture.start(.microphone)
+        capture.handleRouteChange(.oldDeviceUnavailable)
+        await waitUntil("the route rebuild ran") { probe.installCount >= 2 }
+        await capture.stop()
+
+        _ = capture.frames()
+        try await capture.start(.microphone)          // a restart must not collide with a leftover tap
+        capture.handleRouteChange(.newDeviceAvailable)
+        await waitUntil("the second run's rebuild ran") { probe.installCount >= 4 }
+        await capture.stop()
+
+        XCTAssertFalse(probe.installedOverALiveTap,
+                       "installTapOnBus raises an uncatchable NSException when a tap is already on the bus: \(probe.operations)")
+    }
+
+    /// A rebuild retry is scheduled with `asyncAfter`, so it can fire after the run it belongs to has stopped.
+    /// Installing then would leave a tap on a stopped capture — and the next `start` would be the second install.
+    func testARebuildScheduledBeforeStopDoesNotInstallAfterIt() async throws {
+        let engine = AVAudioEngine()
+        let seam = RecordingAudioSessionSeam()
+        seam.engineFactory = {
+            let fake = FakeEngineSeam()
+            fake.engine = engine
+            return fake
+        }
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let probe = TapProbe(format: format)
+        let capture = MicrophoneCapture(controller: controller, permission: .fixed(.granted), tap: probe.seam())
+
+        _ = capture.frames()
+        try await capture.start(.microphone)
+        probe.inputAvailable = false                  // every rebuild attempt fails, so retries are scheduled
+        capture.handleRouteChange(.oldDeviceUnavailable)
+        await capture.stop()
+        let afterStop = probe.installCount
+
+        probe.inputAvailable = true                   // the input comes back while the retries are still pending
+        try? await Task.sleep(nanoseconds: UInt64((MicrophoneCapture.rebuildRetryDelay * 3 + 0.3) * 1_000_000_000))
+        XCTAssertEqual(probe.installCount, afterStop, "a retry from a stopped run must not install a tap")
+        XCTAssertFalse(probe.installedOverALiveTap)
+    }
 }
