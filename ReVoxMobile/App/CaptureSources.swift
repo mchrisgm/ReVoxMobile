@@ -10,13 +10,17 @@ struct CaptureSources: Sendable {
     let broadcastJoinedInProgress: @Sendable () -> Bool
     /// Installs the pipeline's `noteCaptureGap()` as the ring-overrun handler (§5.4, §6.2).
     let setBroadcastGapHandler: @Sendable ((@Sendable (Int) async -> Void)?) -> Void
+    /// The player's speaking edges, for the self-capture probe (§5.2, Task 68). Safe to call from the player's
+    /// synchronous `SpeakingCallback`: `BroadcastCapture.noteSpeakingEdge` only yields into a stream (§4.3).
+    let noteBroadcastSpeakingEdge: @Sendable (Bool) -> Void
 
     static func live(broadcast: BroadcastCapture) -> CaptureSources {
         CaptureSources(
             makeMicrophone: { controller in MicrophoneCapture(controller: controller) },
             makeBroadcast: { broadcast },
             broadcastJoinedInProgress: { broadcast.joinedInProgress },
-            setBroadcastGapHandler: { handler in broadcast.setGapHandler(handler) }
+            setBroadcastGapHandler: { handler in broadcast.setGapHandler(handler) },
+            noteBroadcastSpeakingEdge: { speaking in broadcast.noteSpeakingEdge(speaking) }
         )
     }
 }

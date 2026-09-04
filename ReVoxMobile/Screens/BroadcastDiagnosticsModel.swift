@@ -68,8 +68,10 @@ final class BroadcastDiagnosticsModel {
     private(set) var gapCount = 0
     private(set) var engineRunning = false
     private(set) var isHoldingSession = false
+    private(set) var selfCapture: SelfCaptureProbe.Measurement?
     let logURL: URL?
 
+    private let readSelfCapture: @Sendable () -> SelfCaptureProbe.Measurement?
     private let containerURL: URL?
     private let records: BroadcastRecordStore?
     private let keepAlive: KeepAliveMonitor
@@ -81,12 +83,14 @@ final class BroadcastDiagnosticsModel {
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     init(containerURL: URL?, records: BroadcastRecordStore?, keepAlive: KeepAliveMonitor, sessionController: AudioSessionController,
-         clock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 }) {
+         clock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 },
+         selfCapture: @escaping @Sendable () -> SelfCaptureProbe.Measurement? = { nil }) {
         self.containerURL = containerURL
         self.records = records
         self.keepAlive = keepAlive
         self.sessionController = sessionController
         self.clock = clock
+        self.readSelfCapture = selfCapture
         self.logURL = nil
     }
 
@@ -108,6 +112,7 @@ final class BroadcastDiagnosticsModel {
         record = records?.readBroadcastState()
         lastHeartbeat = keepAlive.lastHeartbeat
         gapCount = keepAlive.gapCount
+        selfCapture = readSelfCapture()
         engineRunning = await sessionController.isEngineRunning
     }
 

@@ -118,6 +118,7 @@ final class LiveViewModel {
     static func configuration(settings: Settings, captureMode: CaptureMode) -> PipelineConfiguration {
         var configuration = PipelineConfiguration(captureMode: captureMode, preset: settings.preset, pinnedLanguage: settings.language)
         configuration.duckingEnabled = settings.ducking   // R11; the controller applies the cycles of §6.8
+        configuration.captureLatencyFrames = captureMode == .broadcast ? BroadcastTuning.captureLatencyFrames : 0   // §5.2
         return configuration
     }
 

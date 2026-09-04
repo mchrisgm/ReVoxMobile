@@ -107,6 +107,19 @@ final class PipelineAssembler {
                                                                                joinedInProgress: joined))
         }
 
+        // In broadcast mode every speaking edge also reaches the capture for the self-capture probe; the core
+        // pipeline's own edge handling is untouched. This runs on the player's audio-completion thread, so both
+        // calls must be non-blocking: `noteBroadcastSpeakingEdge` only yields into the capture's edge stream, which
+        // stamps the ring writeCursor on its own drain task (§4.3). The wrapper is bound to its own local first:
+        // a multi-statement closure literal inside a ternary branch does not type-check.
+        let wrappedFactory: AudioPlayerFactory = { sampleRate, onSpeaking in
+            speakers.playerFactory(sampleRate) { speaking in
+                sources.noteBroadcastSpeakingEdge(speaking)
+                onSpeaking(speaking)
+            }
+        }
+        let playerFactory: AudioPlayerFactory = isBroadcast ? wrappedFactory : speakers.playerFactory
+
         // 4. The core pipeline; the session controller is the Ducker (§6.8), enabled by `LiveViewModel.configuration`.
         let dependencies = PipelineDependencies(
             source: source,
@@ -114,7 +127,7 @@ final class PipelineAssembler {
             detector: translator,
             translator: translator,
             speaker: speakers.speaker,
-            playerFactory: speakers.playerFactory,
+            playerFactory: playerFactory,
             ducker: sessionController,
             transcriptFactory: transcriptFactory
         )

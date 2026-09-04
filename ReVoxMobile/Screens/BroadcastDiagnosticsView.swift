@@ -41,6 +41,7 @@ struct BroadcastDiagnosticsView: View {
                 row("Engine running", model.engineRunning ? "yes" : "no")
                 row("Last heartbeat", model.lastHeartbeat.map { String(format: "position %lld at %.1f", $0.position, $0.at) } ?? "—")
                 row("Gaps > 3 s", "\(model.gapCount)")
+                row("Self-capture tail", model.selfCapture.map { "\($0.tailFrames) frames · peak \(String(format: "%.2f", $0.peakWhileSpeaking)) while speaking" } ?? "—")
                 Toggle("Hold broadcast session (no pipeline)", isOn: Binding(
                     get: { model.isHoldingSession },
                     set: { on in Task { await model.setHoldingSession(on) } }

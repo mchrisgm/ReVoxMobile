@@ -70,11 +70,14 @@ final class AppEnvironment {
                                               names: BroadcastNotificationNames(appGroup: configuration.appGroup))
         self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer,
                                            speakerAssembly: speakerAssembly, keepAlive: keepAlive, sources: .live(broadcast: broadcastCapture))
+        // A local, never `self`: this closure is created before initialisation completes (as with `manager` below).
+        let capture = broadcastCapture
         self.diagnostics = BroadcastDiagnosticsModel(
             containerURL: appGroupContainer,
             records: broadcastRecords,
             keepAlive: keepAlive,
-            sessionController: sessionController
+            sessionController: sessionController,
+            selfCapture: { capture.lastSelfCaptureMeasurement }
         )
         let manager = modelManager
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,

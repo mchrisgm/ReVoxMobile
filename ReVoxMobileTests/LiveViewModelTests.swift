@@ -422,4 +422,12 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertNil(installedGapHandler.value, "a microphone run leaves no ring handler on the app-lifetime capture")
         await model.stop()
     }
+
+    func testBroadcastConfigurationCarriesTheMeasuredCaptureLatency() {
+        let broadcast = LiveViewModel.configuration(settings: Settings(), captureMode: .broadcast)
+        XCTAssertEqual(broadcast.captureLatencyFrames, BroadcastTuning.captureLatencyFrames)
+        XCTAssertEqual(broadcast.captureGateHoldFrames, CaptureGate.defaultHoldFrames)
+        let microphone = LiveViewModel.configuration(settings: Settings(), captureMode: .microphone)
+        XCTAssertEqual(microphone.captureLatencyFrames, 0, "mic mode: both gate positions coincide (§5.2)")
+    }
 }

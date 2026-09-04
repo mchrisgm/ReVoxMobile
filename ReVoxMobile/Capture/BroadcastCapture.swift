@@ -13,7 +13,8 @@ enum BroadcastCaptureEvent: Equatable, Sendable {
 
 /// The broadcast-mode `AudioSource` (§6.2, R10). One mapping of the ring per run, one `RingReader` owned by the
 /// poll path, wake-ups from the Darwin observer plus a 100 ms timer, frames yielded with absolute ring positions.
-/// `@unchecked Sendable`: every stored property is guarded by `lock`; `poll` is the only reader of the ring.
+/// `@unchecked Sendable`: every stored property except the two below is guarded by `lock`; `poll` is the only
+/// reader of the ring.
 final class BroadcastCapture: AudioSource, @unchecked Sendable {
     static let pollIntervalNanoseconds: UInt64 = 100_000_000
     static let scratchFrames = 16_000
@@ -30,6 +31,10 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
     private let pollInterval: UInt64
     private let attachedPoster: DarwinNotificationPoster
     private let lock = NSLock()
+    // Not guarded by `lock`: `AsyncStream.Continuation.yield` is thread-safe and never waits, which is what lets
+    // `noteSpeakingEdge` run on the player's audio-completion thread (§4.3). Both are set once, in `init`.
+    private let speakingEdgeContinuation: AsyncStream<Bool>.Continuation
+    private var speakingEdgeTask: Task<Void, Never>?
 
     // Guarded by `lock`.
     private var mapping: RingFileMapping?
@@ -46,6 +51,8 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
     private var scratch = [Float](repeating: 0, count: BroadcastCapture.scratchFrames)
     private var lastKnownWriteCursor: UInt64 = 0
     private var lastReaderRecordAt: Double?
+    private var probe = SelfCaptureProbe()
+    private var lastMeasurement: SelfCaptureProbe.Measurement?
     private var pollTask: Task<Void, Never>?
     private var wakeTask: Task<Void, Never>?
     private var observer: DarwinNotificationObserver?
@@ -64,12 +71,23 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         let (stream, continuation) = AsyncStream<BroadcastCaptureEvent>.makeStream(bufferingPolicy: .unbounded)
         self.events = stream
         self.eventContinuation = continuation
+        let (edges, edgeContinuation) = AsyncStream<Bool>.makeStream(bufferingPolicy: .unbounded)
+        self.speakingEdgeContinuation = edgeContinuation
+        // The single in-order drain of §4.3: one task for the capture's whole lifetime, so a fast true → false pair
+        // can never be applied out of order. `self` is fully initialised here, so the capture may be used.
+        speakingEdgeTask = Task { [weak self] in
+            for await speaking in edges {
+                self?.applySpeakingEdge(speaking)
+            }
+        }
     }
 
     deinit {
         pollTask?.cancel()
         wakeTask?.cancel()
         observer?.stop()
+        speakingEdgeTask?.cancel()
+        speakingEdgeContinuation.finish()
         frameContinuation?.finish()
         eventContinuation.finish()
     }
@@ -77,6 +95,27 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
     var attachState: AttachState { lock.lock(); defer { lock.unlock() }; return state }
     var joinedInProgress: Bool { lock.lock(); defer { lock.unlock() }; return joined }
     var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
+
+    var lastSelfCaptureMeasurement: SelfCaptureProbe.Measurement? { lock.lock(); defer { lock.unlock() }; return lastMeasurement }
+
+    /// A player speaking edge. Called from the player's synchronous `SpeakingCallback`, which may be an audio
+    /// completion thread, so this takes no lock and does no work: it only yields into the unbounded edge stream
+    /// (§4.3 "never touch actors synchronously"). It can therefore never wait on a `poll` that is holding `lock`
+    /// across `records?.write`, the frame `yield` and `feedProbe`.
+    func noteSpeakingEdge(_ speaking: Bool) {
+        speakingEdgeContinuation.yield(speaking)
+    }
+
+    /// The drain side of `noteSpeakingEdge`, on the task started in `init`: stamps the edge with the ring
+    /// `writeCursor` now (§5.2 "which cursor") and feeds the M5 probe. Off the audio thread, so `lock` is safe here.
+    private func applySpeakingEdge(_ speaking: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let storage {
+            lastKnownWriteCursor = storage.loadCursor(at: RingHeader.Offset.writeCursor)
+        }
+        probe.speakingChanged(speaking, atPosition: Int64(lastKnownWriteCursor))
+    }
 
     /// The pipeline's `noteCaptureGap()` (drop marker + `.lag`), wired by the assembler after the pipeline exists.
     func setGapHandler(_ handler: (@Sendable (Int) async -> Void)?) {
@@ -113,6 +152,8 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         attachedGeneration = nil
         lastEmitted = nil
         silence.reset()
+        probe = SelfCaptureProbe()                     // a fresh run measures its own phrases only
+        lastMeasurement = nil
         let observer = DarwinNotificationObserver(names: names.extensionToApp)
         self.observer = observer
         observer.start()
@@ -231,6 +272,7 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
             let position = Int64(reader.readCursor)
             frameContinuation?.yield(CapturedAudio(samples: Array(scratch[0 ..< count]), endPosition: position))
             writeReaderRecord(reader: reader, generation: header.generation, now: now, force: false)
+            feedProbe(count: count, endPosition: position)
         case .gap(let dropped):
             writeReaderRecord(reader: reader, generation: header.generation, now: now, force: true)
             emit(.gap(dropped: dropped))
@@ -261,6 +303,27 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         guard force || lastReaderRecordAt == nil || now - (lastReaderRecordAt ?? 0) >= Self.readerRecordIntervalSeconds else { return }
         lastReaderRecordAt = now
         records?.write(CaptureReaderRecord(lastAttachedAt: now, lastReadCursor: reader.readCursor, generation: generation))
+    }
+
+    /// One RMS/peak per 512-frame chunk of the frames just read, in ring positions (M5 measurement rows 6 and 7).
+    private func feedProbe(count: Int, endPosition: Int64) {
+        let chunk = Segmenter.chunkSamples
+        var offset = 0
+        while offset + chunk <= count {
+            var sumSquares: Float = 0
+            var peak: Float = 0
+            for index in offset ..< offset + chunk {
+                let value = scratch[index]
+                sumSquares += value * value
+                peak = max(peak, abs(value))
+            }
+            let chunkEnd = endPosition - Int64(count - offset - chunk)
+            if let measurement = probe.observe(chunkEndingAt: chunkEnd, rms: (sumSquares / Float(chunk)).squareRoot(), peak: peak) {
+                lastMeasurement = measurement
+                Self.logger.info("selfcapture edge=\(measurement.edgePosition, privacy: .public) lastVoiceEnd=\(measurement.lastVoiceEnd, privacy: .public) tailFrames=\(measurement.tailFrames, privacy: .public) peakWhileSpeaking=\(measurement.peakWhileSpeaking, privacy: .public) peakAfterEdge=\(measurement.peakAfterEdge, privacy: .public)")
+            }
+            offset += chunk
+        }
     }
 
     /// §9 "Broadcast heartbeat stale (extension killed)": stop reading; record `lost`.

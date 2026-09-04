@@ -21,7 +21,8 @@ final class PipelineAssemblerTests: XCTestCase {
     private var stubSources: CaptureSources {
         CaptureSources(makeMicrophone: { MicrophoneCapture(controller: $0) }, makeBroadcast: { StubAudioSource() },
                        broadcastJoinedInProgress: { true },
-                       setBroadcastGapHandler: { [installedGapHandler] handler in installedGapHandler.mutate { $0 = handler } })
+                       setBroadcastGapHandler: { [installedGapHandler] handler in installedGapHandler.mutate { $0 = handler } },
+                       noteBroadcastSpeakingEdge: { _ in })
     }
 
     func testSessionMetadataMirrorsSettingsTheEffectiveVoiceAndJoinedInProgress() {
