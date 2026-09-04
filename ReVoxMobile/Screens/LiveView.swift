@@ -178,6 +178,7 @@ struct LiveView: View {
                             Label("Jump to latest", systemImage: "arrow.down").font(.footnote.weight(.semibold))
                         }
                         .buttonStyle(.borderedProminent)
+                        .frame(minHeight: 44)
                         .clipShape(Capsule())
                         .padding(.bottom, 8)
                     }

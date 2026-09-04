@@ -1,0 +1,29 @@
+{
+  "checks": [
+    {"type": "target", "name": "live-start-stop-button", "w": 358, "h": 56},
+    {"type": "target", "name": "live-mute-toolbar-item", "w": 44, "h": 44},
+    {"type": "target", "name": "live-broadcast-picker", "w": 50, "h": 50},
+    {"type": "target", "name": "live-jump-to-latest", "w": 140, "h": 44},
+    {"type": "target", "name": "live-open-settings-banner-button", "w": 120, "h": 44},
+    {"type": "target", "name": "models-download-button", "w": 100, "h": 44},
+    {"type": "target", "name": "models-cancel-download", "w": 52, "h": 44},
+    {"type": "target", "name": "models-resume-download", "w": 80, "h": 44},
+    {"type": "target", "name": "models-select-button", "w": 80, "h": 44},
+    {"type": "target", "name": "models-retry-button", "w": 80, "h": 44},
+    {"type": "target", "name": "voices-voice-row", "w": 358, "h": 44},
+    {"type": "target", "name": "voices-play-sample", "w": 140, "h": 44},
+    {"type": "target", "name": "voices-retry-fallback", "w": 70, "h": 44},
+    {"type": "target", "name": "voices-cancel-download", "w": 52, "h": 44},
+    {"type": "target", "name": "voices-resume-download", "w": 80, "h": 44},
+    {"type": "target", "name": "history-clear-all-toolbar-item", "w": 64, "h": 44},
+    {"type": "target", "name": "history-session-row", "w": 358, "h": 72},
+    {"type": "target", "name": "session-share-toolbar-item", "w": 44, "h": 44},
+    {"type": "target", "name": "session-delete-toolbar-item", "w": 44, "h": 44},
+    {"type": "target", "name": "about-licence-link", "w": 358, "h": 44},
+    {"type": "contrast", "name": "live-falling-behind-pill", "fg": "#000000", "bg": "#FFE5CC"},
+    {"type": "contrast", "name": "live-ducking-pill", "fg": "#000000", "bg": "#D9EBFF"},
+    {"type": "contrast", "name": "live-banner-text", "fg": "#000000", "bg": "#FFFBD9"},
+    {"type": "contrast", "name": "models-recommended-badge", "fg": "#000000", "bg": "#D9EBFF"},
+    {"type": "contrast", "name": "secondary-label-on-white", "fg": "#3C3C43", "bg": "#FFFFFF"}
+  ]
+}

@@ -124,6 +124,7 @@ struct VoicesView: View {
                 if model.showsRetry {
                     Button("Retry") { Task { await model.retryPocketTTS() } }
                         .buttonStyle(.bordered)
+                        .frame(minHeight: 44)
                         .disabled(!model.canPlaySample)
                         .accessibilityHint("Tries pocket-tts again")
                 }
@@ -169,7 +170,10 @@ private struct PocketTTSDownloadRow: View {
                 HStack {
                     Text(ModelsViewModel.phaseText(state.phase)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Cancel", role: .cancel, action: onCancel).font(.caption)
+                    Button("Cancel", role: .cancel, action: onCancel)
+                        .font(.caption)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
             }
             .accessibilityAddTraits(.updatesFrequently)
@@ -178,7 +182,7 @@ private struct PocketTTSDownloadRow: View {
                 Text("Paused").font(.caption).foregroundStyle(.secondary)
                 Text(ModelsViewModel.keepOpenText).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Button("Resume", action: onDownload).buttonStyle(.bordered)
+                Button("Resume", action: onDownload).buttonStyle(.bordered).frame(minHeight: 44)
             }
         case .installed:
             Text("Installed").font(.subheadline).foregroundStyle(.secondary)
@@ -193,7 +197,7 @@ private struct PocketTTSDownloadRow: View {
 
     private var accessibilityText: String {
         var parts = ["pocket-tts", VoicesViewModel.pocketTTSSizeText, ModelsViewModel.phaseText(state.phase)]
-        if let fraction = state.fraction, state.phase.isActive { parts.append("\(Int(fraction * 100)) percent") }
+        if let fraction = state.fraction, state.phase.isActive { parts.append(LiveStatusAccessibility.percentText(fraction)) }
         return parts.joined(separator: ". ")
     }
 }
