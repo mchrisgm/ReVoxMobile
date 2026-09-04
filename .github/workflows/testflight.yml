@@ -191,6 +191,14 @@ jobs:
 
       - name: Archive (automatic signing)
         if: env.SIGNING == 'automatic'
+        # CODE_SIGN_IDENTITY="Apple Distribution": the archive signs with the
+        # cloud-managed distribution certificate and an App Store profile, the
+        # same pair the export uses. Without it, automatic signing archives with
+        # an Apple Development certificate that Xcode creates on every run (the
+        # runner is fresh each time, so the key is never reused); Apple caps
+        # those per account, and build 22 hit the cap ("Choose a certificate to
+        # revoke") after 21 builds. Distribution certificates are per team, not
+        # per machine, so this archive creates nothing new.
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -209,6 +217,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             REVOX_BUNDLE_PREFIX="$REVOX_BUNDLE_PREFIX" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             2>&1 | tee archive.log | xcbeautify --renderer github-actions
