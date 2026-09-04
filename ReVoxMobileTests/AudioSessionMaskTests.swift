@@ -357,4 +357,29 @@ final class AudioSessionMaskTests: XCTestCase {
         let reDucked = await rig.controller.isDucked
         XCTAssertTrue(reDucked)
     }
+
+    /// `TranslationPipeline.stop()` stops the player (and the engine) before forwarding the coordinator's last
+    /// `restoreNow()`, so the off-edge cycle of a Stop-while-ducked runs against a stopped engine. It must
+    /// un-duck without bringing the engine back: otherwise the engine keeps rendering and the microphone
+    /// indicator stays lit after the user pressed Stop.
+    func testOffEdgeCycleDoesNotRestartAnEngineTheCallerStopped() async throws {
+        let rig = try await makeRig()
+        await rig.controller.duck()
+        rig.seam.clearCalls()
+        let startsBefore = rig.engine.startCount
+        let playsBefore = rig.plays.value
+
+        await rig.controller.stopEngine()          // what AudioPlayer.stop() does, before the final restore
+        XCTAssertFalse(rig.engine.isRunning)
+
+        await rig.controller.restore()
+        XCTAssertEqual(rig.seam.calls, ["setActive(false, notify)", "setCategory", "setActive(true)"],
+                       "the session still un-ducks and is left active (the never-inactive invariant)")
+        XCTAssertEqual(rig.seam.masks.last, resident)
+        XCTAssertEqual(rig.engine.startCount, startsBefore, "the stopped engine is not restarted")
+        XCTAssertEqual(rig.plays.value, playsBefore, "and nothing is played into it")
+        XCTAssertFalse(rig.engine.isRunning)
+        let ducked = await rig.controller.isDucked
+        XCTAssertFalse(ducked, "the duck is genuinely released")
+    }
 }

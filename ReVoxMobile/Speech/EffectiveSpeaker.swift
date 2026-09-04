@@ -51,7 +51,12 @@ actor EffectiveSpeaker: Speaker {
             }
             do {
                 try await speaker.load()
-                setStatus(.pocketTTS(voice: voice))
+                // The actor is reentrant, so a memory warning can drop the speaker while this load is awaited.
+                // Claim pocket-tts only if the speaker just loaded is still the installed one; otherwise the
+                // fallback that dropped it stands, and the status line and the player gain stay truthful.
+                if pocketTTS === speaker {
+                    setStatus(.pocketTTS(voice: voice))
+                }
             } catch {
                 pocketTTS = nil   // dropped so ARC can release the models (§6.5)
                 Self.logDrop("after load failure")

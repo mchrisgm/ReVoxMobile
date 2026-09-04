@@ -12,6 +12,13 @@ final class EffectiveSpeakerTests: XCTestCase {
         private var voices: [String] = []
         var failInitialize = false
         var failSynthesisOnce = false
+        /// When set, `initialize` blocks until it is cleared — a window in which the reentrant actor can accept
+        /// another call.
+        var holdInitialize: Bool {
+            get { lock.lock(); defer { lock.unlock() }; return holding }
+            set { lock.lock(); holding = newValue; lock.unlock() }
+        }
+        private var holding = false
 
         var initializes: Int { lock.lock(); defer { lock.unlock() }; return initializeCalls }
         var syntheses: Int { lock.lock(); defer { lock.unlock() }; return synthesisCalls }
@@ -23,6 +30,9 @@ final class EffectiveSpeakerTests: XCTestCase {
                 let engine = PocketTTSSpeaker.Engine(
                     initialize: { [self] in
                         lock.lock(); initializeCalls += 1; let fail = failInitialize; lock.unlock()
+                        while holdInitialize {
+                            try await Task.sleep(nanoseconds: 5_000_000)
+                        }
                         if fail { throw SpeakerError.synthesisFailed("no ANE") }
                     },
                     setVoice: { _ in },
@@ -219,5 +229,30 @@ final class EffectiveSpeakerTests: XCTestCase {
         relay.post(.pocketTTS(voice: "alba"))
         await waitUntil("relay updated") { relay.status == .pocketTTS(voice: "alba") }
         XCTAssertEqual(relay.text, "alba (pocket-tts)")
+    }
+
+    /// An actor is reentrant: `unloadPocketTTS()` can land while `prepare` is suspended inside `load()`. The
+    /// resumed `prepare` must not then claim pocket-tts, or the status line would read "alba (pocket-tts)" and
+    /// the player would keep the 0.7 pocket-tts gain while the system voice actually speaks.
+    func testMemoryDropDuringTheLoadIsNotOverwrittenByTheResumedPrepare() async throws {
+        let pocket = PocketRecorder()
+        pocket.holdInitialize = true
+        let (speaker, _, system, statuses) = makeSpeaker(pocket: pocket)
+
+        let prepare = Task { await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil)) }
+        while pocket.initializes == 0 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        await speaker.unloadPocketTTS()          // the memory warning lands mid-load
+        pocket.holdInitialize = false
+        await prepare.value
+
+        let status = await speaker.status
+        XCTAssertEqual(status, .fallback(.memoryPressure), "the drop stands; the resumed prepare does not undo it")
+        XCTAssertEqual(status.engineGain, 1, "and the player is told the system-voice gain")
+        let clip = try await speaker.synthesize("Hi")
+        XCTAssertEqual(clip.sampleRate, 22_050, "the system voice speaks, which is what the status says")
+        XCTAssertEqual(system.texts, ["Hi"])
+        XCTAssertEqual(statuses.value.last, .fallback(.memoryPressure))
     }
 }

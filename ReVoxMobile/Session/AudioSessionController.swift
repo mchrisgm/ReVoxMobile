@@ -288,6 +288,11 @@ actor AudioSessionController: Ducker {
     /// → setActive(true) → engine.start() → guarded play(). The mask is decided at the reactivation step.
     private func deactivationCycle(resident: SessionMask, notifyOthers: Bool) async throws {
         guard let engine else { throw AudioSessionError.notConfigured }
+        // Whether the engine was running decides whether this cycle restarts it. `TranslationPipeline.stop()`
+        // stops the player — and with it the engine — before it forwards the coordinator's final `restoreNow()`,
+        // so the off-edge cycle of a Stop-while-ducked runs against an already-stopped engine. Restarting it
+        // there would leave the engine rendering and the microphone indicator lit after the user pressed Stop.
+        let wasRunning = engine.isRunning
         let session = self.session
         try await perform { engine.pause() }   // deactivating with a rendering engine returns .isBusy (§6.8)
         try await perform { try session.setActive(false, options: notifyOthers ? [.notifyOthersOnDeactivation] : []) }
@@ -296,9 +301,11 @@ actor AudioSessionController: Ducker {
         try await perform { try session.setCategory(mask) }
         appliedDuck = wantDuck
         try await perform { try session.setActive(true, options: []) }
-        try await perform { try engine.start() }
-        guardedPlay()
-        Self.duckingLogger.info("deactivation cycle notify=\(notifyOthers, privacy: .public) applied duck=\(wantDuck, privacy: .public)")
+        if wasRunning {
+            try await perform { try engine.start() }
+            guardedPlay()
+        }
+        Self.duckingLogger.info("deactivation cycle notify=\(notifyOthers, privacy: .public) applied duck=\(wantDuck, privacy: .public) restarted=\(wasRunning, privacy: .public)")
     }
 
     /// Runs one blocking session or engine call on the serial cycle queue; the actor is free while it runs.

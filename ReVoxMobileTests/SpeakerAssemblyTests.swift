@@ -56,8 +56,11 @@ final class SpeakerAssemblyTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func makeAssembly(relay: SpeakerStatusRelay = SpeakerStatusRelay(), volume: VoiceVolume = VoiceVolume()) -> SpeakerAssembly {
-        SpeakerAssembly(layout: layout, settings: store, manager: manager, relay: relay, voiceVolume: volume, center: NotificationCenter())
+    private func makeAssembly(relay: SpeakerStatusRelay? = nil, volume: VoiceVolume = VoiceVolume()) -> SpeakerAssembly {
+        // `nil`, not `SpeakerStatusRelay()`: a default argument is evaluated in the caller's nonisolated context
+        // and the relay is main-actor isolated — the same rule that broke LiveViewModel's init.
+        SpeakerAssembly(layout: layout, settings: store, manager: manager, relay: relay ?? SpeakerStatusRelay(),
+                        voiceVolume: volume, center: NotificationCenter())
     }
 
     func testSelectionFollowsInstallStateAndSettings() async throws {
