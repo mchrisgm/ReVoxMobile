@@ -91,6 +91,8 @@ public struct PipelineConfiguration: Sendable, Equatable {
     public var ignoredLanguage: String?
     public var twoWay: Bool = false
     public var twoWayLanguage: String?
+    /// M9 Learning mode: also transcribe every translated phrase so the words as spoken reach the transcript.
+    public var wantsOriginal: Bool = false
 
     public init(captureMode: CaptureMode,
                 preset: SegmenterPreset,
@@ -102,8 +104,10 @@ public struct PipelineConfiguration: Sendable, Equatable {
                 duckingHoldNanoseconds: UInt64 = DuckingCoordinator.defaultHoldNanoseconds,
                 ignoredLanguage: String? = nil,
                 twoWay: Bool = false,
-                twoWayLanguage: String? = nil) {
+                twoWayLanguage: String? = nil,
+                wantsOriginal: Bool = false) {
         self.captureMode = captureMode
+        self.wantsOriginal = wantsOriginal
         self.preset = preset
         self.pinnedLanguage = pinnedLanguage
         self.ignoredLanguage = ignoredLanguage

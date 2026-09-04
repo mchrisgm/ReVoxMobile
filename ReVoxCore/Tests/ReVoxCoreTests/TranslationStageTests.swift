@@ -190,4 +190,75 @@ final class TranslationStageTests: XCTestCase {
         let routed = try await stage.route(audio)
         XCTAssertEqual(routed?.translation.english, "Buenos días.")
     }
+
+    // MARK: Learning mode (M9)
+
+    private actor FailingTranscriber: Transcriber {
+        func transcribe(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+            throw CancellationError()
+        }
+    }
+
+    func testLearningTranscribesTheWordsAsSpokenNextToTheTranslation() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Good morning.")])
+        let transcriber = FakeTranscriber(segments: [segment(" Buenos"), segment(" días.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber, wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation.english, "Good morning.")
+        XCTAssertEqual(routed?.translation.original, "Buenos días.")
+        XCTAssertEqual(routed?.route, .toEnglish)
+        let calls = await transcriber.calls
+        XCTAssertEqual(calls, ["es"])
+    }
+
+    func testLearningNeverTranscribesEnglishTwice() async throws {
+        let detector = FakeLanguageDetector(language: "en", probability: 0.95)
+        let translator = FakeTranslator(language: "en", segments: [segment(" Good morning.")])
+        let transcriber = FakeTranscriber(segments: [segment("must not be used")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber, wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation.original, "Good morning.", "the translation is the words")
+        let calls = await transcriber.calls
+        XCTAssertEqual(calls, [], "no second decode for English")
+    }
+
+    func testWithoutLearningTheTranscriberIsNeverCalled() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Good morning.")])
+        let transcriber = FakeTranscriber(segments: [segment(" Buenos días.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation.original, "")
+        let calls = await transcriber.calls
+        XCTAssertEqual(calls, [], "learning costs a second decode per phrase, so it is never run unasked")
+    }
+
+    func testATranscribeFailureCostsOnlyTheOriginal() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Good morning.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: FailingTranscriber(), wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation.english, "Good morning.", "learning must never lose a phrase")
+        XCTAssertEqual(routed?.translation.original, "")
+    }
+
+    func testTheSecondDirectionKeepsTheWordsItTranscribedAnyway() async throws {
+        let detector = FakeLanguageDetector(language: "en", probability: 0.95)
+        let translator = FakeTranslator(language: "en", segments: [segment("unused")])
+        let transcriber = FakeTranscriber(segments: [segment(" Good morning.")])
+        let secondary = FakeSecondary(result: "Buenos días.")
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber, secondary: secondary,
+                                     ignoredLanguage: "en", twoWay: true, targetLanguage: "es", wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation.original, "Good morning.")
+        XCTAssertEqual(routed?.translation.english, "Buenos días.")
+        let calls = await transcriber.calls
+        XCTAssertEqual(calls, ["en"], "one transcribe serves both the reply and Learning mode")
+    }
 }

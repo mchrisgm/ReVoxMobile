@@ -25,12 +25,25 @@ final class SegmenterTests: XCTestCase {
         return segments
     }
 
+    /// M9: not a Windows port — Windows has two presets. The numbers are the iOS choice and are asserted here
+    /// so the constant gate sees them like the ported ones.
+    func testVeryFastPresetIsAnIOSAdditionNotAPort() {
+        XCTAssertEqual(SegmenterPreset.veryFast.rawValue, "very_fast")
+        XCTAssertEqual(SegmenterPreset.veryFast.silenceMs, 200)
+        XCTAssertEqual(SegmenterPreset.veryFast.maxSegmentSeconds, 3.0)
+        let veryFast = Segmenter(vad: EnergyVAD(), preset: .veryFast)
+        XCTAssertEqual(veryFast.silenceChunks, 6)      // int(0.2 * 16000 / 512)
+        XCTAssertEqual(veryFast.maxChunks, 93)         // int(3.0 * 16000 / 512)
+        XCTAssertEqual(veryFast.paddingChunks, 6)
+        XCTAssertEqual(SegmenterPreset.allCases, [.balanced, .fast, .veryFast])
+    }
+
     func testPresets() {
         XCTAssertEqual(SegmenterPreset.balanced.silenceMs, 500)
         XCTAssertEqual(SegmenterPreset.balanced.maxSegmentSeconds, 10.0)
         XCTAssertEqual(SegmenterPreset.fast.silenceMs, 300)
         XCTAssertEqual(SegmenterPreset.fast.maxSegmentSeconds, 4.0)
-        XCTAssertEqual(SegmenterPreset.allCases, [.balanced, .fast])
+        XCTAssertEqual(SegmenterPreset.allCases, [.balanced, .fast, .veryFast])   // veryFast is M9's own, see below
         XCTAssertEqual(SegmenterPreset.balanced.rawValue, "balanced")
         XCTAssertEqual(SegmenterPreset.fast.rawValue, "fast")
     }

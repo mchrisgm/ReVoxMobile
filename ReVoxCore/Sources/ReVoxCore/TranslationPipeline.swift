@@ -95,7 +95,8 @@ actor PipelineActor {
                                      transcriber: deps.transcriber, secondary: deps.secondaryTranslator,
                                      ignoredLanguage: configuration.ignoredLanguage,
                                      twoWay: configuration.twoWay,
-                                     targetLanguage: configuration.twoWayLanguage)
+                                     targetLanguage: configuration.twoWayLanguage,
+                                     wantsOriginal: configuration.wantsOriginal)
 
         let (wakeStream, wakeContinuation) = AsyncStream.makeStream(of: Void.self)
         let (textStream, textContinuation) = AsyncStream.makeStream(of: SpokenPhrase.self)
@@ -228,7 +229,7 @@ actor PipelineActor {
         guard running, run == runID else { return }
         let result = routed.translation
         let entry = TranscriptEntry(timestamp: dependencies.clock(), language: result.language,
-                                    original: "", english: result.english)
+                                    original: result.original, english: result.english)
         await transcript?.add(entry)
         events.yield(.entry(entry))
         if case .transcribedOnly(let reason) = routed.route {

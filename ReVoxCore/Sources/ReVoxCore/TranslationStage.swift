@@ -75,10 +75,13 @@ public struct TranslationStage: Sendable {
     private let ignoredLanguage: String?
     private let twoWay: Bool
     private let targetLanguage: String?
+    private let wantsOriginal: Bool
 
     public init(detector: any LanguageDetector, translator: any Translator, pinnedLanguage: String?,
                 transcriber: (any Transcriber)? = nil, secondary: (any SecondaryTranslator)? = nil,
-                ignoredLanguage: String? = nil, twoWay: Bool = false, targetLanguage: String? = nil) {
+                ignoredLanguage: String? = nil, twoWay: Bool = false, targetLanguage: String? = nil,
+                wantsOriginal: Bool = false) {
+        self.wantsOriginal = wantsOriginal
         self.detector = detector
         self.translator = translator
         self.transcriber = transcriber
@@ -116,8 +119,20 @@ public struct TranslationStage: Sendable {
 
         var candidate = try await translator.translate(audio, language: language)
         candidate.languageProbability = detection?.probability
-        guard let translation = SpeechGate.evaluate(candidate) else { return nil }
+        guard var translation = SpeechGate.evaluate(candidate) else { return nil }
+        translation.original = await originalIfWanted(audio, language: language, english: translation.english)
         return RoutedTranslation(translation: translation, route: .toEnglish, isSpoken: true)
+    }
+
+    /// M9 Learning mode: the words as spoken. English needs no second decode — the translation *is* the words —
+    /// and a transcribe failure costs nothing but the original: learning must never lose a phrase.
+    private func originalIfWanted(_ audio: [Float], language: String, english: String) async -> String {
+        guard wantsOriginal else { return "" }
+        if language == "en" { return english }
+        guard let transcriber else { return "" }
+        guard let candidate = try? await transcriber.transcribe(audio, language: language) else { return "" }
+        let parts = candidate.segments.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return SpokenText.clean(parts.filter { !$0.isEmpty }.joined(separator: " "))
     }
 
     /// The ignored language with two-way on: transcribe it as spoken, then translate that text into the target.
@@ -149,7 +164,9 @@ public struct TranslationStage: Sendable {
         guard !cleaned.isEmpty else { return nil }
         // Tagged with the language the text is written in, not the one it came from: a transcript reader — and the
         // export — sees "[fr] Bonjour", which is what was said to the other person. `route` keeps the direction.
-        return RoutedTranslation(translation: Translation(english: cleaned, language: targetLanguage, spokenLanguage: targetLanguage),
+        // The words as spoken were transcribed anyway, so Learning mode gets them for free here.
+        return RoutedTranslation(translation: Translation(english: cleaned, language: targetLanguage, spokenLanguage: targetLanguage,
+                                                          original: wantsOriginal ? spoken.english : ""),
                                  route: .toTarget(targetLanguage), isSpoken: true)
     }
 

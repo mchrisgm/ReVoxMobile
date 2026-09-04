@@ -20,8 +20,23 @@ public struct Settings: Codable, Equatable, Sendable {
     /// M8: what the ignored language is translated into while two-way is on. nil = English, which needs no
     /// second engine because Whisper's translate task already produces English.
     public var twoWayLanguage: String? = nil
+    /// M9: keep the chosen Whisper model through a `.serious` thermal state instead of stepping down to a
+    /// smaller installed one for the next session. The `.critical` pause is not affected.
+    public var keepModelWhenHot: Bool = false
+    /// M9 Learning mode: the words as spoken are transcribed too and shown above the translation.
+    public var learning: Bool = false
+    /// M9: with Learning on, a Latin transliteration of the original is shown as well.
+    public var romanize: Bool = false
+    /// M9: what a Live row shows next to its text — `TimeDisplay.rawValue`. History always shows the time.
+    public var timeDisplay: String = TimeDisplay.age.rawValue
+
+    public enum TimeDisplay: String, CaseIterable, Sendable {
+        case time, age, both
+    }
 
     public init() {}
+
+    public var timeDisplayMode: TimeDisplay { TimeDisplay(rawValue: timeDisplay) ?? .age }
 
     /// The language ReVox is asked to leave alone, once, so no caller has to remember the empty-string case.
     public var ignored: String? {
@@ -50,6 +65,10 @@ public struct Settings: Codable, Equatable, Sendable {
         case ignoredLanguage = "ignored_language"
         case twoWay = "two_way"
         case twoWayLanguage = "two_way_language"
+        case keepModelWhenHot = "keep_model_when_hot"
+        case learning
+        case romanize
+        case timeDisplay = "time_display"
     }
 
     /// Missing keys keep their defaults; a wrong type throws, and `SettingsCodec.decode` turns that into `Settings()`.
@@ -66,6 +85,10 @@ public struct Settings: Codable, Equatable, Sendable {
         ignoredLanguage = try container.decodeIfPresent(String.self, forKey: .ignoredLanguage) ?? ignoredLanguage
         twoWay = try container.decodeIfPresent(Bool.self, forKey: .twoWay) ?? twoWay
         twoWayLanguage = try container.decodeIfPresent(String.self, forKey: .twoWayLanguage) ?? twoWayLanguage
+        keepModelWhenHot = try container.decodeIfPresent(Bool.self, forKey: .keepModelWhenHot) ?? keepModelWhenHot
+        learning = try container.decodeIfPresent(Bool.self, forKey: .learning) ?? learning
+        romanize = try container.decodeIfPresent(Bool.self, forKey: .romanize) ?? romanize
+        timeDisplay = try container.decodeIfPresent(String.self, forKey: .timeDisplay) ?? timeDisplay
     }
 
     /// Writes every key (optionals as `null`, like Windows `json.dumps(dataclasses.asdict(settings))`).
@@ -82,6 +105,10 @@ public struct Settings: Codable, Equatable, Sendable {
         try container.encode(ignoredLanguage, forKey: .ignoredLanguage)
         try container.encode(twoWay, forKey: .twoWay)
         try container.encode(twoWayLanguage, forKey: .twoWayLanguage)
+        try container.encode(keepModelWhenHot, forKey: .keepModelWhenHot)
+        try container.encode(learning, forKey: .learning)
+        try container.encode(romanize, forKey: .romanize)
+        try container.encode(timeDisplay, forKey: .timeDisplay)
     }
 }
 

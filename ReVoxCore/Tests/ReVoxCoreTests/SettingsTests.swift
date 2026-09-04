@@ -179,4 +179,46 @@ final class SettingsTests: XCTestCase {
         XCTAssertNil(settings.twoWayLanguage)
         XCTAssertEqual(settings.voice, "alba")
     }
+
+    // MARK: M9
+
+    func testTheM9FieldsDefaultToOff() {
+        let settings = Settings()
+        XCTAssertFalse(settings.keepModelWhenHot)
+        XCTAssertFalse(settings.learning)
+        XCTAssertFalse(settings.romanize)
+        XCTAssertEqual(settings.timeDisplayMode, .age, "a running conversation is followed by how long ago, not when")
+    }
+
+    func testTheM9FieldsRoundTripThroughSnakeCaseKeys() throws {
+        var settings = Settings()
+        settings.keepModelWhenHot = true
+        settings.learning = true
+        settings.romanize = true
+        settings.timeDisplay = "both"
+        let data = try JSONEncoder().encode(settings)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["keep_model_when_hot"] as? Bool, true)
+        XCTAssertEqual(object["learning"] as? Bool, true)
+        XCTAssertEqual(object["romanize"] as? Bool, true)
+        XCTAssertEqual(object["time_display"] as? String, "both")
+        XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: data), settings)
+        XCTAssertEqual(settings.timeDisplayMode, .both)
+    }
+
+    func testAnUnknownTimeDisplayFallsBackToAge() {
+        var settings = Settings()
+        settings.timeDisplay = "sundial"
+        XCTAssertEqual(settings.timeDisplayMode, .age)
+    }
+
+    /// A settings file written before M9 has none of these keys and must keep working unchanged.
+    func testASettingsFileFromBeforeM9Decodes() throws {
+        let json = Data(#"{"model":"small","language":null,"voice":"alba","ducking":true,"two_way":true}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+        XCTAssertFalse(settings.keepModelWhenHot)
+        XCTAssertFalse(settings.learning)
+        XCTAssertEqual(settings.timeDisplayMode, .age)
+        XCTAssertTrue(settings.twoWay)
+    }
 }
