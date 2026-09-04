@@ -54,13 +54,16 @@ final class LiveViewModel {
 
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
          modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
-         speakerStatus: SpeakerStatusRelay = SpeakerStatusRelay()) {
+         speakerStatus: SpeakerStatusRelay? = nil) {
         self.settings = settings
         self.mute = mute
         self.permission = permission
         self.modelReady = modelReady
         self.supplier = supplier
-        self.speakerStatus = speakerStatus
+        // `nil`, not `SpeakerStatusRelay()`: a default argument is evaluated in the caller's context, which
+        // may be nonisolated, and the relay is main-actor isolated. Building it here — inside the isolated
+        // init — keeps the convenience without the isolation violation.
+        self.speakerStatus = speakerStatus ?? SpeakerStatusRelay()
     }
 
     // MARK: Inputs

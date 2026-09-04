@@ -7,7 +7,10 @@ import ReVoxCore
 /// `placement: .ane`, whole-phrase synthesis through `synthesizeDetailed`, un-normalised 24 kHz samples (the
 /// player applies the fixed gain, §6.7). The three engine calls sit behind `Engine`, so the tests mirror
 /// `test_tts.py` without a model; `make(voice:fluidBaseDirectory:)` builds the production engine.
-actor PocketTTSSpeaker: Speaker {
+///
+/// The conformance names its module: FluidAudio exports a `Speaker` of its own (a diarisation identity), so
+/// the bare name is ambiguous in any file that imports both.
+actor PocketTTSSpeaker: ReVoxCore.Speaker {
     struct Engine: Sendable {
         var initialize: @Sendable () async throws -> Void
         var setVoice: @Sendable (String) -> Void
