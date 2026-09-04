@@ -104,4 +104,38 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(SettingsViewModel.duckingAppliesOnStartText, "A change to the ducking toggle takes effect the next time you tap Start.")
     }
 
+
+    // MARK: M9
+
+    func testTheM9BindingsWriteTheStore() {
+        let store = makeStore()
+        let model = SettingsViewModel(store: store, mute: PlaybackMute())
+        model.keepModelWhenHot = true
+        model.learning = true
+        model.romanize = true
+        model.timeDisplay = .both
+        XCTAssertTrue(store.settings.keepModelWhenHot)
+        XCTAssertTrue(store.settings.learning)
+        XCTAssertTrue(store.settings.romanize)
+        XCTAssertEqual(store.settings.timeDisplayMode, .both)
+        XCTAssertEqual(SettingsViewModel.timeDisplayTitle(.age), "How long ago")
+    }
+
+    /// Every setting has an example that changes with its value: the reader sees what it does, not only what it is.
+    func testEveryExampleChangesWithItsValue() {
+        XCTAssertNotEqual(SettingExamples.latency(.balanced), SettingExamples.latency(.veryFast))
+        XCTAssertTrue(SettingExamples.latency(.veryFast).contains("0.2 s"))
+        XCTAssertNotEqual(SettingExamples.ducking(true), SettingExamples.ducking(false))
+        XCTAssertEqual(SettingExamples.voiceVolume(0.35), "ReVox's own voice plays at 35 %. Other apps are not affected.")
+        XCTAssertNotEqual(SettingExamples.keepModelWhenHot(true, model: .small), SettingExamples.keepModelWhenHot(false, model: .small))
+        XCTAssertTrue(SettingExamples.keepModelWhenHot(true, model: .small).contains("small"))
+        XCTAssertNotEqual(SettingExamples.learning(true), SettingExamples.learning(false))
+        XCTAssertNotEqual(SettingExamples.romanize(true), SettingExamples.romanize(false))
+        XCTAssertNotEqual(SettingExamples.timeDisplay(.time), SettingExamples.timeDisplay(.age))
+        XCTAssertTrue(SettingExamples.skipLanguage("English").contains("English"))
+        XCTAssertTrue(SettingExamples.sourceLanguagePinned("French").contains("French"))
+        XCTAssertEqual(SettingExamples.sampleRow().kind, .entry(language: "es", original: "", english: SettingExamples.spanishEnglish))
+        XCTAssertEqual(Romanizer.romanize(SettingExamples.japaneseOriginal), "ohayou",
+                       "the example is kana on purpose: ICU reads kanji by their Chinese readings")
+    }
 }

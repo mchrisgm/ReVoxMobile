@@ -65,4 +65,59 @@ final class HistoryActionsTests: XCTestCase {
         XCTAssertEqual(HistoryActions.deleteSessionMessage(entryCount: 1), "This session has 1 entry. You cannot undo this action.")
         XCTAssertEqual(HistoryActions.deleteSessionMessage(entryCount: 0), "This session has no entries. You cannot undo this action.")
     }
+
+    // MARK: Merge (M9)
+
+    private func sortedSessions(_ context: ModelContext) throws -> [Session] {
+        try context.fetch(FetchDescriptor<Session>(sortBy: [SortDescriptor(\Session.startedAt)]))
+    }
+
+    func testMergeMakesOneSessionInTimeOrderAndRemovesTheOriginals() throws {
+        let context = ModelContext(container)
+        let sessions = try sortedSessions(context)
+        // A drop marker in the middle session, and an end time only on the last, to prove both survive.
+        let marker = Entry(timestamp: sessions[1].startedAt.addingTimeInterval(1.5), language: "", original: "", english: "", isDropMarker: true)
+        marker.session = sessions[1]
+        context.insert(marker)
+        sessions[2].endedAt = sessions[2].startedAt.addingTimeInterval(90)
+        sessions[2].joinedInProgress = true
+        try context.save()
+
+        let merged = try HistoryActions(context: context).merge([sessions[2], sessions[0], sessions[1]])
+
+        let after = try counts()
+        XCTAssertEqual(after.sessions, 1, "the originals are gone")
+        XCTAssertEqual(after.entries, 7, "6 lines plus the marker, copied, and the originals' rows cascaded away")
+        XCTAssertEqual(merged.startedAt, start, "the earliest session's start")
+        XCTAssertEqual(merged.endedAt, sessions[2].startedAt.addingTimeInterval(90), "the latest end")
+        XCTAssertTrue(merged.joinedInProgress)
+        XCTAssertEqual(merged.modelID, "small")
+        let lines = merged.entries.sorted { $0.timestamp < $1.timestamp }
+        XCTAssertEqual(lines.map(\.english), ["line 0.1", "line 0.2", "line 1.1", "", "line 1.2", "line 2.1", "line 2.2"])
+        XCTAssertEqual(lines.filter(\.isDropMarker).count, 1)
+        XCTAssertEqual(merged.entries.count, 7)
+    }
+
+    func testMergeNeedsAtLeastTwoSessions() throws {
+        let context = ModelContext(container)
+        let sessions = try sortedSessions(context)
+        XCTAssertThrowsError(try HistoryActions(context: context).merge([sessions[0]])) { error in
+            XCTAssertEqual(error as? HistoryActionsError, .needTwoSessions)
+        }
+        XCTAssertThrowsError(try HistoryActions(context: context).merge([]))
+        XCTAssertEqual(try counts().sessions, 3, "nothing changed")
+    }
+
+    func testLatestEndFallsBackToTheLastEntry() throws {
+        let context = ModelContext(container)
+        let sessions = try sortedSessions(context)
+        let end = HistoryActions.latestEnd(of: sessions)
+        XCTAssertEqual(end, sessions[2].startedAt.addingTimeInterval(2), "no session recorded an end, so the last entry is it")
+    }
+
+    func testMergeCopy() {
+        XCTAssertEqual(HistoryActions.mergeConfirmationTitle(count: 3), "Merge 3 sessions?")
+        XCTAssertEqual(HistoryActions.mergeMessage, "They become one session, in time order. The originals are removed. You cannot undo this action.")
+        XCTAssertEqual(String(describing: HistoryActionsError.needTwoSessions), "Select at least two sessions to merge")
+    }
 }

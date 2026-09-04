@@ -43,6 +43,7 @@ actor PocketTTSSpeaker: ReVoxCore.Speaker {
     static let sampleRateHz: Int = PocketTtsConstants.audioSampleRate
     nonisolated let sampleRate: Int = PocketTTSSpeaker.sampleRateHz
     private static let logger = Logger(subsystem: "revox", category: "measurements")
+    private static let measurementLogger = Logger(subsystem: "revox", category: "measurements")
 
     private let engine: Engine
     private(set) var voice: String
@@ -112,10 +113,15 @@ actor PocketTTSSpeaker: ReVoxCore.Speaker {
         }
         try await load()
         let started = ContinuousClock.now
-        let samples = try await engine.synthesize(text, voice)
+        let raw = try await engine.synthesize(text, voice)
         let synthesisSeconds = (ContinuousClock.now - started) / .seconds(1)
-        let audioSeconds = Double(samples.count) / Double(sampleRate)
+        let audioSeconds = Double(raw.count) / Double(sampleRate)
         Self.logger.info("pocket-tts synthesis s=\(synthesisSeconds, privacy: .public) audio_s=\(audioSeconds, privacy: .public) rtf=\(audioSeconds > 0 ? synthesisSeconds / audioSeconds : 0, privacy: .public) resident_mb=\((MemoryMeter.residentBytes() ?? 0) / 1_048_576, privacy: .public)")
+        // M9: the click before every phrase (M4 measurement row 20). Everything ahead of the first sustained
+        // swing is dropped and the 10 ms before it ramped in; the log says how much went, per clip.
+        let samples = ClipHead.conditioned(raw, sampleRate: sampleRate)
+        let trimmedMilliseconds = (raw.count - samples.count) * 1000 / max(sampleRate, 1)
+        Self.measurementLogger.info("pocket-tts head trimmed_ms=\(trimmedMilliseconds, privacy: .public) onset_ms=\((ClipHead.onset(of: raw, sampleRate: self.sampleRate) ?? -1) * 1000 / max(self.sampleRate, 1), privacy: .public)")
         return AudioClip(samples: samples, sampleRate: sampleRate)
     }
 }

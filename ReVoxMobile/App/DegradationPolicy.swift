@@ -41,9 +41,12 @@ enum DegradationPolicy {
     static func memoryModelText(_ id: WhisperModelID) -> String { "Memory low: switched to \(id.displayName)" }
 
     /// `selectedModel` is what the **user** chose (`Settings.model`), never the reduced one, so a recovery can
-    /// restore it; `installedModels` is what is on disk right now.
+    /// restore it; `installedModels` is what is on disk right now. `keepModelWhenHot` (M9) is the owner's
+    /// "force my model" toggle: a `.serious` thermal state then changes nothing about the model. It does not
+    /// touch the `.critical` pause — iOS ends an app that keeps working at critical, and the ask was the model,
+    /// not the pause — and it does not touch the memory rows, where the model *is* the memory the device wants.
     static func react(to signal: DeviceSignal, state: inout DegradationState, selectedModel: WhisperModelID,
-                      installedModels: [WhisperModelID], usesPocketTTS: Bool) -> [DegradationEffect] {
+                      installedModels: [WhisperModelID], usesPocketTTS: Bool, keepModelWhenHot: Bool = false) -> [DegradationEffect] {
         switch signal {
         case .lowPowerMode:
             // §9 has no row for Low Power Mode: it is logged by `DeviceSignals` and changes nothing.
@@ -71,12 +74,16 @@ enum DegradationPolicy {
                     state.isPausedForHeat = false
                     effects.append(.resumeTranslation)
                 }
-                if state.reducedModel == nil,
+                if !keepModelWhenHot, state.reducedModel == nil,
                    let smaller = ModelFallback.smallerInstalledModel(than: selectedModel, installed: installedModels) {
                     state.reducedModel = smaller
                     effects.append(.useModel(smaller, restartRunning: false))
                 }
-                if !effects.isEmpty { effects.append(.banner(heatReducedText)) }
+                if effects.contains(where: { if case .useModel = $0 { return true } else { return false } }) {
+                    effects.append(.banner(heatReducedText))
+                } else if !effects.isEmpty {
+                    effects.append(.banner(heatRecoveredText))   // resumed from a pause and kept the model
+                }
                 return effects
 
             case .nominal, .fair:

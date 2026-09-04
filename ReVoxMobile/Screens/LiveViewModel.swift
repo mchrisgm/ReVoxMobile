@@ -177,6 +177,7 @@ final class LiveViewModel {
         configuration.ignoredLanguage = settings.ignored          // §8.2 (M8)
         configuration.twoWay = settings.twoWay
         configuration.twoWayLanguage = settings.twoWayLanguage
+        configuration.wantsOriginal = settings.learning           // M9 Learning mode
         return configuration
     }
 
@@ -420,6 +421,42 @@ final class LiveViewModel {
         signature = nil
     }
 
+    // MARK: Quick controls (M9, §8.2)
+
+    /// The Live screen's own latency picker; goes through `setLatencyMode` so the cached pipeline is dropped.
+    var latencyMode: SegmenterPreset {
+        get { settings.settings.preset }
+        set { setLatencyMode(newValue) }
+    }
+
+    /// Read by `configuration` at the next Start, like the Settings toggle.
+    var ducking: Bool {
+        get { settings.settings.ducking }
+        set { settings.update { $0.ducking = newValue } }
+    }
+
+    /// Live: the shared `VoiceVolume` box is what the players read, so the next clip uses it at once.
+    var voiceVolume: Double {
+        get { settings.settings.voiceVolume }
+        set {
+            let clamped = min(max(newValue, 0), 1)
+            settings.update { $0.voiceVolume = clamped }
+            volume?.current = Float(clamped)
+        }
+    }
+
+    /// M9 Learning mode. Applies at the next Start: the pipeline reads `wantsOriginal` once, when it builds its stage.
+    var isLearning: Bool {
+        get { settings.settings.learning }
+        set { settings.update { $0.learning = newValue } }
+    }
+
+    var romanizes: Bool { settings.settings.romanize }
+    var timeDisplay: Settings.TimeDisplay { settings.settings.timeDisplayMode }
+
+    /// The players' volume box, handed in by the environment; nil in tests that never play.
+    @ObservationIgnored var volume: VoiceVolume?
+
     /// A model or voice was deleted: the cached pipeline still holds the removed files open, so drop it while idle.
     /// Running or preparing runs are left alone — `ModelManager` refuses a delete then (§6.9).
     func releaseCachedPipeline() async {
@@ -466,7 +503,7 @@ final class LiveViewModel {
             isFallingBehind = false
             lagTask?.cancel()
             detectedLanguage = entry.language
-            rows.append(LiveTranscriptRow(time: entry.timestamp, kind: .entry(language: entry.language, english: entry.english)))
+            rows.append(LiveTranscriptRow(time: entry.timestamp, kind: .entry(language: entry.language, original: entry.original, english: entry.english)))
         case .lag:
             isFallingBehind = true
             if rows.last?.kind != .dropMarker {

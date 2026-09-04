@@ -135,14 +135,18 @@ final class ScreenshotTests: XCTestCase {
             LiveView(model: live, models: hosting.models(), broadcastExtensionBundleID: extensionID)
         })
 
-        // Live, running, with a translated phrase and a drop marker.
+        // Live, running, with translated phrases: Learning on for the first (original above the translation) and
+        // ages rather than times, so the README shows both M9 surfaces on the screen they live on.
         let pipeline = FakeLivePipeline()
         let running = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
                                     supplier: { _, _ in pipeline })
         running.isTwoWay = false
+        running.isLearning = true
         running.handle(.state(.running))
-        for (language, english) in Self.sampleTranscript {
-            running.handle(.entry(TranscriptEntry(timestamp: Date(), language: language, original: "", english: english)))
+        for (index, (language, english)) in Self.sampleTranscript.enumerated() {
+            let original = index == 0 ? "Buenos días, gracias por acompañarnos hoy." : ""
+            running.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(Double(index - 4) * 9), language: language,
+                                                  original: original, english: english)))
         }
         try capture("live-running", NavigationStack {
             LiveView(model: running, models: hosting.models(), broadcastExtensionBundleID: extensionID)
@@ -154,9 +158,26 @@ final class ScreenshotTests: XCTestCase {
         try capture("models", NavigationStack { ModelsView(model: hosting.models()) })
         try capture("voices", NavigationStack { VoicesView(model: voices) })
         let settings = SettingsViewModel(store: store, mute: mute, voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
+        settings.learning = true
         try capture("settings", NavigationStack {
             SettingsView(model: settings, models: modelsForVoices, voices: voices)
         })
+
+        // History in edit mode with two sessions selected: the Merge bar (M9).
+        let container = try TranscriptContainer.make(inMemory: true)
+        let context = ModelContext(container)
+        for (index, day) in [0.0, 1.0].enumerated() {
+            let session = Session(startedAt: Date().addingTimeInterval(-86_400 * day), endedAt: Date().addingTimeInterval(-86_400 * day + 600),
+                                  captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "alba", joinedInProgress: false)
+            context.insert(session)
+            let entry = Entry(timestamp: session.startedAt.addingTimeInterval(5), language: "es", original: "",
+                              english: Self.sampleTranscript[index].1, isDropMarker: false)
+            entry.session = session
+            context.insert(entry)
+        }
+        try context.save()
+        let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
+        try capture("history-selecting", NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
     }
 
     static let sampleTranscript: [(String, String)] = [

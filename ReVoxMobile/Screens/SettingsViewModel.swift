@@ -57,9 +57,48 @@ final class SettingsViewModel {
         }
     }
 
-    /// The Windows preset values (§5.1): balanced 500 ms / 10 s, fast 300 ms / 4 s.
+    /// The preset values (§5.1): balanced 500 ms / 10 s, fast 300 ms / 4 s, very fast 200 ms / 3 s (M9).
     static func presetDescription(_ preset: SegmenterPreset) -> String {
         "Silence \(preset.silenceMs) ms, max \(Int(preset.maxSegmentSeconds)) s"
+    }
+
+    // MARK: M9
+
+    /// §9 thermal row, overridden: the chosen model stays through a `.serious` thermal state.
+    var keepModelWhenHot: Bool {
+        get { store.settings.keepModelWhenHot }
+        set { store.update { $0.keepModelWhenHot = newValue } }
+    }
+
+    var learning: Bool {
+        get { store.settings.learning }
+        set { store.update { $0.learning = newValue } }
+    }
+
+    var romanize: Bool {
+        get { store.settings.romanize }
+        set { store.update { $0.romanize = newValue } }
+    }
+
+    /// The model the heat example names.
+    var selectedModel: WhisperModelID { store.settings.whisperModel }
+
+    var timeDisplay: Settings.TimeDisplay {
+        get { store.settings.timeDisplayMode }
+        set { store.update { $0.timeDisplay = newValue.rawValue } }
+    }
+
+    static let keepModelWhenHotHelpText = "When the iPhone gets hot, ReVox normally switches the next session to a smaller model and says so. With this on, your chosen model is kept. Translation still pauses if the iPhone reaches its critical temperature; iOS would close the app otherwise."
+    static let learningHelpText = "Shows the words as they were spoken above the translation. Each phrase is decoded a second time, so it takes a little longer to appear."
+    static let romanizeHelpText = "Adds how the original sounds in Latin letters, for scripts you cannot read yet. Only shown when it differs from the original. Japanese kanji come out with their Chinese readings; kana are right."
+    static let timeDisplayHelpText = "How long ago a phrase was said is easier to follow in a running conversation than the time it was said. History always shows the time."
+
+    static func timeDisplayTitle(_ mode: Settings.TimeDisplay) -> String {
+        switch mode {
+        case .time: return "Time"
+        case .age: return "How long ago"
+        case .both: return "Both"
+        }
     }
 
     /// Kept as the screen's own entry point; `LanguageCatalog` is where the list is built (§8.5).

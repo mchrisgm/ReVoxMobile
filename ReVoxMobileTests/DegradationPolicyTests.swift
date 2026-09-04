@@ -7,9 +7,48 @@ final class DegradationPolicyTests: XCTestCase {
 
     @discardableResult
     private func react(_ signal: DeviceSignal, state: inout DegradationState, selected: WhisperModelID = .small,
-                       installed: [WhisperModelID]? = nil, usesPocketTTS: Bool = false) -> [DegradationEffect] {
+                       installed: [WhisperModelID]? = nil, usesPocketTTS: Bool = false, keepModelWhenHot: Bool = false) -> [DegradationEffect] {
         DegradationPolicy.react(to: signal, state: &state, selectedModel: selected,
-                                installedModels: installed ?? allSmall, usesPocketTTS: usesPocketTTS)
+                                installedModels: installed ?? allSmall, usesPocketTTS: usesPocketTTS,
+                                keepModelWhenHot: keepModelWhenHot)
+    }
+
+    // MARK: Keep my model when hot (M9)
+
+    func testKeepingTheModelMeansSeriousChangesNothing() {
+        var state = DegradationState()
+        XCTAssertEqual(react(.thermalState(.serious), state: &state, keepModelWhenHot: true), [],
+                       "no smaller model, and no banner about one")
+        XCTAssertNil(state.reducedModel)
+        XCTAssertEqual(state.thermalState, .serious)
+    }
+
+    func testKeepingTheModelStillPausesAtCriticalAndResumesAfter() {
+        var state = DegradationState()
+        XCTAssertEqual(react(.thermalState(.critical), state: &state, keepModelWhenHot: true),
+                       [.pauseTranslation, .banner("iPhone is hot: translation paused")],
+                       "the pause is iOS's survival rule, not a model choice")
+        XCTAssertEqual(react(.thermalState(.serious), state: &state, keepModelWhenHot: true),
+                       [.resumeTranslation, .banner("iPhone cooled down: translation resumed")],
+                       "resumed on the user's own model")
+        XCTAssertNil(state.reducedModel)
+    }
+
+    func testKeepingTheModelDoesNotTouchTheMemoryRows() {
+        var state = DegradationState()
+        XCTAssertEqual(react(.memoryWarning, state: &state, keepModelWhenHot: true),
+                       [.useModel(.base, restartRunning: true), .banner("Memory low: switched to base")],
+                       "the loaded model is the memory the device wants back; heat is a different question")
+    }
+
+    func testTurningKeepOnAfterAReductionRestoresAtTheNextRecovery() {
+        var state = DegradationState()
+        _ = react(.thermalState(.serious), state: &state)
+        XCTAssertEqual(state.reducedModel, .base)
+        XCTAssertEqual(react(.thermalState(.serious), state: &state, keepModelWhenHot: true), [],
+                       "already reduced; the toggle does not rebuild a hot phone's session by itself")
+        XCTAssertEqual(react(.thermalState(.fair), state: &state, keepModelWhenHot: true),
+                       [.useModel(.small, restartRunning: false), .banner("iPhone cooled down: translation resumed")])
     }
 
     func testFirstMemoryWarningDropsPocketTTSThenPressureShrinksTheModel() {

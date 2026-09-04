@@ -43,15 +43,20 @@ Two things to know about the reply direction:
 
 ### While translating
 
+- **Quick controls** sit on the Live screen under the two-way card: latency mode, ducking, Learning and the voice volume. Volume changes at once; the other three are read at Start, so they lock while a session runs.
 - **Mute** the voice with the speaker button in the navigation bar; the transcript keeps running.
-- **Ducking** lowers other apps' audio while ReVox speaks. Turn it off in Settings; the change applies at the next Start.
-- **Voice volume** in Settings sets how loud ReVox's own voice is.
-- **Latency mode** trades responsiveness for context: *Balanced* (500 ms of silence ends a phrase, 10 s maximum) or *Fast* (300 ms, 4 s).
+- **Ducking** lowers other apps' audio while ReVox speaks. Turn it off in Settings or the quick controls; the change applies at the next Start.
+- **Voice volume** sets how loud ReVox's own voice is.
+- **Latency mode** trades responsiveness for context: *Balanced* (500 ms of silence ends a phrase, 10 s maximum), *Fast* (300 ms, 4 s) or *Very fast* (200 ms, 3 s — the quickest, with more and shorter phrases and more work for the model).
+- **Learning** shows the words as they were spoken above the translation, so you can follow the other language as well as understand it. Each phrase is decoded a second time, so it takes a little longer to appear. **Romanize** (Settings › Learning) adds how the original sounds in Latin letters under a script you cannot read; Japanese kana are right, kanji come out with their Chinese readings.
+- **How long ago.** Each Live row shows how long ago the phrase was said — `12 s`, `3 min` — counting up as you read, which is easier to follow in a running conversation than the clock time. Settings › Time on the Live screen switches to the time, or both. History always shows the time.
+- **Keep my model when hot** (Settings › Heat). When the iPhone gets hot, ReVox normally moves the next session to a smaller installed model and says so. Turn this on to keep your chosen model regardless. Translation still pauses at the iPhone's critical temperature, because iOS would otherwise close the app.
 - If phrases arrive faster than they can be translated, ReVox keeps the newest three, shows **Falling behind** and marks the gap in the transcript.
+- Every setting in **Settings** shows an example of what it does with its current value — a sample transcript row, a timeline, a sentence — under the control.
 
 ### Afterwards
 
-The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Sessions older than 30 days are pruned automatically.
+The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Tap **Edit** to select several sessions and **Merge** them into one, in time order (the originals are removed), or **Delete** them together. Sessions older than 30 days are pruned automatically.
 
 ## Status
 
@@ -66,9 +71,10 @@ The **History** tab lists every session, newest first, and searches across their
 | 5 | Other-apps capture via the broadcast extension | Done |
 | 6 | History, export, About screen, HIG polish | Done |
 | 7 | Hardening: storage accounting, recovery, thermal and memory pressure | Done |
-| 8 | Two-way conversation, the skipped language, Live screen polish, screenshots | **Current** |
+| 8 | Two-way conversation, the skipped language, Live screen polish, screenshots | Done |
+| 9 | Keep my model when hot, quick controls, Very fast, merging sessions, Learning mode, how-long-ago, setting examples, the pocket-tts click | **Current** |
 
-Milestone 8 adds the language ReVox leaves alone and the second direction that answers it, and reworks the Live screen: a source card that says what each source listens to, the two-way controls beside it, and a Start button that shows the model loading instead of going grey and silent.
+Milestone 9 is the owner's second round of fixes and improvements: the model stays through a hot iPhone when asked, the settings a conversation reaches for sit on the Live screen, sessions merge in History, Learning mode shows the words as spoken (and how they sound), rows say how long ago rather than when, every setting shows an example, the selected model is highlighted as a whole row, and the click before every pocket-tts phrase is gated out of the clip.
 
 ## Requirements
 

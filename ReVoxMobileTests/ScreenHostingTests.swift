@@ -70,6 +70,15 @@ final class ScreenHostingTests: XCTestCase {
         settingsModel.ducking = false
         settingsModel.voiceVolume = 0.3
         host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices) })
+        // M9: every section's example in its "on" state, and the third preset.
+        settingsModel.latencyMode = .veryFast
+        settingsModel.learning = true
+        settingsModel.romanize = true
+        settingsModel.timeDisplay = .both
+        settingsModel.keepModelWhenHot = true
+        settingsModel.isMuted = true
+        settingsModel.ignoredLanguage = "en"
+        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices) })
     }
 
     func testLiveViewHostsInEveryState() async {
@@ -204,6 +213,11 @@ final class ScreenHostingTests: XCTestCase {
         host(NavigationStack { HistoryView(exporter: exporter) }.modelContainer(container))                       // one row
         host(NavigationStack { HistoryView(initialQuery: "hola", exporter: exporter) }.modelContainer(container)) // one hit
         host(NavigationStack { HistoryView(initialQuery: "zzz", exporter: exporter) }.modelContainer(container))  // ContentUnavailableView.search
+        // M9: edit mode with the Merge / Delete bar; a second session so Merge has something to count.
+        let second = Session(startedAt: Date().addingTimeInterval(120), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+        context.insert(second)
+        try context.save()
+        host(NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))        // selecting
         XCTAssertEqual(HistoryView.emptyTitle, "No Transcripts")
         XCTAssertEqual(HistoryView.emptyDescription, "Sessions you translate appear here.")
         XCTAssertEqual(HistoryView(exporter: exporter).exporter.directory.standardizedFileURL,

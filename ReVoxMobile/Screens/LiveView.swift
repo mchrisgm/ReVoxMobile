@@ -20,6 +20,7 @@ struct LiveView: View {
         VStack(spacing: 12) {
             sourceCard
             twoWayCard
+            quickControls
             statusLine
             bannerView
             transcriptOnlyNote
@@ -133,6 +134,52 @@ struct LiveView: View {
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
+    }
+
+    /// M9 §8.2: the settings a running conversation reaches for, on the screen it is running on. Latency, ducking
+    /// and Learning are read at Start (the pipeline builds its stage once), so they lock while a run is going with
+    /// the same words the source uses; the voice volume is live, because the players read it per clip.
+    private var quickControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Quick controls")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                Spacer()
+                if isBusy {
+                    Text(Self.lockedWhileRunningText).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Picker("Latency", selection: $model.latencyMode) {
+                ForEach(SegmenterPreset.allCases, id: \.self) { preset in
+                    Text(SettingsView.title(for: preset)).tag(preset)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isBusy)
+            .accessibilityLabel("Latency mode")
+            .accessibilityHint(isBusy ? Self.lockedWhileRunningText : SettingsViewModel.presetDescription(model.latencyMode))
+            HStack(spacing: 16) {
+                Toggle(isOn: $model.ducking) { Text("Ducking").font(.subheadline) }
+                    .disabled(isBusy)
+                    .accessibilityHint("Lowers other apps' audio while ReVox speaks; applies at the next Start")
+                Toggle(isOn: $model.isLearning) { Text("Learning").font(.subheadline) }
+                    .disabled(isBusy)
+                    .accessibilityHint("Shows the words as spoken above the translation; applies at the next Start")
+            }
+            .frame(minHeight: 44)
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+                Slider(value: $model.voiceVolume, in: 0...1, step: 0.05) { Text("Voice volume") }
+                    .accessibilityValue("\(Int((model.voiceVolume * 100).rounded())) percent")
+                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
     }
 
     /// The one place a transcript-only phrase is explained: it is in the transcript, and nothing said it (§8.2).
@@ -271,11 +318,16 @@ struct LiveView: View {
             ContentUnavailableView("Ready to translate", systemImage: "waveform.and.mic",
                                    description: Text(model.captureMode == .broadcast ? Self.broadcastEmptyStateText : "Choose a source and tap Start."))
         } else {
-            ScrollViewReader { proxy in
+            // M9: a periodic timeline so "12 s" counts up while the reader follows the conversation. It ticks only
+            // when ages are shown; with the time alone the rows are static and the view is drawn once.
+            TimelineView(.periodic(from: .now, by: model.timeDisplay == .time ? 3_600 : 1)) { context in
+              ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(model.rows) { row in
-                            LiveTranscriptRowView(row: row).id(row.id)
+                            LiveTranscriptRowView(row: row, now: context.date, timeDisplay: model.timeDisplay,
+                                                  showsOriginal: model.isLearning, romanizes: model.romanizes)
+                                .id(row.id)
                         }
                         Color.clear
                             .frame(height: 1)
@@ -304,6 +356,7 @@ struct LiveView: View {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
+              }
             }
         }
     }
