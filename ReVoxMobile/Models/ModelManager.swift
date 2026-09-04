@@ -38,6 +38,8 @@ final class ModelManager {
     private(set) var states: [DownloadKind: ModelDownloadState] = [:]
     private(set) var installedWhisper: [WhisperModelID] = []
     private(set) var vadInstalled = false
+    /// On-disk accounting (§6.9): refreshed by `refreshInstalledStates()`, i.e. after every install and delete.
+    private(set) var storage: ModelStorageUsage = .empty
     private(set) var pocketTTSInstalled = false
     /// Called after the active Whisper model was deleted with the smallest installed model, or nil.
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
@@ -96,6 +98,12 @@ final class ModelManager {
         if tasks[.pocketTTS] == nil, !pausedKinds.contains(.pocketTTS) {
             setState(.pocketTTS, phase: pocketTTSInstalled ? .installed : .idle, fraction: pocketTTSInstalled ? 1 : nil)
         }
+        refreshStorage()
+    }
+
+    /// Enumerates the model root (metadata only, no file reads) and re-reads the free space.
+    func refreshStorage() {
+        storage = ModelStorage.usage(layout: layout, availableBytes: availableBytes())
     }
 
     private func setState(_ kind: DownloadKind, phase: ModelDownloadPhase, fraction: Double?) {

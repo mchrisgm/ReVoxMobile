@@ -490,4 +490,26 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(for: .pocketTTS).phase, .failed("Not enough space: needs about 0.9 GB, 0.3 GB free"))
         XCTAssertEqual(fakeSteps.pocketTTSDownloads, 0)
     }
+
+
+    // MARK: Storage accounting (M7 Task 87)
+
+    @MainActor
+    func testStorageRefreshesAfterInstallAndDelete() async throws {
+        let host = FakeInstallHost()
+        let manager = makeManager(host: host)
+        XCTAssertEqual(manager.storage.totalBytes, 0)
+        XCTAssertEqual(manager.storage.freeBytes, 50_000_000_000)
+        manager.install(.whisper(.tiny))
+        await waitUntil("tiny and the automatic VAD installed") { manager.state(for: .vad).phase == .installed }
+        XCTAssertNotNil(manager.storage.bytes(for: .whisper(.tiny)))
+        XCTAssertNotNil(manager.storage.bytes(for: .vad))
+        XCTAssertGreaterThan(manager.storage.totalBytes, 0)
+        try manager.delete(.whisper(.tiny), activeModel: .small)
+        XCTAssertNil(manager.storage.bytes(for: .whisper(.tiny)))
+        XCTAssertNotNil(manager.storage.bytes(for: .vad))
+        manager.refreshStorage()
+        let expected = ModelStorage.usage(layout: layout, availableBytes: nil).bytes(for: .vad)
+        XCTAssertEqual(manager.storage.bytes(for: .vad), expected)
+    }
 }
