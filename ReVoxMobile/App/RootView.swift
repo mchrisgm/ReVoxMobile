@@ -5,6 +5,7 @@ struct RootView: View {
     let environment: AppEnvironment
 
     var body: some View {
+        @Bindable var onboarding = environment.onboarding
         TabView {
             NavigationStack {
                 LiveView(model: environment.live, models: environment.models,
@@ -19,9 +20,15 @@ struct RootView: View {
             .tabItem { Label("History", systemImage: "clock") }
 
             NavigationStack {
-                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices, diagnostics: environment.diagnostics)
+                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices, diagnostics: environment.diagnostics,
+                             onboarding: environment.onboarding)
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }
+        }
+        // M10: the first-run tutorial, shown on appear until this version of it has been finished or skipped, and
+        // again whenever Settings › "Show the tutorial" resets it. A full-screen cover: it cannot be swiped away.
+        .fullScreenCover(isPresented: $onboarding.shouldShowNow) {
+            OnboardingView(model: onboarding)
         }
     }
 }

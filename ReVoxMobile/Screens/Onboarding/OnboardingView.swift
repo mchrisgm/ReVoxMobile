@@ -1,0 +1,589 @@
+import SwiftUI
+import ReVoxCore
+
+/// The first-run tutorial (M10): seven pages, each with a demo the reader taps rather than a paragraph they read.
+/// Presented as a full-screen cover from the root, so it cannot be swiped away half-read; Skip is always in the
+/// corner. Pages slide in from the side they come from and fade; under Reduce Motion they crossfade and nothing
+/// bounces. Every control is at least 44 pt tall; every colour is a semantic one, so dark mode needs no work.
+struct OnboardingView: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var direction: Direction = .forward
+
+    enum Direction { case forward, back }
+
+    static let skipTitle = "Skip"
+    static let backTitle = "Back"
+    static let nextTitle = "Next"
+    static let finishTitle = "Start translating"
+
+    static func primaryTitle(isLastPage: Bool) -> String { isLastPage ? finishTitle : nextTitle }
+
+    /// The swipe distance that turns a page: a deliberate flick, not a wobble while tapping a toggle.
+    static let swipeThreshold: CGFloat = 80
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            hero
+            pager
+            footer
+        }
+        .background(Color(.systemBackground))
+        .onDisappear { model.stopDemo() }
+    }
+
+    // MARK: Header: the progress bar and Skip
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            OnboardingProgressBar(progress: model.progress, step: model.currentIndex + 1, count: model.pages.count,
+                                  animation: pageAnimation)
+            Button(Self.skipTitle) { model.skip() }
+                .font(.body.weight(.medium))
+                .frame(minWidth: 44, minHeight: 44)
+                .opacity(model.isLastPage ? 0 : 1)
+                .disabled(model.isLastPage)
+                .accessibilityHidden(model.isLastPage)
+                .accessibilityLabel("Skip the tutorial")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+    }
+
+    // MARK: Hero: one symbol that morphs from page to page
+
+    /// Outside the pager on purpose: the symbol stays in place and turns into the next page's symbol, which reads
+    /// as one thing changing rather than seven things sliding past. It bounces once as each page lands.
+    private var hero: some View {
+        Image(systemName: model.page.symbol)
+            .font(.system(size: 44, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 88, height: 88)
+            .background(Color.accentColor.opacity(0.12), in: Circle())
+            .contentTransition(symbolTransition)
+            .symbolEffect(.bounce, value: reduceMotion ? 0 : model.currentIndex)
+            .animation(pageAnimation, value: model.currentIndex)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: The pages
+
+    private var pager: some View {
+        ZStack {
+            OnboardingPageView(page: model.page, index: model.currentIndex, count: model.pages.count, model: model)
+                .id(model.currentIndex)
+                .transition(pageTransition)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(swipe)
+    }
+
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 24, coordinateSpace: .local)
+            .onEnded { value in
+                let dx = value.predictedEndTranslation.width
+                guard abs(value.translation.width) > abs(value.translation.height), abs(dx) > Self.swipeThreshold else { return }
+                turn(dx < 0 ? .forward : .back)
+            }
+    }
+
+    private var pageTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        let entering: Edge = direction == .forward ? .trailing : .leading
+        let leaving: Edge = direction == .forward ? .leading : .trailing
+        return .asymmetric(insertion: .move(edge: entering).combined(with: .opacity),
+                           removal: .move(edge: leaving).combined(with: .opacity))
+    }
+
+    private var pageAnimation: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.12)
+    }
+
+    /// The hero morphs one symbol into the next (iOS 17); under Reduce Motion it crossfades.
+    private var symbolTransition: ContentTransition {
+        if reduceMotion { return .opacity }
+        return .symbolEffect(.replace)
+    }
+
+    /// The direction is set first and the page changed on the next turn of the run loop: a removed view leaves
+    /// with the transition it was last rendered with, so both changes in one transaction would slide the old
+    /// page out the wrong way whenever the reader turns around.
+    private func turn(_ newDirection: Direction) {
+        switch newDirection {
+        case .forward: guard !model.isLastPage else { return }
+        case .back: guard !model.isFirstPage else { return }
+        }
+        direction = newDirection
+        let animation = pageAnimation
+        Task { @MainActor in
+            withAnimation(animation) {
+                switch newDirection {
+                case .forward: model.advance()
+                case .back: model.back()
+                }
+            }
+        }
+    }
+
+    // MARK: Footer: Back and Next / Start translating
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Button {
+                turn(.back)
+            } label: {
+                Label(Self.backTitle, systemImage: "chevron.left")
+                    .font(.headline)
+                    .frame(minHeight: 50)
+                    .padding(.horizontal, 4)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .opacity(model.isFirstPage ? 0 : 1)
+            .disabled(model.isFirstPage)
+            .accessibilityHidden(model.isFirstPage)
+            .accessibilityLabel("Back to the previous page")
+
+            Button {
+                if model.isLastPage {
+                    model.finish()
+                } else {
+                    turn(.forward)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if model.isLastPage {
+                        Image(systemName: "mic.fill").accessibilityHidden(true)
+                    }
+                    Text(Self.primaryTitle(isLastPage: model.isLastPage))
+                    if !model.isLastPage {
+                        Image(systemName: "chevron.right").accessibilityHidden(true)
+                    }
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .accessibilityLabel(model.isLastPage ? "Start translating: close the tutorial" : "Next page")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .animation(pageAnimation, value: model.currentIndex)
+    }
+}
+
+/// The thin capsule at the top: how far through, in one glance, and "Step 3 of 7" to VoiceOver.
+struct OnboardingProgressBar: View {
+    let progress: Double
+    let step: Int
+    let count: Int
+    var animation: Animation = .default
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule().fill(Color.accentColor)
+                    .frame(width: max(8, geometry.size.width * progress))
+            }
+        }
+        .frame(height: 6)
+        .frame(minHeight: 44)
+        .animation(animation, value: progress)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(step) of \(count)")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// One page: the title (a heading to VoiceOver), one sentence, and the demo. Scrolls when Dynamic Type asks.
+struct OnboardingPageView: View {
+    let page: OnboardingPage
+    let index: Int
+    let count: Int
+    @Bindable var model: OnboardingViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(page.title)
+                    .font(.title.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
+                Text(page.subtitle)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                demo
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Page \(index + 1) of \(count), \(page.title)")
+    }
+
+    @ViewBuilder
+    private var demo: some View {
+        switch page {
+        case .welcome:
+            OnboardingDemoCard {
+                OnboardingPointsList(points: OnboardingDemo.welcomePoints)
+                Divider()
+                Label(OnboardingDemo.privacyText, systemImage: "lock.shield")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        case .source:
+            OnboardingSourceDemo(model: model)
+        case .transcript:
+            OnboardingTranscriptDemo(model: model)
+        case .twoWay:
+            OnboardingTwoWayDemo(model: model)
+        case .learning:
+            OnboardingLearningDemo(model: model)
+        case .models:
+            OnboardingModelsDemo(model: model)
+        case .ready:
+            OnboardingDemoCard {
+                OnboardingPointsList(points: OnboardingDemo.readyPoints)
+                Divider()
+                Text(OnboardingDemo.readyFootnote)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The card every demo sits in: the Live screen's card, so the tutorial looks like the app it is about.
+struct OnboardingDemoCard<Content: View>: View {
+    let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// Lines that arrive one after another as the page lands — all at once under Reduce Motion.
+struct OnboardingPointsList: View {
+    let points: [OnboardingPoint]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealed = 0
+
+    static let stagger: Duration = .milliseconds(160)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(points.enumerated()), id: \.element.id) { offset, point in
+                Label {
+                    Text(point.text)
+                } icon: {
+                    Image(systemName: point.symbol).foregroundStyle(Color.accentColor)
+                }
+                .font(.body)
+                .opacity(revealed > offset ? 1 : 0)
+                .offset(y: revealed > offset || reduceMotion ? 0 : 12)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .task {
+            if reduceMotion {
+                revealed = points.count
+                return
+            }
+            for step in 1...max(1, points.count) {
+                try? await Task.sleep(for: Self.stagger)
+                guard !Task.isCancelled else { return }
+                withAnimation(.spring(duration: 0.4, bounce: 0.2)) { revealed = step }
+            }
+        }
+    }
+}
+
+// MARK: - Choose a source
+
+struct OnboardingSourceDemo: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let tipText = "The source is read once, at Start. Stop and start again to change it."
+
+    var body: some View {
+        OnboardingDemoCard {
+            Text("Listen to")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Picker("Listen to", selection: $model.demoSource) {
+                ForEach(LiveView.availableSources, id: \.self) { mode in
+                    Text(LiveView.title(for: mode)).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Audio source")
+            Label {
+                Text(LiveView.description(for: model.demoSource))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: LiveView.symbol(for: model.demoSource))
+                    .foregroundStyle(Color.accentColor)
+                    .contentTransition(symbolTransition)
+            }
+            .accessibilityElement(children: .combine)
+            Divider()
+            Text(Self.tipText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.demoSource)
+    }
+
+    private var symbolTransition: ContentTransition {
+        if reduceMotion { return .opacity }
+        return .symbolEffect(.replace)
+    }
+}
+
+// MARK: - Start and read
+
+/// The Live screen in miniature: a transcript whose rows slide in one by one, ages counting up under them, and
+/// the same capsule that starts and stops the real thing.
+struct OnboardingTranscriptDemo: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func buttonTitle(playing: Bool) -> String { playing ? "Stop" : "Start" }
+
+    var body: some View {
+        OnboardingDemoCard {
+            // Ticks every second only while the demo runs, like the Live screen with ages on.
+            TimelineView(.periodic(from: .now, by: model.isDemoPlaying ? 1 : 3_600)) { context in
+                VStack(alignment: .leading, spacing: 4) {
+                    if model.demoRows.isEmpty {
+                        Label(OnboardingDemo.transcriptEmptyText, systemImage: "waveform.and.mic")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                    }
+                    ForEach(model.demoRows) { row in
+                        LiveTranscriptRowView(row: row, now: context.date, timeDisplay: .age)
+                            .transition(rowTransition)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+                .animation(rowAnimation, value: model.demoRows)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2")
+                    .symbolEffect(.variableColor.iterative, isActive: model.isDemoPlaying && !reduceMotion)
+                    .accessibilityHidden(true)
+                Text(model.isDemoPlaying ? OnboardingDemo.speakingText : LiveView.microphoneDescription)
+                    .contentTransition(.opacity)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .animation(.default, value: model.isDemoPlaying)
+            Button {
+                if model.isDemoPlaying {
+                    model.stopDemo()
+                } else {
+                    model.startDemo()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: model.isDemoPlaying ? "stop.fill" : "mic.fill")
+                        .accessibilityHidden(true)
+                    Text(Self.buttonTitle(playing: model.isDemoPlaying))
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(model.isDemoPlaying ? .red : .accentColor)
+            .animation(.default, value: model.isDemoPlaying)
+            .accessibilityLabel(model.isDemoPlaying ? "Stop the demo" : "Start the demo")
+            .accessibilityHint("A short conversation appears in the transcript, one phrase at a time")
+        }
+    }
+
+    private var rowTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
+
+    private var rowAnimation: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0.25)
+    }
+}
+
+// MARK: - Two-way
+
+struct OnboardingTwoWayDemo: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        OnboardingDemoCard {
+            Toggle(isOn: $model.demoTwoWay) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Two-way").font(.subheadline.weight(.semibold))
+                    Text(LiveView.twoWaySummary(ignored: OnboardingDemo.twoWayIgnored,
+                                                target: model.demoTwoWay ? OnboardingDemo.twoWayTarget : nil))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityHint(LiveView.twoWayHintText)
+            if model.demoTwoWay {
+                languageRow(title: "Don't translate", value: LanguageCatalog.displayName(OnboardingDemo.twoWayIgnored, whenNil: LiveView.noLanguageTitle))
+                languageRow(title: "Reply in", value: LanguageCatalog.displayName(OnboardingDemo.twoWayTarget, whenNil: LiveView.noLanguageTitle))
+            }
+            Divider()
+            LiveTranscriptRowView(row: OnboardingDemo.theirLine)
+            if model.demoTwoWay {
+                LiveTranscriptRowView(row: OnboardingDemo.yourReply)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+            Text(model.demoTwoWay ? OnboardingDemo.twoWayOnText : OnboardingDemo.twoWayOffText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.2), value: model.demoTwoWay)
+    }
+
+    private func languageRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title).font(.subheadline)
+            Spacer(minLength: 8)
+            Text(value).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .frame(minHeight: 32)
+        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Learning
+
+struct OnboardingLearningDemo: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        OnboardingDemoCard {
+            Toggle("Learning", isOn: $model.demoLearning)
+                .frame(minHeight: 44)
+                .accessibilityHint("Shows the words as spoken above the translation")
+            Toggle("Romanize", isOn: $model.demoRomanize)
+                .frame(minHeight: 44)
+                .disabled(!model.demoLearning)
+                .accessibilityHint("Adds how the original sounds in Latin letters")
+            Divider()
+            LiveTranscriptRowView(row: SettingExamples.sampleRow(original: SettingExamples.spanishOriginal),
+                                  showsOriginal: model.demoLearning)
+            LiveTranscriptRowView(row: SettingExamples.japaneseRow,
+                                  showsOriginal: model.demoLearning, romanizes: model.demoLearning && model.demoRomanize)
+            Text(OnboardingDemo.learningText(learning: model.demoLearning, romanize: model.demoRomanize))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.15), value: model.demoLearning)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.15), value: model.demoRomanize)
+    }
+}
+
+// MARK: - Models and voices
+
+struct OnboardingModelsDemo: View {
+    @Bindable var model: OnboardingViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let columns = [GridItem(.adaptive(minimum: 92), spacing: 8)]
+
+    var body: some View {
+        OnboardingDemoCard {
+            Text("Whisper model")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 8) {
+                ForEach(WhisperModelID.allCases) { id in
+                    chip(id)
+                }
+            }
+            Text(OnboardingDemo.modelNote(model.demoModel))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Text("Voices")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Label(OnboardingDemo.systemVoiceText, systemImage: "speaker.wave.2")
+                .font(.footnote)
+            Label(OnboardingDemo.pocketVoiceText, systemImage: "arrow.down.circle")
+                .font(.footnote)
+            Divider()
+            Toggle("Keep my model when hot", isOn: $model.demoKeepModelWhenHot)
+                .frame(minHeight: 44)
+                .accessibilityHint("Keeps the chosen model through a hot iPhone instead of switching to a smaller one")
+            SettingExample(symbol: "thermometer.medium",
+                           text: SettingExamples.keepModelWhenHot(model.demoKeepModelWhenHot, model: model.demoModel))
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.demoModel)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.demoKeepModelWhenHot)
+    }
+
+    private func chip(_ id: WhisperModelID) -> some View {
+        let selected = model.demoModel == id
+        return Button {
+            model.demoModel = id
+        } label: {
+            VStack(spacing: 2) {
+                Text(id.displayName).font(.subheadline.weight(.semibold))
+                Text(id == OnboardingDemo.recommendedModel ? "default" : " ")
+                    .font(.caption2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .tint(selected ? Color.accentColor : Color.secondary)
+        .accessibilityLabel(id == OnboardingDemo.recommendedModel ? "\(id.displayName), the default" : id.displayName)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}

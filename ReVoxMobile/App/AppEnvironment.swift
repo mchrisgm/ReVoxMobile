@@ -32,6 +32,7 @@ final class AppEnvironment {
     let live: LiveViewModel
     let models: ModelsViewModel
     let settingsModel: SettingsViewModel
+    let onboarding: OnboardingViewModel
     private var interruptionTask: Task<Void, Never>?
 
     /// Breaks the manager ↔ live-view-model cycle: the manager asks whether the pipeline is busy through this box.
@@ -122,6 +123,7 @@ final class AppEnvironment {
         // §9 memory row, "or fails next call": the translator reports a spent retry through the assembler's sink.
         assembler.whisperRecovery.set(degradation.recoveryEventHandler())
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
+        self.onboarding = OnboardingViewModel(defaults: UserDefaults.standard)
         // Locals, never `self`: these closures are created before initialisation completes.
         let settingsStore = settings
         let assembly = speakerAssembly

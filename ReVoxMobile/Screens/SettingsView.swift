@@ -6,6 +6,8 @@ struct SettingsView: View {
     let models: ModelsViewModel
     let voices: VoicesViewModel
     var diagnostics: BroadcastDiagnosticsModel? = nil
+    /// M10: "Show the tutorial" resets it; the root presents it. nil (tests, previews) hides the row.
+    var onboarding: OnboardingViewModel? = nil
 
     var body: some View {
         Form {
@@ -150,6 +152,10 @@ struct SettingsView: View {
                 NavigationLink("Models") { ModelsView(model: models) }
                 NavigationLink("Voices") { VoicesView(model: voices) }
                 NavigationLink("About") { AboutView(info: AboutInfo.current()) }
+                if let onboarding {
+                    Button(Self.showTutorialTitle) { onboarding.reset() }
+                        .accessibilityHint("Opens the first-run tutorial again")
+                }
             }
 
             if let diagnostics {
@@ -160,6 +166,8 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
     }
+
+    static let showTutorialTitle = "Show the tutorial"
 
     static func title(for preset: SegmenterPreset) -> String {
         switch preset {
