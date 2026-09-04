@@ -11,8 +11,8 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 | 2 | `ReVoxCore` port: Segmenter, SpeechGate, Pipeline, Transcript, Catalog, Settings, RingBuffer | Done |
 | 3 | Microphone mode end to end, first TestFlight build | Done |
 | 4 | pocket-tts, voices, ducking | Done |
-| 5 | Other-apps capture via the broadcast extension | **Current** |
-| 6 | History, export, About screen, HIG polish | Planned |
+| 5 | Other-apps capture via the broadcast extension | Done |
+| 6 | History, export, About screen, HIG polish | **Current** |
 | 7 | Hardening | Planned |
 
 Milestone 0 builds and ships a placeholder screen; the translation features arrive milestone by milestone.
@@ -67,13 +67,18 @@ capture → Segmenter → segment queue (max 3) → WhisperKitTranslator → tra
 
 ## Platform limitations
 
-These are iOS rules, not bugs, and they make the iPhone app behave differently from the Windows version:
+These are iOS rules, not bugs, and they make the iPhone app behave differently from the Windows version. The About screen links here.
 
-- **iOS cannot set another app's volume.** Ducking therefore uses the `AVAudioSession` option `.duckOthers`, and iOS itself decides how much to lower the other audio. ReVox adds a slider for the volume of its own spoken voice. The Windows "ducked level" slider has no iOS equivalent and does not exist here.
-- **Ducking is applied and released by changing the audio session's options**, never by deactivating it. Deactivating would require pausing the engine, and a paused engine captures no microphone audio — a gap after every spoken phrase. Because ReVox's session mixes with others rather than interrupting them, dropping the `.duckOthers` option is what ends the duck. The fallback that does deactivate is still in the code, behind one constant, in case a future iOS needs it; see [docs/measurements/m4-pocket-tts-ducking.md](docs/measurements/m4-pocket-tts-ducking.md).
-- **Capturing other apps' audio requires the user to start a system broadcast.** Apps cannot listen to each other on iOS. The user starts a screen broadcast from the broadcast picker inside ReVox or from Control Center's Screen Recording control, selects ReVox as the broadcast destination, and iOS then sends the other apps' audio to the `ReVoxBroadcast` extension.
-- **The broadcast extension has a 50 MB memory cap.** The Whisper and pocket-tts models are far larger than that, so every model lives in the app; the extension only captures audio and forwards it.
-- **Translation continues in the background** thanks to the `audio` background mode. You can lock the phone or switch to another app and ReVox keeps listening, translating and speaking.
+1. **Ducking.** iOS cannot set another app's volume. ReVox uses the `AVAudioSession` option `.duckOthers`; iOS chooses the amount and the ramp. The Windows ducked-level slider has no iOS equivalent; the Voice volume slider adjusts ReVox's own voice only. Ducking is applied and released by changing the session's options, never by deactivating it: deactivating would require pausing the engine, and a paused engine captures no microphone audio — a gap after every spoken phrase. Because ReVox's session mixes with others rather than interrupting them, dropping the `.duckOthers` option is what ends the duck. The fallback that does deactivate is still in the code behind one constant, in case a future iOS needs it; see [docs/measurements/m4-pocket-tts-ducking.md](docs/measurements/m4-pocket-tts-ducking.md).
+2. **Broadcast start.** Other apps' audio requires a user-started system broadcast: the picker in ReVox or Control Center's Screen Recording control. ReVox cannot start or stop it programmatically; pressing the side button ends it; some players (AVPlayer-based apps, Safari, Music) deliver silence to broadcasts.
+3. **Extension memory.** The broadcast extension has a 50 MB cap; it only forwards audio, and every model runs in the app. A Control Center broadcast started while ReVox is closed is buffered for at most 60 s.
+4. **Background.** Translation continues under the `audio` background mode while the audio session and engine run; the app must be started from the foreground first. iOS may still suspend the app under memory pressure, in which case the transcript shows a gap.
+5. **Self-capture.** In broadcast mode the extension also hears ReVox's English voice; the timing gate drops audio while ReVox speaks and for 300 ms after, so speech that overlaps ReVox's voice is not translated.
+6. **Heat and battery.** Every model can be downloaded on every supported iPhone. ReVox recommends small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
+
+## Transcripts
+
+Every session is stored on the iPhone (SwiftData, in the app's own container, never synced). The **History** tab lists sessions newest first with the time, source, duration, entry count and first English line; the search field filters by English text and shows the matching line per session; a session opens to its header (start time, source, model, voice, source language) and its entries in the Live row style. **Share** exports the session as a `.txt` in the same format as the Windows app — a `# ReVox session <timestamp>` header, then `[HH:MM:SS] [<lang>] ` and `  → <english>` per entry, with `… (skipped: falling behind)` markers — through the share sheet (Files, Mail, AirDrop). The original-language text is empty on both platforms; only the English translation is stored. Swipe a row to delete it; **Clear All** and the per-session **Delete** ask for confirmation. Exported files live in the app's temporary folder and are removed after a day.
 
 ## Delivery
 
@@ -86,5 +91,9 @@ These are iOS rules, not bugs, and they make the iPhone app behave differently f
 
 - ReVox Mobile: [MIT](LICENSE).
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit): MIT.
-- pocket-tts Core ML weights: CC-BY-4.0, attribution to [Kyutai](https://kyutai.org).
+- [FluidAudio](https://github.com/FluidInference/FluidAudio): Apache-2.0.
+- [pocket-tts Core ML weights](https://huggingface.co/FluidInference/pocket-tts-coreml): CC-BY-4.0 — pocket-tts by [Kyutai](https://kyutai.org).
 - [Silero VAD](https://github.com/snakers4/silero-vad): MIT.
+- [Whisper weights (OpenAI)](https://github.com/openai/whisper): MIT.
+
+The same five third-party notices, with links, are shown on the app's About screen.
