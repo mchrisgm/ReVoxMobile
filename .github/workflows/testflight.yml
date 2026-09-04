@@ -89,7 +89,11 @@ jobs:
           xcodebuild -resolvePackageDependencies \
             -project ReVoxMobile.xcodeproj \
             -scheme ReVoxMobile \
+            -onlyUsePackageVersionsFromResolvedFile \
             -clonedSourcePackagesDirPath .spm
+
+      - name: Package pins unchanged
+        run: python3 scripts/ci/check-package-resolved.py
 
       - name: Pick simulator
         id: sim
@@ -105,6 +109,7 @@ jobs:
             -scheme ReVoxMobile \
             -destination "$DESTINATION" \
             -clonedSourcePackagesDirPath .spm \
+            -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
@@ -187,6 +192,7 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath build/ReVoxMobile.xcarchive \
             -clonedSourcePackagesDirPath .spm \
+            -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -allowProvisioningUpdates \
@@ -210,6 +216,7 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath build/ReVoxMobile.xcarchive \
             -clonedSourcePackagesDirPath .spm \
+            -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \

@@ -5,6 +5,7 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: false
   groupSortPosition: top
+  postGenCommand: bash scripts/ci/install-package-resolved.sh
 
 settings:
   base:
