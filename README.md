@@ -2,12 +2,12 @@
 
 ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox). It listens to audio — the microphone, or other apps through a screen-broadcast extension — cuts it into phrases with Silero VAD, translates each phrase to English on-device with Whisper via WhisperKit, speaks the English aloud, and keeps a searchable transcript of everything it heard. After the one-time model download it works fully offline: no audio, text or usage data ever leaves the phone.
 
-|  |  |  |  |
-|---|---|---|---|
-| ![The Live screen, ready to start](docs/screenshots/live-idle.png) | ![The Live screen translating](docs/screenshots/live-running.png) | ![The Models screen](docs/screenshots/models.png) | ![The Settings screen](docs/screenshots/settings.png) |
-| Live, ready | Live, translating | Models | Settings |
+|  |  |  |
+|---|---|---|
+| ![The Live screen before a session, with the two-way controls open](docs/screenshots/live-idle.png) | ![The Live screen translating, with a transcript and a red Stop button](docs/screenshots/live-running.png) | ![The Settings screen](docs/screenshots/settings.png) |
+| Live, ready to start | Live, translating | Settings |
 
-<sub>The screenshots are rendered from the real screens by CI (`ScreenshotTests`), so they cannot drift from the app.</sub>
+<sub>Every screenshot here is rendered from the real screen by CI (`ScreenshotTests`), so they cannot drift from the app.</sub>
 
 ## Using ReVox
 
@@ -148,6 +148,11 @@ Nothing here needs a decision from you; the app says what it did and keeps trans
 What each of these was measured to do on real devices is recorded in [docs/measurements/m7-hardening.md](docs/measurements/m7-hardening.md).
 
 ## Models and storage
+
+|  |  |
+|---|---|
+| ![The Models screen listing the Whisper models](docs/screenshots/models.png) | ![The Voices screen](docs/screenshots/voices.png) |
+| Models | Voices |
 
 - **Where they live.** Everything ReVox downloads goes to the app's own Application Support folder, is excluded from backups, and is removed with the app. The Models screen shows the measured size of every installed model, the total ReVox occupies and how much room is left ("ReVox models: 1.0 GB · Free: 12.3 GB"); models that are not installed show the catalog estimate ("≈ 487 MB").
 - **Deleting.** Models and the pocket-tts voices can be deleted only while translation is stopped: the swipe action is hidden during a session and the footer says "Stop translation to delete models". Deleting always asks for confirmation, and deleting the model in use switches ReVox to the smallest one you still have.

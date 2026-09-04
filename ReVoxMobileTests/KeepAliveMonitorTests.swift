@@ -67,7 +67,7 @@ final class KeepAliveMonitorTests: XCTestCase {
             }
         }
         XCTAssertTrue(sawGap)
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await waitFor("the gap to reach the handler") { gaps.value.count == 1 }
         XCTAssertEqual(gaps.value.count, 1)
         monitor.stop()
         monitor.stop()
@@ -87,10 +87,9 @@ final class KeepAliveMonitorTests: XCTestCase {
         let pipeline = MonitoredPipeline(pipeline: fake, monitor: monitor, position: { position.value })
         await pipeline.start(PipelineConfiguration(captureMode: .microphone, preset: .balanced, pinnedLanguage: nil))
         XCTAssertEqual(fake.startedWith.count, 1)
-        try? await Task.sleep(nanoseconds: 60_000_000)
-        XCTAssertGreaterThanOrEqual(monitor.heartbeats.count, 1)
+        await waitFor("the first heartbeat") { monitor.heartbeats.count >= 1 }
         now.mutate { $0 = 30 }
-        try? await Task.sleep(nanoseconds: 80_000_000)
+        await waitFor("the gap to become a drop marker on the pipeline") { fake.gapCount == 1 }
         XCTAssertEqual(fake.gapCount, 1, "the gap became a drop marker on the pipeline")
         await pipeline.setMuted(true)
         await pipeline.stop()
