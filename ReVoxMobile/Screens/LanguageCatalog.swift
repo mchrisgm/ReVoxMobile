@@ -1,5 +1,6 @@
 import Foundation
 import ReVoxCore
+import WhisperKit          // `Constants.languages` is WhisperKit's list of the languages Whisper knows
 
 /// The one list of languages the app offers, built once (§8.5). The source-language picker adds "Auto-detect";
 /// the two-way pickers of §8.2 always name a concrete language, so they read `concrete`.
