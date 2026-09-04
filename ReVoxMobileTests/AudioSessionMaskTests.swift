@@ -323,4 +323,38 @@ final class AudioSessionMaskTests: XCTestCase {
         ducked = await rig.controller.isDucked
         XCTAssertTrue(ducked)
     }
+
+    // MARK: the A-off measurement candidate and the two defaults (§6.8 decision table)
+
+    func testOptionsOnlyOffEdgeIsOneSetCategoryWithTheResidentMask() async throws {
+        XCTAssertEqual(AudioSessionController.defaultOnEdge, .optionsOnly, "R8's prescribed on-edge")
+        XCTAssertEqual(AudioSessionController.defaultOffEdge, .deactivationCycle, "the documented off-edge until A-off is measured")
+        let rig = try await makeRig()
+        await rig.controller.setDuckingOffEdge(.optionsOnly)
+        await rig.controller.duck()
+        rig.seam.clearCalls()
+        await rig.controller.restore()
+        XCTAssertEqual(rig.seam.calls, ["setCategory"], "A-off: the options-only \"off\" mask on the active session")
+        XCTAssertEqual(rig.seam.masks.last, resident)
+        XCTAssertEqual(rig.engine.pauseCount, 0, "no deactivation, no engine pause")
+        XCTAssertEqual(rig.plays.value, 1, "no extra guarded play")
+        let ducked = await rig.controller.isDucked
+        XCTAssertFalse(ducked)
+        let inProgress = await rig.controller.cycleInProgress
+        XCTAssertFalse(inProgress)
+
+        // A duck that arrives during the options-only off-edge is reconciled with one more options-only on-edge.
+        rig.seam.clearCalls()
+        await rig.controller.duck()
+        rig.seam.holdNext("setCategory")
+        let restoreTask = Task { await rig.controller.restore() }
+        await rig.seam.waitUntilHeld()
+        await rig.controller.duck()
+        rig.seam.resume()
+        await restoreTask.value
+        XCTAssertEqual(rig.seam.calls, ["setCategory", "setCategory", "setCategory"])
+        XCTAssertEqual(rig.seam.masks, [duckedResident, resident, duckedResident])
+        let reDucked = await rig.controller.isDucked
+        XCTAssertTrue(reDucked)
+    }
 }

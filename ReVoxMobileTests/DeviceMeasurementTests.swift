@@ -65,4 +65,29 @@ final class DeviceMeasurementTests: XCTestCase {
         }
         return try PCMConverterDriver.convertToMono(buffer, with: converter)
     }
+
+    /// §10.4 (M4) and §10.1 `test_real_pocket_tts_generates_audio`: with the pack installed from the Voices screen and
+    /// airplane mode on, `initialize()` and one synthesis per offered voice succeed without a request. Prints the RTF
+    /// per voice and the resident memory for the measurement record.
+    func testPocketTTSSynthesisesEveryOfferedVoiceOffline() async throws {
+        let layout = try installedLayout()
+        try XCTSkipUnless(layout.isPocketTTSInstalled(), "download pocket-tts in Settings > Voices first, then enable airplane mode")
+        let speaker = PocketTTSSpeaker.make(voice: "alba", fluidBaseDirectory: layout.fluidBaseDirectory)
+        let loadStarted = ContinuousClock.now
+        try await speaker.load()
+        print("MEASUREMENT pocket-tts load ms=\(Int((ContinuousClock.now - loadStarted) / .milliseconds(1)))")
+        for voice in ModelCatalog.pocketTTS.offeredVoices {
+            await speaker.setVoice(voice)
+            let started = ContinuousClock.now
+            let clip = try await speaker.synthesize("This is ReVox.")
+            let elapsed = ContinuousClock.now - started
+            let audioSeconds = Double(clip.samples.count) / Double(clip.sampleRate)
+            let synthesisSeconds = elapsed / .seconds(1)
+            print("MEASUREMENT pocket-tts voice=\(voice) audio_s=\(audioSeconds) synthesis_s=\(synthesisSeconds) rtf=\(synthesisSeconds / max(audioSeconds, 0.001))")
+            XCTAssertEqual(clip.sampleRate, 24_000)
+            XCTAssertGreaterThan(audioSeconds, 0.3, "\(voice): at least 0.3 s of audio for the sample sentence")
+            XCTAssertGreaterThan(clip.samples.map { abs($0) }.max() ?? 0, 0.01, "\(voice): not silent")
+        }
+        print("MEASUREMENT pocket-tts resident_mb=\((MemoryMeter.residentBytes() ?? 0) / 1_048_576) peak_mb=\((MemoryMeter.peakBytes() ?? 0) / 1_048_576)")
+    }
 }

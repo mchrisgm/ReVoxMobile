@@ -41,7 +41,12 @@ actor AudioSessionController: Ducker {
 
     // MARK: Ducking state (§6.8)
 
-    private(set) var onEdge: DuckingOnEdge = .optionsOnly
+    /// The mechanisms in force (§6.8). The on-device measurement flips these two constants in a Debug build to test
+    /// the alternatives; the outcome is recorded in docs/measurements/m4-pocket-tts-ducking.md and they follow it.
+    static let defaultOnEdge: DuckingOnEdge = .optionsOnly
+    static let defaultOffEdge: DuckingOffEdge = .deactivationCycle
+    private(set) var onEdge: DuckingOnEdge = AudioSessionController.defaultOnEdge
+    private(set) var offEdge: DuckingOffEdge = AudioSessionController.defaultOffEdge
     /// The requested state: the latest thing the coordinator asked for, at any time.
     private(set) var pendingDuck = false
     /// The applied state: whether the mask most recently passed to `setCategory` carried `.duckOthers`.
@@ -188,6 +193,11 @@ actor AudioSessionController: Ducker {
         onEdge = edge
     }
 
+    /// B-off (default) or the A-off candidate; changed only between sessions, never inside a cycle.
+    func setDuckingOffEdge(_ edge: DuckingOffEdge) {
+        offEdge = edge
+    }
+
     /// Speaking-true edge. Records the request; while a cycle runs it returns at once (the cycle reads `pendingDuck`
     /// at its reactivation step or in its reconciliation); otherwise a no-op when already applied (Windows
     /// `Ducker.duck`: `if self._ducked: return`), else the on-edge.
@@ -235,7 +245,7 @@ actor AudioSessionController: Ducker {
         isDucked = appliedDuck
         let milliseconds = Int((ContinuousClock.now - start) / .milliseconds(1))
         let running = engine?.isRunning ?? false
-        Self.duckingLogger.info("cycle done edge=\(edge == .on ? "on" : "off", privacy: .public) onEdge=\(self.onEdge.rawValue, privacy: .public) ducked=\(self.isDucked, privacy: .public) engineRunning=\(running, privacy: .public) ms=\(milliseconds, privacy: .public)")
+        Self.duckingLogger.info("cycle done edge=\(edge == .on ? "on" : "off", privacy: .public) onEdge=\(self.onEdge.rawValue, privacy: .public) offEdge=\(self.offEdge.rawValue, privacy: .public) ducked=\(self.isDucked, privacy: .public) engineRunning=\(running, privacy: .public) extraPasses=\(self.extraPassCount, privacy: .public) ms=\(milliseconds, privacy: .public)")
         if isDucked != lastReportedDucked {
             lastReportedDucked = isDucked
             eventContinuation.yield(.duckingChanged(isDucked))
@@ -258,8 +268,19 @@ actor AudioSessionController: Ducker {
             // B-on: the session was mixable and un-ducked, nothing was interrupted, so nothing to notify.
             try await deactivationCycle(resident: resident, notifyOthers: false)
         case (.off, _):
-            // B-off: the documented path — ducking ends when the session deactivates.
-            try await deactivationCycle(resident: resident, notifyOthers: true)
+            switch offEdge {
+            case .deactivationCycle:
+                // B-off: the documented path — ducking ends when the session deactivates.
+                try await deactivationCycle(resident: resident, notifyOthers: true)
+            case .optionsOnly:
+                // A-off (measurement candidate): the options-only "off" mask on the active session; the engine keeps running.
+                let wantDuck = pendingDuck
+                let mask = wantDuck ? resident.adding(.duckOthers) : resident
+                let session = self.session
+                try await perform { try session.setCategory(mask) }
+                appliedDuck = wantDuck
+                Self.duckingLogger.info("off-edge options-only applied duck=\(wantDuck, privacy: .public)")
+            }
         }
     }
 

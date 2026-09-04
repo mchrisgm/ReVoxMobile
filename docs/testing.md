@@ -67,6 +67,17 @@ You can also open the TestFlight app, tap **ReVox**, and tap **Send Beta Feedbac
 
 Helpful details to include: what you were listening to (the microphone or which app), the language spoken, whether the translation was wrong, late or missing, and whether the phone was locked at the time.
 
+## 9. Voices and ducking (milestone 4 checks)
+
+1. **Download the pocket-tts voice.** Settings → **Voices** → **Download** (about 527 MB; keep ReVox open until the row says Installed). The four voices alba, azelma, cosette and javert appear; tap one to select it, then tap **Play sample** — you should hear "This is ReVox." in that voice. On iPhones with less than 6 GB of memory a note explains that ReVox may switch back to the system voice when memory runs low.
+2. **System voices.** Below the pocket-tts section, tap any English system voice to use it instead; **Play sample** works there too. Until pocket-tts is downloaded, and whenever it fails, ReVox uses this voice automatically and the Live status line says why ("System voice — pocket-tts not downloaded", "… failed to load").
+3. **Ducking.** Play music in another app, go to **Live**, tap **Start** and speak a foreign-language sentence. While ReVox speaks the English, the music should get quieter and a **Ducking** pill shows in the status line; about a quarter of a second after ReVox stops, the music returns. Tell us whether the music dropped at all, how quickly it came back, and which output you used (speaker, wired, Bluetooth headphones, car).
+4. **Settings → Ducking.** Turn the toggle off, tap Start again: the music no longer drops and the status line shows **Ducking off**. Move **Voice volume** while ReVox speaks: the next sentence is louder or quieter. The note under the slider explains that iOS chooses the ducking amount (the Windows ducked-level slider does not exist on iOS).
+5. **Mute in the middle of a sentence** (the speaker icon): the voice stops at once, the music comes back to full volume, and the transcript keeps running.
+6. **Lock the phone** with music playing and keep speaking for a few minutes: translation and ducking should continue until you tap Stop.
+
+Please report the iPhone model and iOS version with every observation from this section.
+
 ## Tips and known limits
 
 - Translation quality depends on the audio: a clear voice close to the phone works best. Music, several people talking at once or heavy background noise reduce accuracy.

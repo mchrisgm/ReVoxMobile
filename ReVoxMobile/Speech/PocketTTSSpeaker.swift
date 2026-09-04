@@ -1,5 +1,6 @@
 import Foundation
 import FluidAudio
+import os
 import ReVoxCore
 
 /// Kyutai pocket-tts through FluidAudio as a `Speaker` (§6.5, R6, R7): one `PocketTtsManager` with
@@ -38,6 +39,7 @@ actor PocketTTSSpeaker: Speaker {
     /// `PocketTtsConstants.audioSampleRate` = 24 000; cached here, never re-queried from the engine (the Speaker contract).
     static let sampleRateHz: Int = PocketTtsConstants.audioSampleRate
     nonisolated let sampleRate: Int = PocketTTSSpeaker.sampleRateHz
+    private static let logger = Logger(subsystem: "revox", category: "measurements")
 
     private let engine: Engine
     private(set) var voice: String
@@ -81,9 +83,13 @@ actor PocketTTSSpeaker: Speaker {
         let engine = self.engine
         let task = Task { try await engine.initialize() }
         loadTask = task
+        let started = ContinuousClock.now
         do {
             try await task.value
             isLoaded = true
+            // §13 Q6: the first load after an install pays the cold ANE compile; later loads should not.
+            Self.logger.info("pocket-tts load ms=\(Int((ContinuousClock.now - started) / .milliseconds(1)), privacy: .public)")
+            MemoryMeter.log("pocket-tts loaded")
         } catch {
             loadTask = nil
             throw error
@@ -102,7 +108,11 @@ actor PocketTTSSpeaker: Speaker {
             return AudioClip(samples: [], sampleRate: sampleRate)   // test_empty_text_skips_model
         }
         try await load()
+        let started = ContinuousClock.now
         let samples = try await engine.synthesize(text, voice)
+        let synthesisSeconds = (ContinuousClock.now - started) / .seconds(1)
+        let audioSeconds = Double(samples.count) / Double(sampleRate)
+        Self.logger.info("pocket-tts synthesis s=\(synthesisSeconds, privacy: .public) audio_s=\(audioSeconds, privacy: .public) rtf=\(audioSeconds > 0 ? synthesisSeconds / audioSeconds : 0, privacy: .public) resident_mb=\((MemoryMeter.residentBytes() ?? 0) / 1_048_576, privacy: .public)")
         return AudioClip(samples: samples, sampleRate: sampleRate)
     }
 }

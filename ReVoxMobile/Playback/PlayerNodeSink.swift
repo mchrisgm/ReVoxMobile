@@ -1,5 +1,6 @@
 import AVFAudio
 import Foundation
+import os
 import ReVoxCore
 
 /// `PlaybackSink` over one `AVAudioPlayerNode` at 24 kHz mono (§6.7). Never calls `play()`: the node is
@@ -9,6 +10,7 @@ final class PlayerNodeSink: PlaybackSink, @unchecked Sendable {
     /// Fixed gain for pocket-tts's un-normalised samples (§6.7; ASSUMED starting value, calibrated on device
     /// against the system voice at the same voice volume). System-voice clips use 1.0.
     static let pocketTTSEngineGain: Float = 0.7
+    private static let measurementLogger = Logger(subsystem: "revox", category: "measurements")
 
     let playerNode = AVAudioPlayerNode()
     let format = AVAudioFormat(standardFormatWithSampleRate: PlayerNodeSink.nodeSampleRate, channels: 1)!
@@ -65,7 +67,17 @@ final class PlayerNodeSink: PlaybackSink, @unchecked Sendable {
             samples = converted
         }
         let scaled = samples.map { min(max($0 * currentGain, -1), 1) }
+        Self.logLevel(of: scaled, gain: currentGain)
         return AVAudioPCMBuffer.mono(samples: scaled, format: format)
+    }
+
+    /// Gain calibration (§6.7, §13 Q6): RMS of the scaled clip in dBFS, one line per clip. The record compares a
+    /// pocket-tts sample with a system-voice sample at the same voice volume.
+    private static func logLevel(of samples: [Float], gain: Float) {
+        guard !samples.isEmpty else { return }
+        let meanSquare = samples.reduce(0.0) { $0 + Double($1) * Double($1) } / Double(samples.count)
+        let dbfs = 10 * log10(max(meanSquare, 1e-12))
+        measurementLogger.info("playback clip rms_dbfs=\(dbfs, privacy: .public) gain=\(gain, privacy: .public) frames=\(samples.count, privacy: .public)")
     }
 
     private func convert(_ clip: AudioClip) throws -> [Float] {

@@ -1,5 +1,6 @@
 import AVFAudio
 import Foundation
+import os
 
 /// A complete `setCategory(_:mode:options:)` argument set (§6.8). Masks are always passed whole; `.mixWithOthers` is explicit.
 struct SessionMask: Equatable, @unchecked Sendable {
@@ -43,8 +44,13 @@ final class LiveAudioEngineSeam: AudioEngineSeam {
 }
 
 final class LiveAudioSessionSeam: AudioSessionSeam, @unchecked Sendable {
+    private static let logger = Logger(subsystem: "revox", category: "ducking")
+
     func setCategory(_ mask: SessionMask) throws {
-        try AVAudioSession.sharedInstance().setCategory(mask.category, mode: mask.mode, options: mask.options)
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(mask.category, mode: mask.mode, options: mask.options)
+        // The evidence for "no .duckOthers resident once the cycle ends": what the session reports, not what we asked for.
+        Self.logger.info("session categoryOptions=\(session.categoryOptions.rawValue, privacy: .public) duckOthers=\(session.categoryOptions.contains(.duckOthers), privacy: .public) otherAudioPlaying=\(session.isOtherAudioPlaying, privacy: .public)")
     }
 
     func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws {

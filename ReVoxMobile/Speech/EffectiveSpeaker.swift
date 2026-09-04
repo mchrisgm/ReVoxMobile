@@ -54,6 +54,7 @@ actor EffectiveSpeaker: Speaker {
                 setStatus(.pocketTTS(voice: voice))
             } catch {
                 pocketTTS = nil   // dropped so ARC can release the models (§6.5)
+                Self.logDrop("after load failure")
                 setStatus(.fallback(.loadFailed(String(describing: error))))
             }
         }
@@ -68,6 +69,7 @@ actor EffectiveSpeaker: Speaker {
                 return try await pocketTTS.synthesize(text)
             } catch {
                 self.pocketTTS = nil
+                Self.logDrop("after synthesis failure")
                 setStatus(.fallback(.synthesisFailed(String(describing: error))))
             }
         }
@@ -85,6 +87,7 @@ actor EffectiveSpeaker: Speaker {
     func unloadPocketTTS() {
         guard pocketTTS != nil else { return }
         pocketTTS = nil
+        Self.logDrop("for memory pressure")
         setStatus(.fallback(.memoryPressure))
     }
 
@@ -92,5 +95,15 @@ actor EffectiveSpeaker: Speaker {
         guard new != status else { return }
         status = new
         onStatusChanged(new)
+    }
+
+    /// §13 Q7: whether dropping the manager actually gives the memory back is an open question, so the reading is taken
+    /// twice — at the drop and five seconds later, by which time any deferred release has happened.
+    private static func logDrop(_ reason: String) {
+        MemoryMeter.log("pocket-tts dropped \(reason)")
+        Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            MemoryMeter.log("pocket-tts dropped \(reason), 5 s later")
+        }
     }
 }
