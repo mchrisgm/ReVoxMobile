@@ -86,6 +86,26 @@ final class EffectiveSpeakerTests: XCTestCase {
         XCTAssertEqual(SpeakerSelection.choose(settings: settings, pocketTTSReady: true), .pocketTTS(voice: "cosette", fallbackIdentifier: "com.apple.voice.compact.en-US.Samantha"))
     }
 
+    /// M8, §8.2: pocket-tts is English-only, so the second direction never reaches it however healthy it is.
+    func testANonEnglishPhraseGoesToTheSystemVoiceEvenWithPocketTTSLoaded() async throws {
+        let (speaker, pocket, system, _) = makeSpeaker()
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        _ = try await speaker.synthesize("Good morning.")
+        XCTAssertEqual(pocket.syntheses, 1, "English is pocket-tts's")
+        _ = try await speaker.synthesize("Buenos días.", language: "es")
+        XCTAssertEqual(pocket.syntheses, 1, "Spanish never reached pocket-tts")
+        XCTAssertEqual(system.texts, ["Buenos días."])
+        let status = await speaker.status
+        XCTAssertEqual(status, .pocketTTS(voice: "alba"), "using the system voice for one phrase is not a fallback")
+    }
+
+    func testAnEnglishRegionPhraseStillUsesPocketTTS() async throws {
+        let (speaker, pocket, _, _) = makeSpeaker()
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        _ = try await speaker.synthesize("Good morning.", language: "en-GB")
+        XCTAssertEqual(pocket.syntheses, 1)
+    }
+
     func testPrefersPocketTTSWhenSelectedAndLoadable() async throws {
         let (speaker, pocket, system, statuses) = makeSpeaker()
         await speaker.prepare(.pocketTTS(voice: "javert", fallbackIdentifier: nil))

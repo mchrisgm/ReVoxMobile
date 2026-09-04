@@ -128,4 +128,55 @@ final class SettingsTests: XCTestCase {
         settings.voice = "jane"                                // a pocket-tts voice that is not offered
         XCTAssertFalse(settings.usesPocketTTSVoice)
     }
+
+    // MARK: Ignored language and two-way (M8)
+
+    func testTheNewFieldsDefaultToTheOneWayBehaviour() {
+        let settings = Settings()
+        XCTAssertNil(settings.ignoredLanguage)
+        XCTAssertFalse(settings.twoWay)
+        XCTAssertNil(settings.twoWayLanguage)
+        XCTAssertNil(settings.ignored)
+        XCTAssertNil(settings.twoWayTarget)
+    }
+
+    func testIgnoredAndTargetIgnoreEmptyStringsAndEnglish() {
+        var settings = Settings()
+        settings.ignoredLanguage = ""
+        XCTAssertNil(settings.ignored, "an empty code is not a language")
+        settings.ignoredLanguage = "en"
+        XCTAssertEqual(settings.ignored, "en")
+
+        settings.twoWayLanguage = "es"
+        XCTAssertNil(settings.twoWayTarget, "two-way is off, so there is no target")
+        settings.twoWay = true
+        XCTAssertEqual(settings.twoWayTarget, "es")
+        settings.twoWayLanguage = "en"
+        XCTAssertNil(settings.twoWayTarget, "English needs no second engine; Whisper already produces it")
+        settings.twoWayLanguage = ""
+        XCTAssertNil(settings.twoWayTarget)
+    }
+
+    func testTheNewFieldsRoundTripThroughTheWindowsSnakeCaseKeys() throws {
+        var settings = Settings()
+        settings.ignoredLanguage = "en"
+        settings.twoWay = true
+        settings.twoWayLanguage = "es"
+        let data = try JSONEncoder().encode(settings)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["ignored_language"] as? String, "en")
+        XCTAssertEqual(object["two_way"] as? Bool, true)
+        XCTAssertEqual(object["two_way_language"] as? String, "es")
+        XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: data), settings)
+    }
+
+    /// A settings file written before M8 has none of these keys and must keep working unchanged.
+    func testASettingsFileFromBeforeM8Decodes() throws {
+        let json = Data(#"{"model":"small","language":null,"voice":"alba","ducking":true}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+        XCTAssertNil(settings.ignoredLanguage)
+        XCTAssertFalse(settings.twoWay)
+        XCTAssertNil(settings.twoWayLanguage)
+        XCTAssertEqual(settings.voice, "alba")
+    }
 }

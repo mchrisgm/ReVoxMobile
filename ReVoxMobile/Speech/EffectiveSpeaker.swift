@@ -66,8 +66,17 @@ actor EffectiveSpeaker: Speaker {
     }
 
     func synthesize(_ text: String) async throws -> AudioClip {
+        try await synthesize(text, language: "en")
+    }
+
+    /// pocket-tts speaks English only (§6.5), so a phrase in any other language goes straight to the system voice
+    /// with a voice for that language — and to silence when this iPhone has none (M8, §8.2).
+    func synthesize(_ text: String, language: String) async throws -> AudioClip {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return AudioClip(samples: [], sampleRate: sampleRate)
+        }
+        guard SystemSpeaker.isEnglish(language) else {
+            return try await systemSpeaker().synthesize(text, language: language)
         }
         if let pocketTTS, status.usesPocketTTS {
             do {
@@ -78,14 +87,15 @@ actor EffectiveSpeaker: Speaker {
                 setStatus(.fallback(.synthesisFailed(String(describing: error))))
             }
         }
-        let systemSpeaker: SystemSpeaker
-        if let system {
-            systemSpeaker = system
-        } else {
-            systemSpeaker = makeSystem(nil)
-            system = systemSpeaker
-        }
-        return try await systemSpeaker.synthesize(text)
+        return try await systemSpeaker().synthesize(text)
+    }
+
+    /// The session's system voice, built on demand when `prepare` has not run yet.
+    private func systemSpeaker() -> SystemSpeaker {
+        if let system { return system }
+        let built = makeSystem(nil)
+        system = built
+        return built
     }
 
     /// Memory pressure (§9): drop the manager; the system voice speaks until the next `prepare`.

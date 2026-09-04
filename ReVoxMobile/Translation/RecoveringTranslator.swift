@@ -7,7 +7,7 @@ import ReVoxCore
 /// (§6.4: never unload mid-transcribe). The budget is one reload per pipeline run — a permanently broken model
 /// therefore surfaces on the second failure instead of reloading forever, and the pipeline enters `.error` with
 /// the Windows semantics.
-actor RecoveringTranslator: Translator, LanguageDetector {
+actor RecoveringTranslator: Translator, LanguageDetector, Transcriber {
     static let maxReloads = 1
 
     enum RecoveryEvent: Equatable, Sendable {
@@ -18,13 +18,13 @@ actor RecoveringTranslator: Translator, LanguageDetector {
 
     private static let logger = Logger(subsystem: "revox", category: "translation")
 
-    private let inner: any Translator & LanguageDetector
+    private let inner: any Translator & LanguageDetector & Transcriber
     private let whisper: WhisperKitTranslator
     private let model: WhisperModelID
     private let onEvent: @Sendable (RecoveryEvent) -> Void
     private var reloads = 0
 
-    init(_ inner: any Translator & LanguageDetector, reloading whisper: WhisperKitTranslator, model: WhisperModelID,
+    init(_ inner: any Translator & LanguageDetector & Transcriber, reloading whisper: WhisperKitTranslator, model: WhisperModelID,
          onEvent: @escaping @Sendable (RecoveryEvent) -> Void = { _ in }) {
         self.inner = inner
         self.whisper = whisper
@@ -49,6 +49,16 @@ actor RecoveringTranslator: Translator, LanguageDetector {
         } catch {
             try await reload(after: error)
             return try await inner.translate(audio, language: language)
+        }
+    }
+
+    /// M8's second direction, with the same one-reload budget: it is the same model failing.
+    func transcribe(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+        do {
+            return try await inner.transcribe(audio, language: language)
+        } catch {
+            try await reload(after: error)
+            return try await inner.transcribe(audio, language: language)
         }
     }
 

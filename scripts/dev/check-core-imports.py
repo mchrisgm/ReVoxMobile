@@ -27,7 +27,10 @@ def code_only(text: str) -> str:
     text = re.sub(r'"""(?:.|\n)*?"""', " ", text)
     text = re.sub(r'"(?:\\.|[^"\\])*"', " ", text)
     text = re.sub(r"//[^\n]*", " ", text)
-    return re.sub(r"/\*(?:.|\n)*?\*/", " ", text)
+    text = re.sub(r"/\*(?:.|\n)*?\*/", " ", text)
+    # An import names a module, not a type: `import Translation` is Apple's framework, not ReVoxCore's
+    # `Translation` struct. The ReVoxCore import is looked for in the raw text, above, so this cannot hide it.
+    return re.sub(r"^\s*(?:@\w+\s+)*import\s+[\w.]+[^\n]*", " ", text, flags=re.M)
 
 
 ALL_TREES = ("ReVoxMobile", "ReVoxMobileTests", "ReVoxBroadcast", "Shared")
@@ -48,6 +51,21 @@ def changed_files() -> list[str]:
     return sorted(p for p in paths if p.endswith(".swift"))
 
 
+# Types that live in a *dependency*, not in ReVoxCore, and are easy to assume are ReVoxCore's because ReVox uses
+# them next to its own. `Constants.languages` cost a macOS CI round: it is WhisperKit's.
+FOREIGN_TYPES = {"WhisperKit": ["Constants"]}
+
+
+def foreign_problems(path: str, text: str) -> list[str]:
+    missing = []
+    code = code_only(text)
+    for module, names in FOREIGN_TYPES.items():
+        if f"import {module}" in text:
+            continue
+        missing += [n for n in names if re.search(r"\b" + n + r"\.", code)]
+    return missing
+
+
 def main() -> int:
     names = core_types()
     problems = []
@@ -56,6 +74,10 @@ def main() -> int:
         if not file.exists():
             continue
         text = file.read_text()
+        for name in foreign_problems(path, text):
+            module = next(m for m, ns in FOREIGN_TYPES.items() if name in ns)
+            print(f"::error::{path} uses {name} without importing {module}")
+            problems.append((path, [name]))
         if "import ReVoxCore" in text:
             continue
         used = sorted(n for n in names if re.search(r"\b" + n + r"\b", code_only(text)))

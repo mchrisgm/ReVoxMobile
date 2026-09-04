@@ -135,6 +135,23 @@ jobs:
             exit 1
           }
 
+      # Best effort, and deliberately after the test step: `ScreenshotTests` renders the README's images from the
+      # real views, and the runner copies them out of the simulator's app container.
+      - name: Collect screenshots
+        if: always()
+        env:
+          DESTINATION: ${{ steps.sim.outputs.destination }}
+        run: bash scripts/ci/collect-screenshots.sh "$DESTINATION"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: screenshots
+          path: screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v6

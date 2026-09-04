@@ -28,12 +28,31 @@ public struct TranslationCandidate: Sendable, Equatable {
 
 /// Port of `revox/pipeline/stt.py:Translation`.
 public struct Translation: Sendable, Equatable, Codable {
+    /// The text ReVox says and stores. Named for the one-way case it was born in; with two-way on (M8) the
+    /// second direction puts its target-language text here, and `spokenLanguage` says which language that is.
     public var english: String
+    /// The language that was heard.
     public var language: String
+    /// The language `english` is written in: "en" for every one-way phrase, the chosen target for the second
+    /// direction of a two-way conversation. The speaker picks its voice from this.
+    public var spokenLanguage: String
 
-    public init(english: String, language: String) {
+    public init(english: String, language: String, spokenLanguage: String = "en") {
         self.english = english
         self.language = language
+        self.spokenLanguage = spokenLanguage
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case english, language, spokenLanguage
+    }
+
+    /// A transcript written before M8 has no `spokenLanguage`; those entries were all English.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        english = try container.decode(String.self, forKey: .english)
+        language = try container.decode(String.self, forKey: .language)
+        spokenLanguage = try container.decodeIfPresent(String.self, forKey: .spokenLanguage) ?? "en"
     }
 }
 
@@ -96,7 +115,9 @@ public enum SpeechGate {
             }
             parts.append(pythonStrip(segment.text))
         }
-        let english = pythonStrip(parts.filter { !$0.isEmpty }.joined(separator: " "))
+        // The only text that leaves this function is what the voice says and what the transcript shows, so the
+        // spoken-text guarantee is applied here rather than at each consumer (§5.3).
+        let english = SpokenText.clean(parts.filter { !$0.isEmpty }.joined(separator: " "))
         if hallucinationPhrases.contains(normalize(english)) {
             return nil
         }

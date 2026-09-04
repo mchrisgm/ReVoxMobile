@@ -11,8 +11,29 @@ public struct Settings: Codable, Equatable, Sendable {
     public var voiceVolume: Double = 1.0                     // 0.0 … 1.0
     public var latencyMode: String = "balanced"              // SegmenterPreset.rawValue
     public var captureMode: String = "microphone"            // CaptureMode.rawValue
+    /// M8: a language ReVox leaves alone — not translated, not transcribed — so a two-person conversation is not
+    /// echoed back at the person already speaking it. nil = translate every language.
+    public var ignoredLanguage: String? = nil
+    /// M8: with two-way on, the ignored language is translated into `twoWayLanguage` instead of being dropped,
+    /// and both directions are transcribed.
+    public var twoWay: Bool = false
+    /// M8: what the ignored language is translated into while two-way is on. nil = English, which needs no
+    /// second engine because Whisper's translate task already produces English.
+    public var twoWayLanguage: String? = nil
 
     public init() {}
+
+    /// The language ReVox is asked to leave alone, once, so no caller has to remember the empty-string case.
+    public var ignored: String? {
+        guard let ignoredLanguage, !ignoredLanguage.isEmpty else { return nil }
+        return ignoredLanguage
+    }
+
+    /// The target of the second direction while two-way is on; nil when two-way is off or the target is English.
+    public var twoWayTarget: String? {
+        guard twoWay, let twoWayLanguage, !twoWayLanguage.isEmpty, twoWayLanguage != "en" else { return nil }
+        return twoWayLanguage
+    }
 
     public var whisperModel: WhisperModelID { WhisperModelID(rawValue: model) ?? .small }
     public var preset: SegmenterPreset { SegmenterPreset(rawValue: latencyMode) ?? .balanced }
@@ -26,6 +47,9 @@ public struct Settings: Codable, Equatable, Sendable {
         case voiceVolume = "voice_volume"
         case latencyMode = "latency_mode"
         case captureMode = "capture_mode"
+        case ignoredLanguage = "ignored_language"
+        case twoWay = "two_way"
+        case twoWayLanguage = "two_way_language"
     }
 
     /// Missing keys keep their defaults; a wrong type throws, and `SettingsCodec.decode` turns that into `Settings()`.
@@ -39,6 +63,9 @@ public struct Settings: Codable, Equatable, Sendable {
         voiceVolume = try container.decodeIfPresent(Double.self, forKey: .voiceVolume) ?? voiceVolume
         latencyMode = try container.decodeIfPresent(String.self, forKey: .latencyMode) ?? latencyMode
         captureMode = try container.decodeIfPresent(String.self, forKey: .captureMode) ?? captureMode
+        ignoredLanguage = try container.decodeIfPresent(String.self, forKey: .ignoredLanguage) ?? ignoredLanguage
+        twoWay = try container.decodeIfPresent(Bool.self, forKey: .twoWay) ?? twoWay
+        twoWayLanguage = try container.decodeIfPresent(String.self, forKey: .twoWayLanguage) ?? twoWayLanguage
     }
 
     /// Writes every key (optionals as `null`, like Windows `json.dumps(dataclasses.asdict(settings))`).
@@ -52,6 +79,9 @@ public struct Settings: Codable, Equatable, Sendable {
         try container.encode(voiceVolume, forKey: .voiceVolume)
         try container.encode(latencyMode, forKey: .latencyMode)
         try container.encode(captureMode, forKey: .captureMode)
+        try container.encode(ignoredLanguage, forKey: .ignoredLanguage)
+        try container.encode(twoWay, forKey: .twoWay)
+        try container.encode(twoWayLanguage, forKey: .twoWayLanguage)
     }
 }
 

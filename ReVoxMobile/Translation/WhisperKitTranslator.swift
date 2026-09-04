@@ -13,7 +13,7 @@ enum WhisperTranslatorError: Error, Equatable, CustomStringConvertible {
 }
 
 /// `Translator` + `LanguageDetector` over one WhisperKit instance (§6.4, R2, R3). One call at a time.
-actor WhisperKitTranslator: Translator, LanguageDetector {
+actor WhisperKitTranslator: Translator, LanguageDetector, Transcriber {
     static let preparingMessage = "Preparing model…"
     private static let logger = Logger(subsystem: "revox", category: "whisper")
 
@@ -72,8 +72,20 @@ actor WhisperKitTranslator: Translator, LanguageDetector {
     // MARK: Translator (R3)
 
     func translate(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+        try await run(audio, language: language, task: "translate")
+    }
+
+    // MARK: Transcriber (M8, §8.2)
+
+    /// The same decode with Whisper's transcribe task, so the words come back in the language they were spoken
+    /// in. Only the second direction of a two-way conversation asks for this.
+    func transcribe(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+        try await run(audio, language: language, task: "transcribe")
+    }
+
+    private func run(_ audio: [Float], language: String, task: String) async throws -> TranslationCandidate {
         guard let specialTokenBegin else { throw WhisperTranslatorError.notLoaded }
-        var spec = WhisperDecodingSpec(language: language)
+        var spec = WhisperDecodingSpec(language: language, task: task)
         spec.firstTokenLogProbThreshold = firstTokenLogProbThreshold
         let snapshots: [WhisperSegmentSnapshot]
         do {

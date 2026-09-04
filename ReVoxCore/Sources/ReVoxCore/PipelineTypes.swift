@@ -31,6 +31,27 @@ public protocol Speaker: Sendable {
     var sampleRate: Int { get }
     /// Whitespace-only text must return an empty clip without touching the engine.
     func synthesize(_ text: String) async throws -> AudioClip
+    /// The same, for a phrase written in `language` (M8: the second direction of a two-way conversation speaks
+    /// the other person's language). An engine that only has one language ignores the code — that is the default.
+    /// An engine that has no voice for `language` returns an empty clip rather than speaking it in the wrong one.
+    func synthesize(_ text: String, language: String) async throws -> AudioClip
+}
+
+extension Speaker {
+    public func synthesize(_ text: String, language: String) async throws -> AudioClip {
+        try await synthesize(text)
+    }
+}
+
+/// One thing to say, and the language it is written in (M8). Everything one-way is English.
+public struct SpokenPhrase: Sendable, Equatable {
+    public var text: String
+    public var language: String
+
+    public init(text: String, language: String = "en") {
+        self.text = text
+        self.language = language
+    }
 }
 
 public protocol AudioPlayer: Sendable {
@@ -53,6 +74,8 @@ public enum PipelineEvent: Sendable, Equatable {
     case lag
     case speaking(Bool)
     case error(String)
+    /// M8: a two-way phrase that was transcribed but could not be spoken in the target language, with why.
+    case transcriptOnly(reason: String)
 }
 
 public struct PipelineConfiguration: Sendable, Equatable {
@@ -64,6 +87,10 @@ public struct PipelineConfiguration: Sendable, Equatable {
     public var captureLatencyFrames: Int = 0                       // ASSUMED broadcast value, measured in M5
     public var duckingEnabled: Bool = true
     public var duckingHoldNanoseconds: UInt64 = DuckingCoordinator.defaultHoldNanoseconds
+    /// M8 §8.2: the language ReVox leaves alone, and the two-way routing for it.
+    public var ignoredLanguage: String?
+    public var twoWay: Bool = false
+    public var twoWayLanguage: String?
 
     public init(captureMode: CaptureMode,
                 preset: SegmenterPreset,
@@ -72,10 +99,16 @@ public struct PipelineConfiguration: Sendable, Equatable {
                 captureGateHoldFrames: Int = CaptureGate.defaultHoldFrames,
                 captureLatencyFrames: Int = 0,
                 duckingEnabled: Bool = true,
-                duckingHoldNanoseconds: UInt64 = DuckingCoordinator.defaultHoldNanoseconds) {
+                duckingHoldNanoseconds: UInt64 = DuckingCoordinator.defaultHoldNanoseconds,
+                ignoredLanguage: String? = nil,
+                twoWay: Bool = false,
+                twoWayLanguage: String? = nil) {
         self.captureMode = captureMode
         self.preset = preset
         self.pinnedLanguage = pinnedLanguage
+        self.ignoredLanguage = ignoredLanguage
+        self.twoWay = twoWay
+        self.twoWayLanguage = twoWayLanguage
         self.maxPending = maxPending
         self.captureGateHoldFrames = captureGateHoldFrames
         self.captureLatencyFrames = captureLatencyFrames
@@ -91,6 +124,12 @@ public struct PipelineDependencies: Sendable {
     public var vad: any SpeechProbabilityModel
     public var detector: any LanguageDetector
     public var translator: any Translator
+    /// M8: Whisper's transcribe task, for the second direction of a two-way conversation. nil keeps the
+    /// pre-M8 behaviour (the translate task is used instead, which produces English).
+    public var transcriber: (any Transcriber)?
+    /// M8: text-to-text translation into a language Whisper cannot produce. nil = second direction is
+    /// transcript-only.
+    public var secondaryTranslator: (any SecondaryTranslator)?
     public var speaker: any Speaker
     public var playerFactory: AudioPlayerFactory
     public var ducker: any Ducker
@@ -104,6 +143,8 @@ public struct PipelineDependencies: Sendable {
                 detector: any LanguageDetector,
                 translator: any Translator,
                 speaker: any Speaker,
+                transcriber: (any Transcriber)? = nil,
+                secondaryTranslator: (any SecondaryTranslator)? = nil,
                 playerFactory: @escaping AudioPlayerFactory,
                 ducker: any Ducker,
                 transcriptFactory: @escaping TranscriptSinkFactory,
@@ -114,6 +155,8 @@ public struct PipelineDependencies: Sendable {
         self.vad = vad
         self.detector = detector
         self.translator = translator
+        self.transcriber = transcriber
+        self.secondaryTranslator = secondaryTranslator
         self.speaker = speaker
         self.playerFactory = playerFactory
         self.ducker = ducker

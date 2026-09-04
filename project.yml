@@ -61,6 +61,10 @@ targets:
         product: WhisperKit
       - package: FluidAudio
         product: FluidAudio
+      # M8's second direction. iOS 18 only, and the app runs on iOS 17, so it is linked weakly on purpose:
+      # every use is behind `if #available(iOS 18, *)` and an iOS 17 iPhone must still launch.
+      - sdk: Translation.framework
+        weak: true
     scheme:
       testTargets:
         - ReVoxMobileTests

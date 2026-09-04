@@ -113,6 +113,7 @@ final class LiveViewModel {
         if let broadcast {
             observe(broadcast: broadcast)      // stores it and starts draining its events
         }
+        refreshVoiceNote()
     }
 
     // MARK: Inputs
@@ -173,7 +174,61 @@ final class LiveViewModel {
         var configuration = PipelineConfiguration(captureMode: captureMode, preset: settings.preset, pinnedLanguage: settings.language)
         configuration.duckingEnabled = settings.ducking   // R11; the controller applies the cycles of §6.8
         configuration.captureLatencyFrames = captureMode == .broadcast ? BroadcastTuning.captureLatencyFrames : 0   // §5.2
+        configuration.ignoredLanguage = settings.ignored          // §8.2 (M8)
+        configuration.twoWay = settings.twoWay
+        configuration.twoWayLanguage = settings.twoWayLanguage
         return configuration
+    }
+
+    // MARK: Two-way conversation (§8.2, M8)
+
+    /// The language ReVox leaves alone. nil = every language is translated, the pre-M8 behaviour.
+    var ignoredLanguage: String? {
+        get { settings.settings.ignored }
+        set { settings.update { $0.ignoredLanguage = newValue } }
+    }
+
+    /// Whether that language is spoken back in `twoWayLanguage` instead of being dropped.
+    var isTwoWay: Bool {
+        get { settings.settings.twoWay }
+        set { settings.update { $0.twoWay = newValue } }
+    }
+
+    var twoWayLanguage: String? {
+        get { settings.settings.twoWayLanguage }
+        set {
+            settings.update { $0.twoWayLanguage = newValue }
+            refreshVoiceNote()
+        }
+    }
+
+    /// iOS speaks the second direction with its own voice, so a language it has no voice for is silence. Said
+    /// while the language is being chosen rather than discovered mid-conversation — and held here rather than
+    /// computed in the view body, because reading the installed voices walks them and the body runs on every row.
+    private(set) var twoWayVoiceNote: String?
+
+    func refreshVoiceNote() {
+        twoWayVoiceNote = Self.voiceNote(for: settings.settings.twoWayLanguage)
+    }
+
+    static func voiceNote(for target: String?) -> String? {
+        guard let target, !target.isEmpty, !SystemSpeaker.hasVoice(for: target) else { return nil }
+        let name = LanguageCatalog.displayName(target, whenNil: "None")
+        return "This iPhone has no \(name) voice, so replies stay in the transcript. Add one in Settings › Accessibility › Spoken Content › Voices."
+    }
+
+    /// The pair the second direction needs, for the screen to hand to Apple's translator. nil whenever two-way is
+    /// off, incomplete, or would translate a language into itself.
+    var twoWayPair: (source: String, target: String)? {
+        guard isTwoWay, let source = ignoredLanguage, let target = settings.settings.twoWayTarget, source != target else { return nil }
+        return (source, target)
+    }
+
+    /// A phrase kept in the transcript that nothing could say — surfaced once, dismissibly, rather than as silence.
+    private(set) var transcriptOnlyNote: String?
+
+    func dismissTranscriptOnlyNote() {
+        transcriptOnlyNote = nil
     }
 
     // MARK: Lifecycle (Windows start / stop / toggle)
@@ -182,6 +237,7 @@ final class LiveViewModel {
         guard state == .idle || state == .error else { return }
         banner = nil
         sessionStatus = nil
+        transcriptOnlyNote = nil
         // The answer must be known before anything activates the audio session: a `.playAndRecord` session
         // activated while permission is undetermined comes up with a dead input, and granting permission after
         // the fact does not revive it (observed on device, build 8). Building the pipeline is what configures
@@ -337,6 +393,7 @@ final class LiveViewModel {
         if banner == .permissionDenied, permission.status() != .denied {
             banner = nil
         }
+        refreshVoiceNote()   // a voice may have just been installed in iOS Settings (§8.2)
     }
 
     func toggle() async {
@@ -426,6 +483,8 @@ final class LiveViewModel {
         case .error(let message):
             setState(.error)
             banner = .error(message)
+        case .transcriptOnly(let reason):
+            transcriptOnlyNote = reason
         }
     }
 

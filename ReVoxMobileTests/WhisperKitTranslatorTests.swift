@@ -34,6 +34,30 @@ final class WhisperKitTranslatorTests: XCTestCase {
         XCTAssertEqual(spec.chunkingStrategy, "none")
     }
 
+    /// M8's second direction is the same decode with Whisper's other task; nothing else about R3 moves.
+    func testTheTranscribeTaskChangesOnlyTheTask() {
+        let translate = WhisperDecodingSpec(language: "es")
+        let transcribe = WhisperDecodingSpec(language: "es", task: "transcribe")
+        XCTAssertEqual(transcribe.task, "transcribe")
+        var asTranslate = transcribe
+        asTranslate.task = translate.task
+        XCTAssertEqual(asTranslate, translate, "only `task` differs between the two specs")
+    }
+
+    func testTranscribeAsksWhisperForTheTranscribeTaskAndTranslateForTranslate() async throws {
+        let tasks = LockedBox<[String]>([])
+        let translator = WhisperKitTranslator(engine: engine(transcribe: { _, spec in
+            tasks.mutate { $0.append(spec.task) }
+            return [WhisperSegmentSnapshot(text: " Buenos días.", noSpeechProbability: 0, tokenLogProbs: [WhisperTokenLogProb(token: 10, logProbability: -0.1)])]
+        }))
+        try await translator.load(progress: { _ in })
+        _ = try await translator.translate([0, 0, 0], language: "es")
+        let transcribed = try await translator.transcribe([0, 0, 0], language: "es")
+        XCTAssertEqual(tasks.value, ["translate", "transcribe"])
+        XCTAssertEqual(transcribed.segments.first?.text, " Buenos días.")
+        XCTAssertEqual(transcribed.language, "es")
+    }
+
     func testLanguageProbabilityIsExpOfTheLogProbabilityClamped() {
         XCTAssertEqual(WhisperKitTranslator.probability(fromLogProbability: 0), 1)
         XCTAssertEqual(WhisperKitTranslator.probability(fromLogProbability: -0.916_29), 0.4, accuracy: 0.001)
