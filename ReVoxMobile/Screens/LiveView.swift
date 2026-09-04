@@ -114,16 +114,25 @@ struct LiveView: View {
         .padding(.horizontal)
     }
 
+    /// The label is carried by its own `Text`: a `.menu` picker outside a `Form` renders only its value, which
+    /// left the card showing two bare language names with nothing saying which was which.
     private func languageRow(title: String, selection: Binding<String?>) -> some View {
-        Picker(title, selection: selection) {
-            Text(Self.noLanguageTitle).tag(String?.none)
-            ForEach(LanguageCatalog.concrete) { option in
-                Text(option.displayName).tag(option.code)
+        HStack(spacing: 8) {
+            Text(title).font(.subheadline)
+            Spacer(minLength: 8)
+            Picker(title, selection: selection) {
+                Text(Self.noLanguageTitle).tag(String?.none)
+                ForEach(LanguageCatalog.concrete) { option in
+                    Text(option.displayName).tag(option.code)
+                }
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
         }
-        .pickerStyle(.menu)
         .disabled(isBusy)
         .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
     }
 
     /// The one place a transcript-only phrase is explained: it is in the transcript, and nothing said it (§8.2).
