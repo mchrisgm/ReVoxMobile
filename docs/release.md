@@ -4,7 +4,11 @@ This guide is for the repository owner. It explains what the TestFlight workflow
 
 ## What the workflow does
 
-[`.github/workflows/testflight.yml`](../.github/workflows/testflight.yml) is **deliberate, not automatic**: it runs on a `v*` tag and on demand from the **Actions** tab (**TestFlight** → **Run workflow**, where you can also choose the signing path). It does *not* run on a push to `main` — a macOS runner bills at ten times the minute rate, and running this alongside CI on every push exhausted the account's Actions allowance twice. Two jobs:
+[`.github/workflows/testflight.yml`](../.github/workflows/testflight.yml) runs on **every push to `main`** — which in practice means every merged pull request — and also on a `v*` tag and on demand from the **Actions** tab (**TestFlight** → **Run workflow**, where you can also choose the signing path).
+
+**What it costs.** The `upload` job archives, tests and uploads on a macOS runner, which bills at **ten times** the minute rate — roughly 200 billed minutes per merge, on top of the macOS job `ci.yml` already runs for every push on every branch. That is affordable for milestone-sized merges to `main` and is not affordable at per-push frequency, which is why the push trigger names `main` and nothing else. This trigger existed before, was removed after it exhausted the account's Actions allowance twice (runs 33811704361 and 33819325082 died in seconds with no readable log — a job that was never started), and was reinstated deliberately. If the allowance runs short again, the first thing to reconsider is `ci.yml`'s macOS job on every branch, not this one.
+
+Two jobs:
 
 1. **`preflight`** (Linux, seconds): checks that the four App Store Connect secrets exist. If any is missing it prints a notice and the `upload` job is skipped (see [Before the secrets exist](#before-the-secrets-exist)).
 2. **`upload`** (macOS runner `macos-26`, Xcode 26.6 selected by `scripts/ci/select-xcode.sh`, up to 90 minutes), step by step:
@@ -128,7 +132,7 @@ Until `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` and `APPLE_TEAM_ID` are all se
 TestFlight upload skipped: missing repository secrets: ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 APPLE_TEAM_ID (see docs/release.md)
 ```
 
-as a notice on the run, the `upload` job is skipped, and the workflow finishes successfully. `main` stays green and nothing else changes. The moment the four secrets exist the next dispatched run (or `v*` tag) performs the real upload; no workflow edit is needed. The everyday CI workflow (`ci.yml`) never needs any secret.
+as a notice on the run, the `upload` job is skipped, and the workflow finishes successfully. `main` stays green and nothing else changes. The moment the four secrets exist the next merge to `main` (or dispatched run, or `v*` tag) performs the real upload; no workflow edit is needed. The everyday CI workflow (`ci.yml`) never needs any secret.
 
 ## After the upload
 
@@ -163,7 +167,7 @@ The workflow uploads builds; it cannot create testing groups or links (there is 
 2. **External group.** TestFlight → **External Testing** → **+**, name it (for example `ReVox public`), leave **Automatic distribution** on so later builds with the same marketing version reach it without a new review, and add the current build.
 3. **Beta App Review.** The first build in the group is reviewed (usually within one to two days). The review notes for the `audio` background mode (section "App Review notes (background audio)" above) apply here as well: paste them into the review notes field. A build that fails review is reported by email with the reason; fix, push, and add the new build to the group.
 4. **Public link.** Once the build shows **Ready to Test** in the external group, open the group and click **Enable Public Link**. Set a tester limit if wanted (up to 10 000). Copy the link; it stays valid for later builds added to the same group. Share it together with `docs/testing.md`.
-5. **Later builds.** Each dispatched run (or `v*` tag) uploads a new build; pushes to `main` do not. With automatic distribution on, builds with the same `MARKETING_VERSION` become available to the group without review; bumping `MARKETING_VERSION` in `project.yml` triggers a new Beta App Review for the first build of that version.
+5. **Later builds.** Every merge to `main` uploads a new build, as does each dispatched run and `v*` tag. With automatic distribution on, builds with the same `MARKETING_VERSION` become available to the group without review; bumping `MARKETING_VERSION` in `project.yml` triggers a new Beta App Review for the first build of that version.
 
 Disable the link from the same page (**Disable Public Link**) to stop new testers from joining; existing testers keep their builds until they expire (90 days after upload).
 

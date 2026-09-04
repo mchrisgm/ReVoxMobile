@@ -1,11 +1,16 @@
 name: TestFlight
 
-# Deliberate, not automatic. Every run archives, tests and uploads on a macOS runner, which bills at ten
-# times the minute rate; running it on each push to main alongside CI exhausted the account's Actions
-# allowance twice (runs 33811704361 and 33819325082 failed in seconds with no readable log, the signature
-# of a job that was never started). A release is a decision, so it is dispatched or tagged.
+# Every merge to main ships a build, by the owner's decision. Read the cost before changing this back:
+# each run archives, tests and uploads on a macOS runner, which bills at ten times the minute rate — roughly
+# 200 billed minutes per merge on top of ci.yml's own macOS job. That is what exhausted the account's Actions
+# allowance twice while this trigger existed before (runs 33811704361 and 33819325082 failed in seconds with
+# no readable log, the signature of a job that was never started). It is affordable at milestone-sized merges
+# and is not affordable at per-push frequency, so keep the branch list to main.
+#
+# The `concurrency` group below is what keeps two merges in quick succession from archiving in parallel.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
