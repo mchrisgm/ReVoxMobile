@@ -216,10 +216,13 @@ final class ModelManager {
                     withheldFailure = state
                     continue
                 }
+                // `.installed` is withheld for the same reason as `.failed` just above: the row must not say
+                // Installed while `tasks[kind]` is still set. `delete(_:activeModel:)` returns early on a live
+                // task, so a Delete swiped in that window is refused in silence — the same shape of bug run
+                // 33868423907 caught for Retry. `finishTask` publishes it through `refreshInstalledStates()`
+                // once the slot is free, which sets the flags, the storage figure and the upstream flag with it.
+                if state.phase == .installed { continue }
                 self?.states[kind] = state
-                if state.phase == .installed {
-                    self?.refreshInstalledFlags()   // the row and the flags become true together
-                }
             }
             return withheldFailure
         }
@@ -240,8 +243,10 @@ final class ModelManager {
                 try await installer.installPocketTTS(progress: report)
             }
             await drainReports()
-            finishTask(for: kind, cancelled: false)
+            // The record is written before the finalising refresh reads it, so the row, the storage figure and
+            // the upstream flag all become true together rather than one tick apart.
             recordInstalledFiles(kind)
+            finishTask(for: kind, cancelled: false)
             if case .whisper = kind, !layout.isVADInstalled(), tasks[.vad] == nil {
                 install(.vad)
             }

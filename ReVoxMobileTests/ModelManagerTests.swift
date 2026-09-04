@@ -303,7 +303,11 @@ final class ModelManagerTests: XCTestCase {
         fakeSteps = FakeInstallSteps()
         defaults = UserDefaults(suiteName: "ReVoxModelManagerTests-\(UUID().uuidString)")
         let installer = ModelInstaller(layout: layout, steps: fakeSteps.steps(layout: layout), verifiedLoads: VerifiedLoadRecord(defaults: defaults))
-        return ModelManager(layout: layout, installer: installer, isPipelineRunning: { false }, availableBytes: { 50_000_000_000 }, host: host)
+        // An isolated record store: the initializer's default is `UserDefaults.standard`, which every test in the
+        // bundle would otherwise share, and the file sets recorded here are keyed by kind, not by layout.
+        let record = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxFileRecord-\(UUID().uuidString)")!)
+        return ModelManager(layout: layout, installer: installer, isPipelineRunning: { false },
+                            availableBytes: { 50_000_000_000 }, host: host, fileRecord: record)
     }
 
     @MainActor
@@ -559,5 +563,25 @@ final class ModelManagerTests: XCTestCase {
 
         try manager.delete(.vad, activeModel: .small)
         XCTAssertNil(manager.upstreamChangeText(for: .vad))
+    }
+
+    /// A row that reads Installed must mean the install is finished and `tasks[kind]` is free, because
+    /// `delete(_:activeModel:)` returns early — in silence — while a task is still live. TestFlight run
+    /// 33896798825 failed three M7 tests on exactly that window: the progress pump published `.installed`
+    /// before `finishTask` freed the slot, so a delete taken at that moment did nothing and neither the
+    /// storage figure nor the upstream flag had been refreshed yet.
+    @MainActor
+    func testARowThatReadsInstalledIsFinishedEnoughToDelete() async throws {
+        let manager = makeManager(host: FakeInstallHost())
+        let notifications = LockedBox<Int>(0)
+        manager.onModelFilesChanged = { notifications.mutate { $0 += 1 } }
+        manager.install(.whisper(.tiny))
+        await waitUntil("tiny installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
+
+        XCTAssertNotNil(manager.storage.bytes(for: .whisper(.tiny)),
+                        "the storage figure is refreshed with the row, not a tick later")
+        try manager.delete(.whisper(.tiny), activeModel: .small)
+        XCTAssertEqual(notifications.value, 1, "the delete was accepted, not silently refused by a live task slot")
+        XCTAssertEqual(manager.state(for: .whisper(.tiny)).phase, .idle)
     }
 }
