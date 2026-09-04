@@ -92,31 +92,67 @@ final class ScreenHostingTests: XCTestCase {
     func testLiveViewHostsInEveryState() async {
         let mute = PlaybackMute()
         let pipeline = FakeLivePipeline()
+        let extensionID = "test.revox.broadcast"
         let live = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
                                  supplier: { _, _ in pipeline })
-        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel()) })   // empty state
+        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // empty state
         await live.start()
         await waitUntil { live.state == .running }
         pipeline.emit(.entry(TranscriptEntry(timestamp: Date(), language: "es", original: "", english: "hola")))
         pipeline.emit(.lag)
         await waitUntil { live.rows.count == 2 }
-        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel()) })   // running with rows and the badge
+        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // running with rows and the badge
         pipeline.emit(.error("boom"))
         await waitUntil { live.state == .error }
-        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel()) })   // error banner
+        host(NavigationStack { LiveView(model: live, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // error banner
 
         let denied = LiveViewModel(settings: store, mute: mute, permission: .fixed(.denied), modelReady: { _ in true }, supplier: { _, _ in pipeline })
         await denied.start()
-        host(NavigationStack { LiveView(model: denied, models: makeModelsViewModel()) })  // permission banner
+        host(NavigationStack { LiveView(model: denied, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })  // permission banner
 
         let noModel = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in false }, supplier: { _, _ in pipeline })
         await noModel.start()
-        host(NavigationStack { LiveView(model: noModel, models: makeModelsViewModel()) })  // download prompt
-        XCTAssertEqual(LiveView.availableSources, [.microphone])
+        host(NavigationStack { LiveView(model: noModel, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })  // download prompt
+
+        let suite = "group.test.revox-\(UUID().uuidString)"
+        let coordinator = BroadcastCoordinator(capture: BroadcastCapture(appGroup: suite, containerURL: nil, records: nil), records: nil,
+                                               containerURL: nil, names: BroadcastNotificationNames(appGroup: suite))
+        let broadcast = LiveViewModel(settings: store, mute: mute, permission: .fixed(.denied), modelReady: { _ in true },
+                                      supplier: { _, _ in FakeLivePipeline() }, broadcast: coordinator)
+        broadcast.captureMode = .broadcast
+        XCTAssertTrue(broadcast.showsBroadcastPicker)
+        host(NavigationStack { LiveView(model: broadcast, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // picker + captions, idle
+        await broadcast.start()
+        await waitUntil { broadcast.state == .running }
+        XCTAssertNil(broadcast.banner, "a denied microphone does not block broadcast mode")
+        host(NavigationStack { LiveView(model: broadcast, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // running, picker still shown
+        coordinator.handle(.attached(generation: 1, joinedInProgress: true))
+        await waitUntil { broadcast.rows.count == 1 }
+        XCTAssertFalse(broadcast.showsBroadcastPicker)
+        host(NavigationStack { LiveView(model: broadcast, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // attached, joined row
+        XCTAssertEqual(LiveView.availableSources, [.microphone, .broadcast])
+        XCTAssertEqual(BroadcastPickerButton.size, 50)
+        XCTAssertEqual(BroadcastPickerButton.captionText, "Tap to choose ReVox and start the broadcast. You can also start it from Control Center's Screen Recording control.")
+        XCTAssertEqual(BroadcastPickerButton.footnoteText, "Locking the iPhone with the side button ends the broadcast.")
     }
 
     func testRootViewHostsAllThreeTabs() throws {
         let environment = try AppEnvironment.testing(root: root.appendingPathComponent("env", isDirectory: true))
         host(RootView(environment: environment))
+    }
+
+    func testBroadcastDiagnosticsViewHostsWithAndWithoutARing() async throws {
+        let model = BroadcastDiagnosticsModel(containerURL: root, records: nil, keepAlive: KeepAliveMonitor(),
+                                              sessionController: AudioSessionController(session: RecordingAudioSessionSeam()))
+        await model.refresh()
+        host(NavigationStack { BroadcastDiagnosticsView(model: model) })
+        let mapping = try RingFileMapping.openCreating(at: RingFileMapping.ringURL(in: root))
+        let writer = try RingWriter(storage: MappedRingStorage(mapping: mapping))
+        writer.begin(generation: 1, startedAt: 0, asbd: RingHeader.ASBD(), pid: 1)
+        await model.refresh()
+        host(NavigationStack { BroadcastDiagnosticsView(model: model) })
+        let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
+        let voices = try makeVoicesViewModel()
+        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices, diagnostics: model) })
     }
 }

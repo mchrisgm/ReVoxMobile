@@ -6,12 +6,12 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 
 | # | Milestone | Status |
 |---|-----------|--------|
-| 0 | Bootstrap: project skeleton, `ReVoxCore` package, CI, TestFlight workflow, docs | **Current** |
-| 1 | Design spec and implementation plan | Planned |
-| 2 | `ReVoxCore` port: Segmenter, SpeechGate, Pipeline, Transcript, Catalog, Settings, RingBuffer | Planned |
-| 3 | Microphone mode end to end, first TestFlight build | Planned |
-| 4 | pocket-tts, voices, ducking | Planned |
-| 5 | Other-apps capture via the broadcast extension | Planned |
+| 0 | Bootstrap: project skeleton, `ReVoxCore` package, CI, TestFlight workflow, docs | Done |
+| 1 | Design spec and implementation plan | Done |
+| 2 | `ReVoxCore` port: Segmenter, SpeechGate, Pipeline, Transcript, Catalog, Settings, RingBuffer | Done |
+| 3 | Microphone mode end to end, first TestFlight build | Done |
+| 4 | pocket-tts, voices, ducking | Done |
+| 5 | Other-apps capture via the broadcast extension | **Current** |
 | 6 | History, export, About screen, HIG polish | Planned |
 | 7 | Hardening | Planned |
 

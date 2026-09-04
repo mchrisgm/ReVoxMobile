@@ -29,4 +29,8 @@ final class AssembledPipeline: LivePipeline, Sendable {
     func setMuted(_ muted: Bool) async {
         await pipeline.setMuted(muted)
     }
+
+    func noteCaptureGap() async {
+        await pipeline.noteCaptureGap()
+    }
 }

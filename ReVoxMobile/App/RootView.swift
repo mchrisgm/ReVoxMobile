@@ -7,7 +7,7 @@ struct RootView: View {
     var body: some View {
         TabView {
             NavigationStack {
-                LiveView(model: environment.live, models: environment.models)
+                LiveView(model: environment.live, models: environment.models, broadcastExtensionBundleID: environment.configuration.broadcastExtensionBundleID)
             }
             .tabItem { Label("Live", systemImage: "waveform") }
 
@@ -17,7 +17,7 @@ struct RootView: View {
             .tabItem { Label("History", systemImage: "clock") }
 
             NavigationStack {
-                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices)
+                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices, diagnostics: environment.diagnostics)
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }
         }

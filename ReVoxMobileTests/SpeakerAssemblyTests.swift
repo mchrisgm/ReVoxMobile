@@ -13,6 +13,7 @@ final class SpeakerAssemblyTests: XCTestCase {
         let startedWith = LockedBox<[PipelineConfiguration]>([])
         let muted = LockedBox<[Bool]>([])
         let stopCount = LockedBox<Int>(0)
+        let gapCount = LockedBox<Int>(0)
         private let speaker: EffectiveSpeaker
 
         init(speaker: EffectiveSpeaker) {
@@ -33,6 +34,10 @@ final class SpeakerAssemblyTests: XCTestCase {
 
         func setMuted(_ muted: Bool) async {
             self.muted.mutate { $0.append(muted) }
+        }
+
+        func noteCaptureGap() async {
+            gapCount.mutate { $0 += 1 }
         }
     }
 

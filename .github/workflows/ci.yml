@@ -32,6 +32,27 @@ jobs:
         run: swift test
       - name: Every ported constant is asserted
         run: bash scripts/ci/check-constant-coverage.sh
+      - name: Extension surface (design spec §7.5, §11)
+        run: bash scripts/ci/check-extension-surface.sh
+
+  # The Python gates run here, not in core-linux (the swift:6.3-noble container has no python3) and not on
+  # macOS (10x the minute rate for a text check). Seconds on a bare ubuntu runner, and they fail six minutes
+  # before the simulator build would.
+  source-checks:
+    name: Source and doc checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      # Two compile errors that swiftc -parse cannot see, so they otherwise cost a full macOS round each.
+      - name: Swift mistakes -parse cannot catch
+        run: |
+          python3 scripts/dev/check-core-imports.py --all
+          python3 scripts/dev/check-test-autoclosures.py
+          python3 scripts/dev/check-tests-are-discoverable.py
+      - name: Verify docs/broadcast-bridge.md against RingHeader.Offset
+        run: python3 scripts/ci/check-broadcast-bridge-doc.py
+      - name: Verify Info.plists and privacy manifests
+        run: python3 scripts/ci/check-plists.py
 
   ios-simulator:
     name: App and extension (iOS simulator)

@@ -5,6 +5,7 @@ struct LiveTranscriptRow: Identifiable, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case entry(language: String, english: String)
         case dropMarker
+        case joinedInProgress                         // muted header: the run attached to a broadcast already in progress (§8.2)
     }
 
     let id: UUID

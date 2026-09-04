@@ -7,6 +7,8 @@ protocol LivePipeline: Sendable {
     func start(_ configuration: PipelineConfiguration) async
     func stop() async
     func setMuted(_ muted: Bool) async
+    /// A capture gap (ring overrun or a keep-alive heartbeat gap): drop marker + `.lag`, no segment dropped (§5.4).
+    func noteCaptureGap() async
 }
 
 extension TranslationPipeline: LivePipeline {}
@@ -14,13 +16,16 @@ extension TranslationPipeline: LivePipeline {}
 /// Builds a loaded pipeline for the given settings, reporting load phases ("Preparing model…").
 typealias PipelineSupplier = @Sendable (_ settings: Settings, _ progress: @escaping @Sendable (String) -> Void) async throws -> any LivePipeline
 
-/// What makes a loaded pipeline reusable across restarts (Windows `_invalidate`: latency mode; plus the model).
+/// What makes a loaded pipeline reusable across restarts (Windows `_invalidate`: latency mode; plus the model and,
+/// on iOS, the capture source, which selects the adapter at build time).
 struct PipelineSignature: Equatable, Sendable {
     var model: String
     var latencyMode: String
+    var captureMode: String
 
     init(settings: Settings) {
         model = settings.model
         latencyMode = settings.latencyMode
+        captureMode = settings.captureMode
     }
 }

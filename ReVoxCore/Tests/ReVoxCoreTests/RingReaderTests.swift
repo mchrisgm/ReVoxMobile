@@ -136,7 +136,7 @@ final class RingReaderTests: XCTestCase {
         XCTAssertEqual(result, .gap(dropped: 928_000))                                // 960 000 − 32 000
         XCTAssertEqual(reader.readCursor, 928_000)
         XCTAssertEqual(reader.overrunCount, 1)
-        XCTAssertEqual(reader.header.overrunCount, 1)
+        XCTAssertEqual(reader.header?.overrunCount, 1)
         XCTAssertEqual(read(reader).0, .frames(15_872))                               // reading resumes from the jump
     }
 
@@ -172,7 +172,7 @@ final class RingReaderTests: XCTestCase {
         XCTAssertEqual(result, .gap(dropped: 951_024 - 32_000))
         XCTAssertEqual(reader.readCursor, 919_024)
         XCTAssertEqual(reader.overrunCount, 1)
-        XCTAssertEqual(reader.header.overrunCount, 1)
+        XCTAssertEqual(reader.header?.overrunCount, 1)
     }
 
     func testRewindingWriterDiscardsCopyAndLeavesTheCursor() throws {
@@ -199,10 +199,79 @@ final class RingReaderTests: XCTestCase {
     func testHeaderReflectsWriter() throws {
         let (storage, writer) = try makeRing(generation: 9)
         let reader = try RingReader(storage: storage)
-        XCTAssertEqual(reader.header.generation, 9)
-        XCTAssertEqual(reader.header.writerPID, 42)
+        XCTAssertEqual(reader.header?.generation, 9)
+        XCTAssertEqual(reader.header?.writerPID, 42)
         write(writer, [Float](repeating: 0, count: 512), at: 1_234)
-        XCTAssertEqual(reader.header.writeCursor, 512)
-        XCTAssertEqual(reader.header.lastWriteAt, 1_234)
+        XCTAssertEqual(reader.header?.writeCursor, 512)
+        XCTAssertEqual(reader.header?.lastWriteAt, 1_234)
+    }
+
+    // MARK: docs/security-review-m5.md — a hostile or corrupted ring must degrade, never trap
+
+    func testACursorAboveThePlausibleBoundIsRefusedInsteadOfTrapping() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 1_000, asbd: RingHeader.ASBD(), pid: 1)
+        let reader = try RingReader(storage: storage)
+        XCTAssertEqual(reader.attach(now: 1_000, storedReadCursor: nil, storedGeneration: nil), .attachedLive(generation: 1))
+
+        // One flipped bit in bit 63 of the 8 bytes at offset 32 — the magic and the geometry are untouched, so every
+        // check that runs once at init still passes. `Int(_: UInt64)` on this value would trap.
+        storage.storeCursor(0x8000_0000_0004_0000, at: RingHeader.Offset.writeCursor)
+        var scratch = [Float](repeating: 0, count: 1_024)
+        let result = scratch.withUnsafeMutableBufferPointer { reader.read(into: $0) }
+        XCTAssertEqual(result, .idle, "a lying cursor is nothing to read, not a gap of 9 quintillion frames")
+        XCTAssertEqual(reader.attach(now: 1_000, storedReadCursor: nil, storedGeneration: nil), .noRing)
+        XCTAssertEqual(RingReader.maxPlausibleCursor, 1 << 48)
+    }
+
+    func testACorruptedMagicAfterInitReadsAsNilInsteadOfCrashing() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 1_000, asbd: RingHeader.ASBD(), pid: 1)
+        let reader = try RingReader(storage: storage)
+        XCTAssertNotNil(reader.header)
+        storage.base.storeBytes(of: UInt8(0xFF), toByteOffset: RingHeader.Offset.magic, as: UInt8.self)
+        XCTAssertNil(reader.header, "the writer is another process; the page can stop being a header at any time")
+        XCTAssertEqual(reader.attach(now: 1_000, storedReadCursor: nil, storedGeneration: nil), .noRing)
+    }
+
+    func testNonFiniteSamplesAreZeroedBeforeTheyLeaveTheRing() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 1_000, asbd: RingHeader.ASBD(), pid: 1)
+        let reader = try RingReader(storage: storage)
+        _ = reader.attach(now: 1_000, storedReadCursor: nil, storedGeneration: nil)
+        var poisoned = [Float](repeating: 0.25, count: 512)
+        poisoned[7] = .nan
+        poisoned[300] = .infinity
+        poisoned[301] = -.infinity
+        poisoned.withUnsafeBufferPointer { _ = writer.write($0, at: 1_000, pts: RingHeader.PTS()) }
+
+        var scratch = [Float](repeating: -1, count: 1_024)
+        let result = scratch.withUnsafeMutableBufferPointer { reader.read(into: $0) }
+        XCTAssertEqual(result, .frames(512))
+        let read = Array(scratch[0 ..< 512])
+        XCTAssertTrue(read.allSatisfy { $0.isFinite }, "one NaN would poison the VAD's LSTM state for the whole run")
+        XCTAssertEqual(read[7], 0)
+        XCTAssertEqual(read[300], 0)
+        XCTAssertEqual(read[301], 0)
+        XCTAssertEqual(read[8], 0.25, "finite samples are untouched")
+    }
+
+    func testAHeartbeatFromTheFutureIsStaleNotLive() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 5_000, asbd: RingHeader.ASBD(), pid: 1)
+        let reader = try RingReader(storage: storage)
+        // The device clock stepped backwards (an NTP correction, or the user editing the date) after the extension
+        // was killed with `state == running`. A one-sided window would call this dead broadcast live.
+        XCTAssertEqual(reader.attach(now: 1_000, storedReadCursor: nil, storedGeneration: nil), .stale(lastWriteAt: 5_000))
+        let header = try XCTUnwrap(reader.header)
+        XCTAssertFalse(header.isHeartbeatFresh(now: 1_000))
+        XCTAssertFalse(header.isHeartbeatFresh(now: 5_004))
+        XCTAssertTrue(header.isHeartbeatFresh(now: 5_002))
+        XCTAssertTrue(header.isHeartbeatFresh(now: 4_998))
+        XCTAssertFalse(header.isHeartbeatFresh(now: .nan), "a non-finite clock is never fresh")
     }
 }

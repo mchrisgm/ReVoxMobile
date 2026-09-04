@@ -205,6 +205,10 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertFalse(layout.isWhisperInstalled(.small))
     }
 
+    /// The retry is issued on the same main-actor turn that first observes `.failed`, which is exactly the
+    /// window in which the task slot used to still be occupied — the second `install` then returned early and
+    /// this case failed with one download instead of two (run 33868423907). The manager now withholds the
+    /// failure phase until the slot is free, so the retry here is always accepted.
     @MainActor
     func testFailedInstallShowsFailedAndRetryInstallsAgain() async {
         let manager = makeManager()
@@ -486,5 +490,4 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(for: .pocketTTS).phase, .failed("Not enough space: needs about 0.9 GB, 0.3 GB free"))
         XCTAssertEqual(fakeSteps.pocketTTSDownloads, 0)
     }
-
 }

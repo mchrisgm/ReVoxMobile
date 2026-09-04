@@ -38,11 +38,13 @@ ReVox opens on the **Live** tab with "Ready to translate". Before the first tran
 
 ReVox can also translate audio from other apps: a video, a call in another app, a podcast, a game. Because of how iOS works, you must start a **screen broadcast** that sends the other apps' audio to ReVox:
 
-1. In ReVox choose the **Other apps** source and tap the **broadcast picker** button. iOS shows a small sheet; make sure **ReVox** is selected and tap **Start Broadcast**. After a three-second countdown the status bar (or the Dynamic Island) turns red or shows a red indicator: the broadcast is running.
-2. Switch to the app you want to listen to and play the audio. ReVox translates in the background and speaks the English over it, turning the other app's sound down while it speaks.
-3. The same broadcast can also be started from **Control Center**: press and hold the **Screen Recording** control (the circle within a circle), choose **ReVox** in the list, and tap **Start Broadcast**. If the control is not in your Control Center, add it under **Settings** → **Control Center**.
+1. On the **Live** tab choose **Other apps** and tap **Start**. A box with a round broadcast button appears with the text "Tap to choose ReVox and start the broadcast."
+2. Tap the round button. iOS shows a small sheet; make sure **ReVox** is selected and tap **Start Broadcast**. After a three-second countdown the status bar (or the Dynamic Island) shows a red indicator: the broadcast is running, and the box disappears.
+3. Switch to the app you want to listen to and play the audio. ReVox translates in the background and speaks the English over it, turning the other app's sound down while it speaks. If the status line says "No audio from the app (some players are not captured)", that app's player does not deliver audio to broadcasts (Safari, Music and some video players); try another app.
+4. The same broadcast can also be started from **Control Center**: press and hold the **Screen Recording** control (the circle within a circle), choose **ReVox** in the list, and tap **Start Broadcast**. If you do this while ReVox is closed, open ReVox within a minute: it joins the broadcast and shows "Joined a broadcast in progress".
+5. Locking the iPhone with the side button ends the broadcast (iOS behaviour, not ReVox's); the status line then says "Broadcast ended". Locking by waiting for auto-lock keeps it running.
 
-Only the audio is used. The screen contents are not saved or looked at.
+Only the audio is used. The screen contents are not saved or looked at. **Settings → Diagnostics → Broadcast diagnostics** shows the numbers a bug report may ask for (write cursor, heartbeat age, levels, source format).
 
 ## 6. Stop
 

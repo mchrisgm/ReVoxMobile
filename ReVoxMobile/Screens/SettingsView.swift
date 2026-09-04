@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let models: ModelsViewModel
     let voices: VoicesViewModel
+    var diagnostics: BroadcastDiagnosticsModel? = nil
 
     var body: some View {
         Form {
@@ -68,6 +69,12 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Models") { ModelsView(model: models) }
                 NavigationLink("Voices") { VoicesView(model: voices) }
+            }
+
+            if let diagnostics {
+                Section("Diagnostics") {
+                    NavigationLink("Broadcast diagnostics") { BroadcastDiagnosticsView(model: diagnostics) }
+                }
             }
         }
         .navigationTitle("Settings")

@@ -271,4 +271,163 @@ final class LiveViewModelTests: XCTestCase {
         relay.status = .fallback(.loadFailed("x"))
         XCTAssertEqual(model.voiceStatusText, "System voice — pocket-tts failed to load")
     }
+    func testKeepAliveGapShowsPausedByIOSUntilTheNextEntry() async {
+        let model = makeModel()
+        let (stream, continuation) = AsyncStream<KeepAliveMonitor.Event>.makeStream()
+        model.observe(keepAlive: stream)
+        await model.start()
+        await waitUntil { model.state == .running }
+        continuation.yield(.gap(seconds: 7, before: .init(position: 0, at: 0), after: .init(position: 0, at: 7)))
+        await waitUntil("paused status") { model.sessionStatus == LiveViewModel.pausedByIOSText }
+        first.emit(.entry(TranscriptEntry(timestamp: Date(), language: "es", original: "", english: "back")))
+        await waitUntil { model.rows.count == 1 }
+        XCTAssertNil(model.sessionStatus, "cleared by the next entry (§9)")
+        continuation.finish()
+    }
+
+    private func makeBroadcastCoordinator() -> BroadcastCoordinator {
+        let suite = "group.test.revox-\(UUID().uuidString)"
+        let capture = BroadcastCapture(appGroup: suite, containerURL: nil, records: nil)
+        return BroadcastCoordinator(capture: capture, records: nil, containerURL: nil, names: BroadcastNotificationNames(appGroup: suite))
+    }
+
+    /// What `CaptureSources.setBroadcastGapHandler` last installed on the app-lifetime capture: nil after a run's
+    /// `MonitoredPipeline.stop()`, non-nil again after the next `start()`.
+    private let installedGapHandler = LockedBox<(@Sendable (Int) async -> Void)?>(nil)
+
+    /// A model whose supplier is the tail of `PipelineAssembler.supplier()` — the same `MonitoredPipeline` wrapper with
+    /// the same two hooks — over a `FakeLivePipeline`, so a stop-then-start exercises the real install/release path
+    /// without loading a Whisper or VAD model. `build` itself cannot run in the simulator (it throws `vadLoadFailed`).
+    private func makeMonitoredModel() -> LiveViewModel {
+        let pipelines = self.pipelines!
+        let installed = self.installedGapHandler
+        let monitor = KeepAliveMonitor()
+        return LiveViewModel(
+            settings: store, mute: PlaybackMute(), permission: .fixed(.granted),
+            modelReady: { _ in true },
+            supplier: { settings, _ in
+                let pipeline = FakeLivePipeline()
+                pipelines.mutate { $0.append(pipeline) }
+                let isBroadcast = settings.capture == .broadcast
+                return MonitoredPipeline(
+                    pipeline: pipeline, monitor: monitor, position: { 0 },
+                    onStart: { [weak pipeline] in
+                        guard isBroadcast else {
+                            installed.mutate { $0 = nil }
+                            return
+                        }
+                        let handler: @Sendable (Int) async -> Void = { _ in await pipeline?.noteCaptureGap() }
+                        installed.mutate { $0 = handler }
+                    },
+                    onStop: { installed.mutate { $0 = nil } })
+            }
+        )
+    }
+
+    func testSwitchingTheSourceRebuildsThePipeline() async {
+        let model = makeModel()
+        await model.start()
+        await waitUntil { model.state == .running }
+        await model.stop()
+        await waitUntil { model.state == .idle }
+        model.captureMode = .broadcast
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(pipelines.value.count, 2, "the signature includes the capture mode")
+        XCTAssertEqual(pipelines.value[1].startedWith.first?.captureMode, .broadcast)
+        XCTAssertEqual(model.supplierCallCount, 2)
+    }
+
+    func testBroadcastEventsDriveRowsStatusAndStop() async {
+        let coordinator = makeBroadcastCoordinator()
+        let model = makeModel()
+        model.observe(broadcast: coordinator)
+        model.captureMode = .broadcast
+        XCTAssertEqual(model.broadcastStatusText, BroadcastCoordinator.startPromptText)
+        XCTAssertTrue(model.showsBroadcastPicker)
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(pipelines.value.count, 1, "broadcast mode starts without a microphone permission check")
+
+        coordinator.handle(.attached(generation: 1, joinedInProgress: true))
+        await waitUntil("joined row") { model.rows.count == 1 }
+        XCTAssertEqual(model.rows[0].kind, .joinedInProgress)
+        XCTAssertFalse(model.showsBroadcastPicker)
+        XCTAssertEqual(model.broadcastStatusText, BroadcastCoordinator.joinedText)
+
+        coordinator.handle(.silence(seconds: 10))
+        await waitUntil { model.broadcastStatusText == BroadcastCoordinator.silentText }
+
+        coordinator.handle(.idle)
+        await waitUntil("stopped by ended") { self.first.stopCount == 1 }
+        await waitUntil { model.state == .idle }
+        XCTAssertEqual(model.sessionStatus, BroadcastCoordinator.endedText)
+        XCTAssertTrue(model.showsBroadcastPicker)
+
+        model.captureMode = .microphone
+        XCTAssertNil(model.broadcastStatusText, "microphone mode shows no broadcast status")
+        XCTAssertFalse(model.showsBroadcastPicker)
+    }
+
+    func testStaleBroadcastStopsAndReportsIt() async {
+        let coordinator = makeBroadcastCoordinator()
+        let model = makeModel()
+        model.observe(broadcast: coordinator)
+        model.captureMode = .broadcast
+        await model.start()
+        await waitUntil { model.state == .running }
+        coordinator.handle(.attached(generation: 1, joinedInProgress: false))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(model.rows.count, 0, "not joined: no header row")
+        coordinator.handle(.stale(lastWriteAt: 1))
+        await waitUntil("stopped by stale") { self.first.stopCount == 1 }
+        XCTAssertEqual(model.sessionStatus, BroadcastCoordinator.staleText)
+    }
+
+    /// The regression this task's per-run hooks exist for: `LiveViewModel` caches the pipeline across restarts
+    /// (`start()` calls the supplier only when the signature changed), so an install done once in `build` would be
+    /// cleared by the first `stop()` and never re-armed — from the second run on, a ring overrun would produce no
+    /// drop marker and no "Falling behind" badge (§6.2, §5.4, §9). Every Control-Center broadcast end hits this path:
+    /// `observe(broadcast:)` calls `stop()` on `.ended`/`.stale`, and the user then starts again with the same settings.
+    func testTheRingGapHandlerIsReinstalledOnEveryBroadcastRun() async {
+        let model = makeMonitoredModel()
+        model.captureMode = .broadcast
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertNotNil(installedGapHandler.value, "the first run installs the handler")
+        await model.stop()
+        await waitUntil { model.state == .idle }
+        XCTAssertNil(installedGapHandler.value, "the run's handler dies with the run: no late overrun into a dead pipeline")
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(model.supplierCallCount, 1, "the pipeline is reused: build() does not run again")
+        XCTAssertNotNil(installedGapHandler.value, "the second run still reports ring overruns")
+        await installedGapHandler.value?(512)
+        XCTAssertEqual(first.gapCount, 1)
+        await model.stop()
+    }
+
+    func testAMicrophoneRunClearsTheRingGapHandler() async {
+        let model = makeMonitoredModel()
+        model.captureMode = .broadcast
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertNotNil(installedGapHandler.value)
+        await model.stop()
+        await waitUntil { model.state == .idle }
+        model.captureMode = .microphone
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(model.supplierCallCount, 2, "the capture mode is part of the signature: a rebuild")
+        XCTAssertNil(installedGapHandler.value, "a microphone run leaves no ring handler on the app-lifetime capture")
+        await model.stop()
+    }
+
+    func testBroadcastConfigurationCarriesTheMeasuredCaptureLatency() {
+        let broadcast = LiveViewModel.configuration(settings: Settings(), captureMode: .broadcast)
+        XCTAssertEqual(broadcast.captureLatencyFrames, BroadcastTuning.captureLatencyFrames)
+        XCTAssertEqual(broadcast.captureGateHoldFrames, CaptureGate.defaultHoldFrames)
+        let microphone = LiveViewModel.configuration(settings: Settings(), captureMode: .microphone)
+        XCTAssertEqual(microphone.captureLatencyFrames, 0, "mic mode: both gate positions coincide (§5.2)")
+    }
 }

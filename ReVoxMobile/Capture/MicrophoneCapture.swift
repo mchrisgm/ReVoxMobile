@@ -25,6 +25,10 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
     private var configurationToken: NSObjectProtocol?
     private var fallbackLogged = false
     private var routeRebuilds = 0
+    /// Bumped by every `start` and every `stop`. A rebuild captures it and refuses to install if it has moved,
+    /// so a retry scheduled with `asyncAfter` — or a rebuild already in flight — cannot install a tap onto a
+    /// capture that has since stopped, and therefore cannot leave one behind for the next `start` to collide with.
+    private var tapGeneration = 0
     /// True while "No microphone input" is on the status line, so each change is published exactly once.
     private var statusPublished = false
     private let rebuildQueue = DispatchQueue(label: "revox.microphone.rebuild")
@@ -79,6 +83,7 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
             break
         }
         guard let engine = await controller.engineForGraph() else { throw CaptureError.engineUnavailable }
+        lock.lock(); tapGeneration += 1; lock.unlock()
         try installTap(on: engine)
         observeConfigurationChanges(of: engine)
         await controller.setRouteChangeHandler { [weak self] reason in
@@ -88,6 +93,7 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
 
     func stop() async {
         lock.lock()
+        tapGeneration += 1
         let engine = tapEngine
         tapEngine = nil
         resampler = nil
@@ -108,8 +114,12 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
 
     // MARK: Tap
 
+    /// Removing first is not redundant: `installTap` raises an NSException — uncatchable, so SIGABRT — if a tap is
+    /// already on the bus, and `start` after an interrupted run, or a rebuild that raced `stop`, can both leave one
+    /// there. Removing a tap that is not installed is a documented no-op, so the cost is nothing.
     private func installTap(on engine: AVAudioEngine) throws {
         guard let format = tap.inputFormat(engine) else { throw CaptureError.noInput }
+        tap.remove(engine)
         let resampler = MicrophoneResampler(inputFormat: format)
         lock.lock()
         self.resampler = resampler
@@ -196,16 +206,26 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
     private func rebuildTap(attempt: Int = 1) {
         lock.lock()
         let engine = tapEngine
+        let generation = tapGeneration
         lock.unlock()
         guard let engine else { return }
         tap.remove(engine)
         do {
+            lock.lock()
+            let stillThisRun = generation == tapGeneration && tapEngine != nil
+            lock.unlock()
+            guard stillThisRun else { return }      // stopped while we were removing: leave the bus clear
             try installTap(on: engine)
         } catch {
             Self.logger.error("tap rebuild attempt \(attempt, privacy: .public) of \(Self.rebuildRetryLimit, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             if attempt < Self.rebuildRetryLimit {
                 rebuildQueue.asyncAfter(deadline: .now() + Self.rebuildRetryDelay) { [weak self] in
-                    self?.rebuildTap(attempt: attempt + 1)
+                    guard let self else { return }
+                    self.lock.lock()
+                    let sameRun = generation == self.tapGeneration
+                    self.lock.unlock()
+                    guard sameRun else { return }
+                    self.rebuildTap(attempt: attempt + 1)
                 }
             } else {
                 publishStatus(CaptureError.noInput.description)
