@@ -21,6 +21,7 @@ final class AppEnvironment {
     let voiceVolume: VoiceVolume
     let speakerStatus: SpeakerStatusRelay
     let speakerAssembly: SpeakerAssembly
+    let voices: VoicesViewModel
     let live: LiveViewModel
     let models: ModelsViewModel
     let settingsModel: SettingsViewModel
@@ -67,6 +68,19 @@ final class AppEnvironment {
         activity.live = live
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
+        // Locals, never `self`: these closures are created before initialisation completes.
+        let settingsStore = settings
+        let assembly = speakerAssembly
+        let sampleController = sessionController
+        self.voices = VoicesViewModel(
+            manager: modelManager,
+            settings: settings,
+            deviceInfo: deviceInfo,
+            speakerStatus: speakerStatus,
+            samplePlayer: SamplePlayer.production(sessionController: sampleController, assembly: assembly, captureMode: { settingsStore.settings.capture }),
+            selection: { await assembly.selection() },
+            isPipelineRunning: { activity.isBusy }
+        )
         live.observe(sessionEvents: sessionController.events)
         let controller = sessionController
         let events = interruptions.events

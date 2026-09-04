@@ -30,6 +30,37 @@ final class ScreenHostingTests: XCTestCase {
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: 6 * 1_073_741_824), isPipelineRunning: { pipelineRunning })
     }
 
+    func makeVoicesViewModel(installed: Bool = false, pipelineRunning: Bool = false) throws -> VoicesViewModel {
+        if installed { try FakeInstallSteps.fabricatePocketTTS(in: layout) }
+        let steps = FakeInstallSteps()
+        let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
+                                       verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxScreens-\(UUID().uuidString)")!))
+        let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { pipelineRunning }, availableBytes: { 50_000_000_000 }, host: FakeInstallHost())
+        manager.refreshInstalledStates()
+        return VoicesViewModel(
+            manager: manager,
+            settings: store,
+            deviceInfo: DeviceInfo(physicalMemoryBytes: 4 * 1_073_741_824),   // shows the advisory caption
+            speakerStatus: SpeakerStatusRelay(),
+            samplePlayer: SamplePlayer(play: { _, _ in }),
+            selection: { .system(identifier: nil) },
+            systemVoices: { [SystemVoiceOption(id: "com.example.premium", name: "Ava", language: "en-US", quality: .premium),
+                             SystemVoiceOption(id: "com.example.default", name: "Fred", language: "en-US", quality: .default)] },
+            isPipelineRunning: { pipelineRunning }
+        )
+    }
+
+    func testVoicesViewHostsBothEngines() throws {
+        let notInstalled = try makeVoicesViewModel()
+        host(NavigationStack { VoicesView(model: notInstalled) })
+        let installed = try makeVoicesViewModel(installed: true)
+        host(NavigationStack { VoicesView(model: installed) })
+        let running = try makeVoicesViewModel(installed: true, pipelineRunning: true)
+        host(NavigationStack { VoicesView(model: running) })
+        XCTAssertEqual(running.footerText, VoicesViewModel.stopToDeleteText)
+        XCTAssertFalse(running.canPlaySample)
+    }
+
     func host<V: View>(_ view: V) {
         let controller = UIHostingController(rootView: view)
         controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -47,14 +78,15 @@ final class ScreenHostingTests: XCTestCase {
         }
     }
 
-    func testSettingsViewHosts() {
+    func testSettingsViewHosts() throws {
         let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
-        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel()) })
+        let voices = try makeVoicesViewModel()
+        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices) })
         settingsModel.latencyMode = .fast
         settingsModel.language = "es"
         settingsModel.ducking = false
         settingsModel.voiceVolume = 0.3
-        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel()) })
+        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices) })
     }
 
     func testLiveViewHostsInEveryState() async {

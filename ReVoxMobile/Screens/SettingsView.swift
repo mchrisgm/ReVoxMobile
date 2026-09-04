@@ -4,6 +4,7 @@ import ReVoxCore
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let models: ModelsViewModel
+    let voices: VoicesViewModel
 
     var body: some View {
         Form {
@@ -66,6 +67,7 @@ struct SettingsView: View {
 
             Section {
                 NavigationLink("Models") { ModelsView(model: models) }
+                NavigationLink("Voices") { VoicesView(model: voices) }
             }
         }
         .navigationTitle("Settings")

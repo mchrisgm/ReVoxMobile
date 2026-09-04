@@ -23,6 +23,8 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.voiceVolume.current, 1)
         XCTAssertEqual(environment.live.voiceStatusText, SpeakerStatus.notDownloadedText)
         XCTAssertTrue(environment.speakerAssembly.voiceVolume === environment.voiceVolume)
+        XCTAssertEqual(environment.voices.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertFalse(environment.voices.isPocketTTSInstalled)
     }
 
     func testDidBecomeActiveForwardsToTheModelManager() throws {
