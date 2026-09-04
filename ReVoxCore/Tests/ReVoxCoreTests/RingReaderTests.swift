@@ -206,6 +206,22 @@ final class RingReaderTests: XCTestCase {
         XCTAssertEqual(reader.header?.lastWriteAt, 1_234)
     }
 
+    /// `catchUp` is an `Int` parameter converted with `UInt64(_:)`, which traps below zero. A negative catch-up can
+    /// only mean "none", so it reads as zero: the reader attaches at the writer and an overrun jumps to the writer.
+    func testANegativeCatchUpReadsAsZeroInsteadOfTrapping() throws {
+        let (storage, writer) = try makeRing()
+        write(writer, [Float](repeating: 0, count: 50_000))
+        let reader = try RingReader(storage: storage)
+        XCTAssertEqual(reader.attach(now: 1_001, storedReadCursor: nil, storedGeneration: nil, catchUp: -1),
+                       .attachedLive(generation: 1))
+        XCTAssertEqual(reader.readCursor, 50_000)
+        for _ in 0 ..< 60 {
+            write(writer, [Float](repeating: 0.5, count: 16_000))                     // one full lap: overrun
+        }
+        XCTAssertEqual(read(reader).0, .gap(dropped: 960_000))                        // jumps to the writer
+        XCTAssertEqual(reader.readCursor, 1_010_000)
+    }
+
     // MARK: docs/security-review-m5.md — a hostile or corrupted ring must degrade, never trap
 
     func testACursorAboveThePlausibleBoundIsRefusedInsteadOfTrapping() throws {
