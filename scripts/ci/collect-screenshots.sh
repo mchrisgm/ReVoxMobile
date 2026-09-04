@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Copy the PNGs `ScreenshotTests` wrote into the host app's Documents out of the booted simulator.
+# Copy the PNGs `ScreenshotTests` wrote into the host app's Documents out of the simulator.
 #
-# The test writes them inside the app container because that is the one directory a simulator app is certain to
-# be able to write to; `simctl get_app_container` is how the runner reaches it afterwards. Best effort by
-# design: no screenshot is worth failing a build over, so every failure here prints and exits 0.
+# The test writes them inside the app container because that is the one directory a simulator app is certain to be
+# able to write to. Two ways back out, because `simctl get_app_container` needs the app to still be registered
+# after the test run and silently returns nothing when it is not: ask simctl first, then look directly in the
+# device's data directory, which is a plain directory on the runner's disk.
+#
+# Best effort by design: no screenshot is worth failing a build over, so every failure prints and exits 0.
 set -uo pipefail
 
 destination="${1:-}"
@@ -16,16 +19,37 @@ if [ -z "$udid" ] || [ "$udid" = "$destination" ]; then
   udid=$(xcrun simctl list devices booted -j | jq -r '[.devices[][]] | .[0].udid // empty')
 fi
 if [ -z "$udid" ]; then
-  echo "no booted simulator to collect screenshots from"
+  echo "no simulator to collect screenshots from"
   exit 0
 fi
+echo "collecting from $udid ($bundle_id)"
 
-container=$(xcrun simctl get_app_container "$udid" "$bundle_id" data 2>/dev/null || true)
-if [ -z "$container" ] || [ ! -d "$container/Documents/screenshots" ]; then
-  echo "no screenshots in $bundle_id's container on $udid"
+source_dir=""
+
+container=$(xcrun simctl get_app_container "$udid" "$bundle_id" data 2>&1) || {
+  echo "simctl get_app_container: $container"
+  container=""
+}
+if [ -n "$container" ] && [ -d "$container/Documents/screenshots" ]; then
+  source_dir="$container/Documents/screenshots"
+fi
+
+# The device's data directory, when the app is no longer registered with simctl.
+if [ -z "$source_dir" ]; then
+  device_root="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Containers/Data/Application"
+  found=$(find "$device_root" -maxdepth 3 -type d -name screenshots 2>/dev/null | head -n 1)
+  if [ -n "$found" ]; then
+    source_dir="$found"
+    echo "found them under the device's data directory"
+  fi
+fi
+
+if [ -z "$source_dir" ]; then
+  echo "no screenshots directory found; the app container holds:"
+  [ -n "$container" ] && ls -la "$container" "$container/Documents" 2>/dev/null
   exit 0
 fi
 
 mkdir -p "$output"
-cp -R "$container/Documents/screenshots/." "$output/" || true
+cp -R "$source_dir/." "$output/" || true
 ls -l "$output" || true
