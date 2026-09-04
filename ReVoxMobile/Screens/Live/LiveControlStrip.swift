@@ -26,19 +26,23 @@ struct LiveControlStrip: View {
                 if isLocked {
                     lockedPill
                 }
+                // The order is also the packing (`PillFlowLayout` fills rows in order): on a 393 pt phone at the
+                // default type size the ⓘ closes the first row and the volume the second, so the strip is two
+                // rows with two-way off and three with it on, the language pills being the third (CI run 107
+                // measured the pills: Mic 64, Balanced 106, Duck on 100, Learn off 104, Two-way on 127, 100% 89).
                 sourcePill
                 latencyPill
                 duckingPill
+                morePill
                 learningPill
                 twoWayPill
+                volumePill
                 if model.isTwoWay {
                     languagePill(title: Self.leaveAloneTitle, systemImage: "hand.raised", selection: $model.ignoredLanguage,
                                  hint: Self.leaveAloneHintText)
                     languagePill(title: Self.replyInTitle, systemImage: model.twoWayVoiceNote == nil ? "bubble.left" : "speaker.slash",
                                  selection: $model.twoWayLanguage, hint: model.twoWayVoiceNote ?? Self.replyInHintText)
                 }
-                volumePill
-                morePill
             }
             .padding(.horizontal)
             if showsVolumeSlider {

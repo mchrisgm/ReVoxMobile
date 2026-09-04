@@ -36,11 +36,19 @@ final class PillFlowLayoutTests: XCTestCase {
     }
 
     /// The seven pills of the idle strip fit two rows on a 393 pt phone (361 pt inside the 16 pt margins) at the
-    /// default type size. The widths are the measured ones from the simulator rounded up; the point of the test is
-    /// that a change to a title or to the padding that pushes the volume or the ⓘ button onto a third row is seen.
+    /// default type size, in the strip's order: the ⓘ closes the first row and the volume the second. The widths
+    /// are the ones CI run 107 rendered, each rounded up a couple of points; the point of the test is that a
+    /// change to a title, the padding or the order that pushes a pill onto a third row is seen here first.
     func testTheIdleStripIsTwoRowsOnAThreeNinetyThreePointPhone() {
-        let pills = [size(66), size(104), size(96), size(106), size(124), size(72), size(44)]   // Mic, Balanced, Duck on, Learn off, Two-way off, 80%, ⓘ
+        let pills = [size(66), size(108), size(102), size(44), size(106), size(132), size(92)]   // Mic, Balanced, Duck on, ⓘ, Learn off, Two-way off, 100%
         let rows = PillFlowLayout.rows(sizes: pills, available: 393 - 32, spacing: LiveControlStrip.pillSpacing)
-        XCTAssertEqual(rows.count, 2, "\(rows.map(\.items))")
+        XCTAssertEqual(rows.map(\.items), [[0, 1, 2, 3], [4, 5, 6]])
+    }
+
+    /// With two-way on the two language pills are a third row of their own (measured 179 and 160 pt).
+    func testTheLanguagePillsAreTheThirdRowWhileTwoWayIsOn() {
+        let pills = [size(66), size(108), size(102), size(44), size(106), size(129), size(92), size(181), size(162)]
+        let rows = PillFlowLayout.rows(sizes: pills, available: 393 - 32, spacing: LiveControlStrip.pillSpacing)
+        XCTAssertEqual(rows.map(\.items), [[0, 1, 2, 3], [4, 5, 6], [7, 8]])
     }
 }
