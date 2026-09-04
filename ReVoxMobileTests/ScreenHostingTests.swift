@@ -139,7 +139,7 @@ final class ScreenHostingTests: XCTestCase {
 
     func testRootViewHostsAllThreeTabs() throws {
         let environment = try AppEnvironment.testing(root: root.appendingPathComponent("env", isDirectory: true))
-        host(RootView(environment: environment))
+        host(RootView(environment: environment).modelContainer(environment.transcriptContainer))
     }
 
     func testBroadcastDiagnosticsViewHostsWithAndWithoutARing() async throws {
@@ -192,5 +192,28 @@ final class ScreenHostingTests: XCTestCase {
         context.insert(empty)
         try context.save()
         host(NavigationStack { SessionDetailView(session: empty, exporter: exporter) }.modelContainer(container))
+    }
+
+
+    func testHistoryViewHostsEmptyPopulatedAndSearching() throws {
+        let container = try TranscriptContainer.make(inMemory: true)
+        // The per-test export directory: nothing this test pushes may write into the shared temporary folder.
+        let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
+        host(NavigationStack { HistoryView(exporter: exporter) }.modelContainer(container))     // "No Transcripts"
+        let context = ModelContext(container)
+        let session = Session(startedAt: Date(), endedAt: Date().addingTimeInterval(10), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+        context.insert(session)
+        let entry = Entry(timestamp: Date(), language: "es", original: "", english: "hola", isDropMarker: false)
+        entry.session = session
+        context.insert(entry)
+        try context.save()
+        host(NavigationStack { HistoryView(exporter: exporter) }.modelContainer(container))                       // one row
+        host(NavigationStack { HistoryView(initialQuery: "hola", exporter: exporter) }.modelContainer(container)) // one hit
+        host(NavigationStack { HistoryView(initialQuery: "zzz", exporter: exporter) }.modelContainer(container))  // ContentUnavailableView.search
+        XCTAssertEqual(HistoryView.emptyTitle, "No Transcripts")
+        XCTAssertEqual(HistoryView.emptyDescription, "Sessions you translate appear here.")
+        XCTAssertEqual(HistoryView(exporter: exporter).exporter.directory.standardizedFileURL,
+                       root.appendingPathComponent("exports", isDirectory: true).standardizedFileURL,
+                       "the screen carries the injected exporter, not the defaulted temporary-folder one")
     }
 }
