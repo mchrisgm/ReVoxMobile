@@ -575,6 +575,106 @@ final class TranslationPipelineTests: XCTestCase {
         XCTAssertTrue(settled, "\(events.states)")
     }
 
+    // MARK: a speaking edge that outlives its run
+
+    /// An `AudioSource` over `FakeAudioSource` whose `capturePosition()` can be held open, so a speaking edge of one
+    /// run is still suspended there when that run is stopped and the next one starts. Every stored property is
+    /// guarded by one `NSLock`, taken only in the synchronous helpers.
+    private final class HoldablePositionSource: AudioSource, @unchecked Sendable {
+        let inner = FakeAudioSource()
+        private let lock = NSLock()
+        private var holding = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var held = 0
+        private var reads = 0
+
+        var heldCount: Int { lock.lock(); defer { lock.unlock() }; return held }
+        var positionReads: Int { lock.lock(); defer { lock.unlock() }; return reads }
+
+        func frames() -> AsyncStream<CapturedAudio> { inner.frames() }
+
+        func capturePosition() async -> Int64 {
+            lock.lock()
+            let shouldHold = holding
+            lock.unlock()
+            if shouldHold {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    lock.lock()
+                    waiters.append(continuation)
+                    held += 1
+                    lock.unlock()
+                }
+            }
+            let position = await inner.capturePosition()
+            lock.lock()
+            reads += 1
+            lock.unlock()
+            return position
+        }
+
+        func start(_ mode: CaptureMode) async throws { try await inner.start(mode) }
+        func stop() async { await inner.stop() }
+
+        func hold() { lock.lock(); holding = true; lock.unlock() }
+
+        func release() {
+            lock.lock()
+            holding = false
+            let pending = waiters
+            waiters.removeAll()
+            lock.unlock()
+            for waiter in pending { waiter.resume() }
+        }
+    }
+
+    /// `applySpeakingEdge` checks the run token, then suspends on `source.capturePosition()`. If the run is stopped
+    /// and a new one started while it is suspended (`stop()`'s join is bounded), the edge used to resume and close
+    /// the **new** run's capture gate from the old player's speaking edge — every chunk of the new run at or past
+    /// that position was dropped before the VAD, so the fresh session heard nothing — and leak a stale `.speaking`
+    /// event into it. The token must be re-checked after the await, like every other hand-off.
+    func testASpeakingEdgeStillInFlightWhenItsRunEndsDoesNotCloseTheNextRunsGate() async throws {
+        let source = HoldablePositionSource()
+        let translator = FakeTranslator()
+        let ducker = FakeDucker()
+        let players = LockedBox<[FakePlayer]>([])
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: translator,
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in
+                let player = FakePlayer(onSpeaking: onSpeaking)
+                players.update { $0.append(player) }
+                return player
+            },
+            ducker: ducker,
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, _ in FakeSegmenter() }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+        let events = EventCollector()
+        events.start(pipeline)
+
+        await pipeline.start(configuration())
+        source.hold()
+        players.value[0].onSpeaking(true)                        // run 1's player starts speaking
+        let held = await eventually { source.heldCount == 1 }
+        XCTAssertTrue(held)                                      // the edge is suspended in capturePosition()
+        await pipeline.stop()                                    // bounded join: the edge task is abandoned
+        await pipeline.start(configuration())                    // run 2
+        source.release()                                         // run 1's edge resumes now
+        let resumed = await eventually { source.positionReads == 1 }
+        XCTAssertTrue(resumed)
+        try await Task.sleep(nanoseconds: 100_000_000)           // let the resumed edge reach the actor
+
+        source.inner.feed([Float](repeating: 1, count: Segmenter.chunkSamples))   // position 512: past the stale edge
+        let translated = await eventually { await translator.calls.count == 1 }
+        XCTAssertTrue(translated, "run 2's gate must not be closed by run 1's speaking edge")
+        XCTAssertEqual(events.speakingEdges, [], "no stale .speaking event leaks into run 2")
+        let ducked = await ducker.ducked
+        XCTAssertEqual(ducked, 0, "run 1's ducking is not driven after run 1 ended")
+        await pipeline.stop()
+    }
+
     // MARK: Two-way routing through the pipeline (M8, §8.2)
 
     private actor StubTranscriber: Transcriber {

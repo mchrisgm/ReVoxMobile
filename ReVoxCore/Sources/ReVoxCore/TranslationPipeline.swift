@@ -267,6 +267,9 @@ actor PipelineActor {
     func applySpeakingEdge(_ speaking: Bool, run: Int, ducking: DuckingCoordinator) async {
         guard run == runID else { return }
         let position = await dependencies.source.capturePosition()
+        // Re-checked after the await: `stop()`'s join is bounded, so an edge can resume after its run was retired
+        // and a new one started — and `captureGate` would by then be the new run's.
+        guard run == runID else { return }
         captureGate.speakingChanged(speaking, atPosition: position)
         await ducking.speakingChanged(speaking)
         events.yield(.speaking(speaking))
