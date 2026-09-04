@@ -63,4 +63,27 @@ final class AudioFormatTests: XCTestCase {
     func testFloat32FromInt16() {
         XCTAssertEqual(AudioFormat.float32(fromInt16: [Int16.min, 0, 16_384, Int16.max]), [-1.0, 0.0, 0.5, 32767.0 / 32768.0])
     }
+
+    /// Degenerate geometry (no channels, no rate, no data) must come back unchanged or empty, never trap.
+    func testDegenerateInputsAreReturnedUnchangedOrEmpty() {
+        XCTAssertEqual(AudioFormat.downmixInterleaved([1, 2], channels: 0), [1, 2])
+        XCTAssertEqual(AudioFormat.downmixInterleaved([1, 2], channels: -1), [1, 2])
+        XCTAssertEqual(AudioFormat.downmixInterleaved([1, 2, 3], channels: 2), [1.5])      // a trailing half frame is dropped
+        XCTAssertEqual(AudioFormat.downmixInterleaved([], channels: 2), [])
+        XCTAssertEqual(AudioFormat.downmixPlanar([]), [])
+        XCTAssertEqual(AudioFormat.downmixPlanar([[1, 2, 3], [1]]), [1])                   // the shortest channel bounds the frames
+        XCTAssertEqual(AudioFormat.resample([1, 2], from: 0, to: 16_000), [1, 2])
+        XCTAssertEqual(AudioFormat.resample([1, 2], from: 16_000, to: 0), [1, 2])
+        XCTAssertEqual(AudioFormat.resample([5], from: 48_000, to: 16_000), [])           // rounds to no output sample
+        XCTAssertEqual(AudioFormat.toMono16k(interleaved: [1, 1], channels: 2, sampleRate: 0), [1])
+    }
+
+    func testUpsamplingInterpolatesLinearly() {
+        let out = AudioFormat.resample([0, 1, 2, 3], from: 8_000, to: 16_000)
+        XCTAssertEqual(out.count, 8)
+        XCTAssertEqual(out[0], 0)
+        XCTAssertEqual(out[1], 0.5)
+        XCTAssertEqual(out[6], 3)                                                            // clamped at the last sample
+        XCTAssertEqual(out[7], 3)
+    }
 }

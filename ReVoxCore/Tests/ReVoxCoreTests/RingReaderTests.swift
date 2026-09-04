@@ -290,4 +290,50 @@ final class RingReaderTests: XCTestCase {
         XCTAssertTrue(header.isHeartbeatFresh(now: 4_998))
         XCTAssertFalse(header.isHeartbeatFresh(now: .nan), "a non-finite clock is never fresh")
     }
+
+    func testAChannelOrFormatMismatchIsAnUnsupportedLayout() throws {
+        let (storage, _) = try makeRing()
+        storage.base.storeUInt16(2, RingHeader.Offset.channels)
+        XCTAssertThrowsError(try RingReader(storage: storage)) { XCTAssertEqual($0 as? RingError, .unsupportedLayout) }
+        storage.base.storeUInt16(1, RingHeader.Offset.channels)
+        storage.base.storeUInt16(2, RingHeader.Offset.sampleFormat)
+        XCTAssertThrowsError(try RingReader(storage: storage)) { XCTAssertEqual($0 as? RingError, .unsupportedLayout) }
+        storage.base.storeUInt16(1, RingHeader.Offset.sampleFormat)
+        storage.base.storeUInt32(48_000, RingHeader.Offset.sampleRate)
+        XCTAssertThrowsError(try RingReader(storage: storage)) { XCTAssertEqual($0 as? RingError, .unsupportedLayout) }
+    }
+
+    func testABufferSmallerThanAChunkReadsNothing() throws {
+        let (storage, writer) = try makeRing()
+        let reader = try RingReader(storage: storage)
+        _ = reader.attach(now: 1_001, storedReadCursor: nil, storedGeneration: nil)
+        write(writer, [Float](repeating: 1, count: 2_048))
+        XCTAssertEqual(read(reader, capacity: 0).0, .idle)
+        XCTAssertEqual(read(reader, capacity: 511).0, .idle)
+        XCTAssertEqual(reader.readCursor, 0)
+        XCTAssertEqual(read(reader, capacity: 512).0, .frames(512))
+    }
+
+    func testTheGuardIsClampedToTheCapacity() throws {
+        // A guard larger than the ring means "nothing is ever safe": the first read past the writer's lap is a gap,
+        // and a negative guard reads as zero.
+        let (storage, writer) = try makeRing()
+        let reader = try RingReader(storage: storage)
+        _ = reader.attach(now: 1_001, storedReadCursor: nil, storedGeneration: nil)
+        write(writer, [Float](repeating: 1, count: 1_024))
+        XCTAssertEqual(read(reader, guard: 2_000_000).0, .gap(dropped: 0))     // safe distance 0: any lead is an overrun
+        XCTAssertEqual(reader.readCursor, 0)                                    // catch-up of 32 000 is behind: stays
+        XCTAssertEqual(read(reader, guard: -1).0, .frames(1_024))
+    }
+
+    func testReadingWithoutAttachStartsAtTheStoredReadCursor() throws {
+        let (storage, writer) = try makeRing()
+        write(writer, (0 ..< 1_024).map(Float.init))
+        storage.storeCursor(512, at: RingHeader.Offset.readCursor)
+        let reader = try RingReader(storage: storage)
+        XCTAssertEqual(reader.readCursor, 512)
+        let (result, buffer) = read(reader)
+        XCTAssertEqual(result, .frames(512))
+        XCTAssertEqual(Array(buffer[0 ..< 512]), (512 ..< 1_024).map(Float.init))
+    }
 }

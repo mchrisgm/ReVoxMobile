@@ -54,10 +54,9 @@ final class TranslationPipelineTests: XCTestCase {
     }
 
     private func makeHarness(translator: FakeTranslator = FakeTranslator(), realSegmenter: Bool = false,
-                             transcriber: (any Transcriber)? = nil, secondary: (any SecondaryTranslator)? = nil) -> Harness {
+                             transcriber: (any Transcriber)? = nil, secondary: (any SecondaryTranslator)? = nil,
+                             speaker: FakeSpeaker = FakeSpeaker(), vad: EnergyVAD = EnergyVAD()) -> Harness {
         let source = FakeAudioSource()
-        let vad = EnergyVAD()
-        let speaker = FakeSpeaker()
         let ducker = FakeDucker()
         let transcript = FakeTranscriptSink()
         let sleep = FakeSleep()
@@ -675,6 +674,197 @@ final class TranslationPipelineTests: XCTestCase {
         await pipeline.stop()
     }
 
+    // MARK: the source after a failure
+
+    /// `fail` leaves the player and the source to `stop()`, as on Windows — but the view model does not stop the
+    /// pipeline on `.error`, it shows a banner and waits for "Try again", and the source keeps yielding 16 kHz
+    /// Float32 the whole time. The capture stage returns on its next `isRunning` check; what keeps that from
+    /// growing an unbounded `AsyncStream` buffer at 64 KB/s under the banner is that returning drops the stream's
+    /// last iterator, which cancels the stream, after which every yield is refused (`.terminated`). This pins that
+    /// mechanism: nothing is buffered, nothing is segmented, and `stop()` still lands on `.idle`.
+    func testAfterAFailureTheAbandonedSourceStreamIsCancelledSoNothingBuffers() async throws {
+        let source = FakeAudioSource(bufferLimit: 2)
+        let segmenter = FakeSegmenter()
+        let translator = FakeTranslator(fail: true)
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: translator,
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in FakePlayer(onSpeaking: onSpeaking) },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, _ in segmenter }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+        let events = EventCollector()
+        events.start(pipeline)
+
+        await pipeline.start(configuration())
+        source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let failed = await eventually { events.hasError }
+        XCTAssertTrue(failed)
+        let state = await pipeline.state
+        XCTAssertEqual(state, .error)
+        XCTAssertFalse(source.stopped, "the source is left to stop(), as on Windows")
+
+        for _ in 0 ..< 20 {                                      // the source keeps capturing under the banner
+            source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(source.droppedFeeds, 0, "the stream must still be read, or its buffer grows for as long as the error banner is up")
+        XCTAssertEqual(source.terminatedStreams, 1, "the abandoned stream was cancelled, not left buffering")
+        let fed = await segmenter.feedCount
+        XCTAssertEqual(fed, 1, "nothing is segmented after the failure")
+        await pipeline.stop()
+        let final = await pipeline.state
+        XCTAssertEqual(final, .idle)
+    }
+
+    // MARK: the rest of the start/stop/fail contract
+
+    func testMuteSetBeforeStartIsAppliedToTheNewPlayer() async throws {
+        let h = makeHarness()
+        await h.pipeline.setMuted(true)                          // no player, no ducking coordinator yet
+        let isMuted = await h.pipeline.isMuted
+        XCTAssertTrue(isMuted)
+        let restoredBeforeStart = await h.ducker.restored
+        XCTAssertEqual(restoredBeforeStart, 0)                   // nothing to restore before a run exists
+        await h.pipeline.start(configuration())
+        let muted = await h.player?.muted
+        XCTAssertEqual(muted, true, "the player built by start() inherits the mute")
+        await h.pipeline.stop()
+    }
+
+    func testNoteCaptureGapWhileIdleEmitsLagWithoutATranscript() async throws {
+        let h = makeHarness()
+        await h.pipeline.noteCaptureGap()
+        let lagged = await eventually { h.events.hasLag }
+        XCTAssertTrue(lagged)
+        let drops = await h.transcript.drops
+        XCTAssertEqual(drops, 0, "no run, no transcript sink to mark")
+    }
+
+    /// §9: a denied microphone or a failed engine surfaces from `source.start`. The player was built but is never
+    /// started, the pipeline reports `.error` without ever having been `.running`, and `stop()` returns it to idle.
+    func testSourceStartFailureEmitsErrorAndStopReturnsToIdle() async throws {
+        let h = makeHarness()
+        h.source.startError = FakeTranslatorError()
+        await h.pipeline.start(configuration())
+        let state = await h.pipeline.state
+        XCTAssertEqual(state, .error)
+        let failed = await eventually { h.events.hasError }
+        XCTAssertTrue(failed)
+        XCTAssertEqual(h.source.started, [.microphone])          // the attempt was made
+        let playerStarted = await h.player?.started
+        XCTAssertEqual(playerStarted, false, "the player is only started after the source")
+        XCTAssertFalse(h.events.states.contains(.running))
+        await h.pipeline.stop()
+        let final = await h.pipeline.state
+        XCTAssertEqual(final, .idle)
+        let settled = await eventually { h.events.states == [.idle] }
+        XCTAssertTrue(settled, "\(h.events.states)")
+    }
+
+    private actor FailingStartPlayer: AudioPlayer {
+        func start() async throws { throw FakeTranslatorError() }
+        func enqueue(_ clip: AudioClip) async {}
+        func setMuted(_ muted: Bool) async {}
+        func clear() async {}
+        func stop() async {}
+        var isSpeaking: Bool { get async { false } }
+    }
+
+    /// The source was started before the player, so a player that fails to start must not leave the capture tap
+    /// installed behind it.
+    func testPlayerStartFailureStopsTheSourceAndEmitsError() async throws {
+        let source = FakeAudioSource()
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: FakeTranslator(),
+            speaker: FakeSpeaker(),
+            playerFactory: { _, _ in FailingStartPlayer() },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, _ in FakeSegmenter() }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+        let events = EventCollector()
+        events.start(pipeline)
+        await pipeline.start(configuration())
+        let state = await pipeline.state
+        XCTAssertEqual(state, .error)
+        XCTAssertEqual(source.started, [.microphone])
+        XCTAssertTrue(source.stopped, "the tap is not left behind")
+        let failed = await eventually { events.hasError }
+        XCTAssertTrue(failed)
+        await pipeline.stop()
+        let final = await pipeline.state
+        XCTAssertEqual(final, .idle)
+    }
+
+    /// A speaker that throws fails the run like a translator that throws; the phrase was already transcribed.
+    func testSpeakerFailureEmitsErrorState() async throws {
+        let h = makeHarness(speaker: FakeSpeaker(fail: true))
+        await h.pipeline.start(configuration())
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let failed = await eventually { h.events.hasError }
+        XCTAssertTrue(failed)
+        let state = await h.pipeline.state
+        XCTAssertEqual(state, .error)
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.count, 1, "the transcript entry precedes the voice")
+        await h.pipeline.stop()
+    }
+
+    /// A VAD that throws fails the run from the capture stage.
+    func testVADFailureEmitsErrorState() async throws {
+        let h = makeHarness(realSegmenter: true, vad: EnergyVAD(fail: true))
+        await h.pipeline.start(configuration())
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let failed = await eventually { h.events.hasError }
+        XCTAssertTrue(failed)
+        let state = await h.pipeline.state
+        XCTAssertEqual(state, .error)
+        let calls = await h.translator.calls
+        XCTAssertTrue(calls.isEmpty)
+        await h.pipeline.stop()
+        let final = await h.pipeline.state
+        XCTAssertEqual(final, .idle)
+    }
+
+    func testStopOnANeverStartedPipelineEmitsNoStateEvent() async throws {
+        let h = makeHarness()
+        await h.pipeline.stop()
+        let state = await h.pipeline.state
+        XCTAssertEqual(state, .idle)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(h.events.states, [])
+        let closed = await h.transcript.closed
+        XCTAssertFalse(closed, "no transcript sink was ever built")
+    }
+
+    func testSegmenterFactoryReceivesTheConfiguredPreset() async throws {
+        let presets = LockedBox<[SegmenterPreset]>([])
+        let source = FakeAudioSource()
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: FakeTranslator(),
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in FakePlayer(onSpeaking: onSpeaking) },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, preset in
+            presets.update { $0.append(preset) }
+            return FakeSegmenter()
+        }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+        await pipeline.start(PipelineConfiguration(captureMode: .broadcast, preset: .veryFast))
+        XCTAssertEqual(presets.value, [.veryFast])
+        XCTAssertEqual(source.started, [.broadcast])
+        await pipeline.stop()
+    }
+
     // MARK: Two-way routing through the pipeline (M8, §8.2)
 
     private actor StubTranscriber: Transcriber {
@@ -759,6 +949,21 @@ final class TranslationPipelineTests: XCTestCase {
         let entries = await h.transcript.entries
         XCTAssertEqual(entries.first?.original, "Good morning.")
         XCTAssertFalse(entries.first?.english.isEmpty ?? true)
+        await h.pipeline.stop()
+    }
+
+    /// The `.transcriptOnly` event carries the stage's reason, so the Live screen can say why the voice is silent.
+    func testTranscriptOnlyEventCarriesTheReason() async throws {
+        let h = makeHarness(transcriber: StubTranscriber(), secondary: StubSecondary(result: nil))
+        var config = configuration()
+        config.ignoredLanguage = "es"
+        config.twoWay = true
+        config.twoWayLanguage = "cy"
+        await h.pipeline.start(config)
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let expected = PipelineEvent.transcriptOnly(reason: TranslationStage.unavailablePairReason(from: "es", to: "cy"))
+        let noted = await eventually { h.events.events.contains(expected) }
+        XCTAssertTrue(noted, "\(h.events.events)")
         await h.pipeline.stop()
     }
 }

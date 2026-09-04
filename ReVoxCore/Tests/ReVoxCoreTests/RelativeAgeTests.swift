@@ -43,4 +43,10 @@ final class RelativeAgeTests: XCTestCase {
             XCTAssertTrue(text.hasSuffix(" h") || text.hasSuffix(" min"), text)
         }
     }
+
+    func testAgesBeyondADayKeepCountingHours() {
+        XCTAssertEqual(age(90_000), "25 h")
+        XCTAssertEqual(age(90_060), "25 h 1 min")
+        XCTAssertEqual(age(90_119), "25 h 1 min")
+    }
 }

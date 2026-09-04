@@ -221,4 +221,27 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.timeDisplayMode, .age)
         XCTAssertTrue(settings.twoWay)
     }
+
+    func testAnIntegerVoiceVolumeDecodesAsADouble() {
+        let settings = SettingsCodec.decode(Data(#"{"voice_volume": 1}"#.utf8))
+        XCTAssertEqual(settings.voiceVolume, 1.0)
+        XCTAssertEqual(SettingsCodec.decode(Data(#"{"voice_volume": 0}"#.utf8)).voiceVolume, 0)
+    }
+
+    func testExplicitNullsKeepTheOptionalsEmptyAndTheDefaultsForTheRest() {
+        let json = #"{"language": null, "system_voice_identifier": null, "ignored_language": null, "two_way_language": null}"#
+        let settings = SettingsCodec.decode(Data(json.utf8))
+        XCTAssertEqual(settings, Settings())
+    }
+
+    func testSaveCreatesTheDirectoryAndOverwritesAtomically() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path))
+        try SettingsCodec.save(Settings(), to: url)
+        var changed = Settings()
+        changed.voice = "javert"
+        try SettingsCodec.save(changed, to: url)
+        XCTAssertEqual(SettingsCodec.load(from: url).voice, "javert")
+    }
 }

@@ -294,4 +294,35 @@ final class TranslationStageTests: XCTestCase {
         let calls = await transcriber.calls
         XCTAssertEqual(calls, ["en"], "one transcribe serves both the reply and Learning mode")
     }
+
+    // MARK: the public `translate` wrapper and a degenerate configuration
+
+    func testTranslateIsTheRoutedTranslationWithoutTheRoute() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Hola.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil)
+        let translation = try await stage.translate(audio)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(translation, routed?.translation)
+        XCTAssertEqual(translation, Translation(english: "Hola.", language: "es"))
+
+        let ignoring = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil, ignoredLanguage: "es")
+        let dropped = try await ignoring.translate(audio)
+        XCTAssertNil(dropped)
+    }
+
+    /// Pinning the very language that is ignored, with two-way off, drops every phrase before any engine runs:
+    /// the configuration is self-defeating and the settings screen should refuse it, but the stage stays honest.
+    func testAPinnedLanguageThatIsAlsoIgnoredDropsEveryPhraseWithTwoWayOff() async throws {
+        let detector = FakeLanguageDetector(language: "fr", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment("never")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: "es",
+                                     ignoredLanguage: "es", twoWay: false)
+        let routed = try await stage.route(audio)
+        XCTAssertNil(routed)
+        let detections = await detector.calls
+        XCTAssertEqual(detections, 0)
+        let translations = await translator.calls
+        XCTAssertTrue(translations.isEmpty)
+    }
 }

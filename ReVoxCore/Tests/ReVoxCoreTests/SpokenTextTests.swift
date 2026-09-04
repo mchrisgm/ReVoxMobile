@@ -39,4 +39,13 @@ final class SpokenTextTests: XCTestCase {
         )
         XCTAssertEqual(SpeechGate.evaluate(candidate), Translation(english: "Good morning everyone", language: "es"))
     }
+
+    func testAdjacentEmptyAndPipeBearingTokensAreRemoved() {
+        XCTAssertEqual(SpokenText.clean("<|es|><|fr|>x"), "x")
+        XCTAssertEqual(SpokenText.clean("<||>a"), "a")
+        XCTAssertEqual(SpokenText.clean("<|a|b|>c"), "c", "a pipe inside the span does not end it early")
+        XCTAssertEqual(SpokenText.clean("<|es|"), "<|es|", "no closing bracket: text")
+        XCTAssertEqual(SpokenText.clean("<"), "<")
+        XCTAssertEqual(SpokenText.clean(""), "")
+    }
 }
