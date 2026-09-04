@@ -47,6 +47,14 @@ final class ScreenshotTests: XCTestCase {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
         let window = Self.makeWindow()
+        // A window attached to the app's scene is retained by that scene: without this, each capture leaves a
+        // live SwiftUI hierarchy sitting over the app for the rest of the run, doing layout on the main actor —
+        // which is what started timing out the main-actor polls in the LiveViewModel and keep-alive tests.
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            window.windowScene = nil
+        }
         window.rootViewController = controller
         window.makeKeyAndVisible()
         controller.view.frame = window.bounds
@@ -66,7 +74,6 @@ final class ScreenshotTests: XCTestCase {
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
         }
-        window.isHidden = true
 
         let colors = Self.distinctColors(in: image)
         XCTAssertGreaterThan(colors, Self.blankThreshold, "\(name) rendered blank (\(colors) distinct colours)")
