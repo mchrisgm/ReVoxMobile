@@ -23,32 +23,14 @@ final class ScreenHostingTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    private var support: ScreenHostingSupport { ScreenHostingSupport(layout: layout, store: store) }
+
     func makeModelsViewModel(pipelineRunning: Bool = false) -> ModelsViewModel {
-        let steps = FakeInstallSteps()
-        let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
-                                       verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxScreens-\(UUID().uuidString)")!))
-        let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { pipelineRunning }, availableBytes: { 50_000_000_000 }, host: FakeInstallHost())
-        return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: 6 * 1_073_741_824), isPipelineRunning: { pipelineRunning })
+        support.models(pipelineRunning: pipelineRunning)
     }
 
     func makeVoicesViewModel(installed: Bool = false, pipelineRunning: Bool = false) throws -> VoicesViewModel {
-        if installed { try FakeInstallSteps.fabricatePocketTTS(in: layout) }
-        let steps = FakeInstallSteps()
-        let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
-                                       verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxScreens-\(UUID().uuidString)")!))
-        let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { pipelineRunning }, availableBytes: { 50_000_000_000 }, host: FakeInstallHost())
-        manager.refreshInstalledStates()
-        return VoicesViewModel(
-            manager: manager,
-            settings: store,
-            deviceInfo: DeviceInfo(physicalMemoryBytes: 4 * 1_073_741_824),   // shows the advisory caption
-            speakerStatus: SpeakerStatusRelay(),
-            samplePlayer: SamplePlayer(play: { _, _ in }),
-            selection: { .system(identifier: nil) },
-            systemVoices: { [SystemVoiceOption(id: "com.example.premium", name: "Ava", language: "en-US", quality: .premium),
-                             SystemVoiceOption(id: "com.example.default", name: "Fred", language: "en-US", quality: .default)] },
-            isPipelineRunning: { pipelineRunning }
-        )
+        try support.voices(installed: installed, pipelineRunning: pipelineRunning)
     }
 
     func testVoicesViewHostsBothEngines() throws {
