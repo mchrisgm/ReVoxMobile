@@ -68,7 +68,7 @@ actor EffectiveSpeaker: Speaker {
             } catch {
                 pocketTTS = nil   // dropped so ARC can release the models (§6.5)
                 Self.logDrop("after load failure")
-                setStatus(.fallback(.loadFailed(String(describing: error))))
+                setStatus(.fallback(.loadFailed(UserFacingErrorText.describe(error))))
             }
         }
     }
@@ -92,7 +92,7 @@ actor EffectiveSpeaker: Speaker {
             } catch {
                 self.pocketTTS = nil
                 Self.logDrop("after synthesis failure")
-                setStatus(.fallback(.synthesisFailed(String(describing: error))))
+                setStatus(.fallback(.synthesisFailed(UserFacingErrorText.describe(error))))
             }
         }
         return try await systemSpeaker().synthesize(text)
