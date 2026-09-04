@@ -106,6 +106,8 @@ cd ReVoxCore && swift test
 <details open>
 <summary><strong>First run</strong></summary>
 
+The first launch opens a short interactive tutorial: seven pages that show a demo transcript typing itself in and let you try the source picker, Two-way, Learning, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
+
 1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model.
 2. Keep ReVox open while the download runs — iOS stops the transfer when the app is suspended. A paused row resumes when you come back.
 3. Optionally go to **Settings › Voices** and download a pocket-tts voice (*alba*, *azelma*, *cosette* or *javert*). Until you do, ReVox speaks with the iPhone's own voice, which needs no download.
@@ -114,6 +116,8 @@ cd ReVoxCore && swift test
 
 <details>
 <summary><strong>Translating</strong></summary>
+
+The Live screen keeps its controls to one row of pills above the transcript — source, latency, ducking, Learning, volume and Two-way — and a **More** panel for the rest, so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
 
 1. On the **Live** tab, choose what to listen to:
    - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
