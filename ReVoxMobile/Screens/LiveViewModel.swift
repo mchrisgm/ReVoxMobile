@@ -51,6 +51,7 @@ final class LiveViewModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var lagTask: Task<Void, Never>?
     @ObservationIgnored private var sessionTask: Task<Void, Never>?
+    @ObservationIgnored private var keepAliveTask: Task<Void, Never>?
 
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
          modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
@@ -217,6 +218,7 @@ final class LiveViewModel {
                 setState(.error)
             }
         case .entry(let entry):
+            if sessionStatus == Self.pausedByIOSText { sessionStatus = nil }
             isFallingBehind = false
             lagTask?.cancel()
             detectedLanguage = entry.language
@@ -258,6 +260,19 @@ final class LiveViewModel {
             for await event in sessionEvents {
                 guard let self else { return }
                 self.handle(event)
+            }
+        }
+    }
+
+    /// §9 "App was suspended while translating": a heartbeat gap shows the paused status until the next entry.
+    func observe(keepAlive: AsyncStream<KeepAliveMonitor.Event>) {
+        keepAliveTask?.cancel()
+        keepAliveTask = Task { [weak self] in
+            for await event in keepAlive {
+                guard let self else { return }
+                if case .gap = event {
+                    self.sessionStatus = Self.pausedByIOSText
+                }
             }
         }
     }

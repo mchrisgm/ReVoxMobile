@@ -21,6 +21,7 @@ final class AppEnvironment {
     let voiceVolume: VoiceVolume
     let speakerStatus: SpeakerStatusRelay
     let speakerAssembly: SpeakerAssembly
+    let keepAlive: KeepAliveMonitor
     let voices: VoicesViewModel
     let live: LiveViewModel
     let models: ModelsViewModel
@@ -58,8 +59,9 @@ final class AppEnvironment {
         self.voiceVolume = VoiceVolume(Float(settings.settings.voiceVolume))
         self.speakerStatus = SpeakerStatusRelay()
         self.speakerAssembly = SpeakerAssembly(layout: layout, settings: settings, manager: modelManager, relay: speakerStatus, voiceVolume: voiceVolume)
+        self.keepAlive = KeepAliveMonitor(logURL: settingsURL.deletingLastPathComponent().appendingPathComponent("keepalive.log"))
         self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer,
-                                           speakerAssembly: speakerAssembly)
+                                           speakerAssembly: speakerAssembly, keepAlive: keepAlive)
         let manager = modelManager
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,
                                   modelReady: { id in await manager.isWhisperReady(id) },
@@ -82,6 +84,7 @@ final class AppEnvironment {
             isPipelineRunning: { activity.isBusy }
         )
         live.observe(sessionEvents: sessionController.events)
+        live.observe(keepAlive: keepAlive.events)
         let controller = sessionController
         let events = interruptions.events
         interruptionTask = Task {

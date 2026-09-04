@@ -271,4 +271,17 @@ final class LiveViewModelTests: XCTestCase {
         relay.status = .fallback(.loadFailed("x"))
         XCTAssertEqual(model.voiceStatusText, "System voice — pocket-tts failed to load")
     }
+    func testKeepAliveGapShowsPausedByIOSUntilTheNextEntry() async {
+        let model = makeModel()
+        let (stream, continuation) = AsyncStream<KeepAliveMonitor.Event>.makeStream()
+        model.observe(keepAlive: stream)
+        await model.start()
+        await waitUntil { model.state == .running }
+        continuation.yield(.gap(seconds: 7, before: .init(position: 0, at: 0), after: .init(position: 0, at: 7)))
+        await waitUntil("paused status") { model.sessionStatus == LiveViewModel.pausedByIOSText }
+        first.emit(.entry(TranscriptEntry(timestamp: Date(), language: "es", original: "", english: "back")))
+        await waitUntil { model.rows.count == 1 }
+        XCTAssertNil(model.sessionStatus, "cleared by the next entry (§9)")
+        continuation.finish()
+    }
 }

@@ -69,4 +69,12 @@ final class PipelineAssemblerTests: XCTestCase {
         XCTAssertEqual(candidate.segments.first?.text, "Hi")
         XCTAssertEqual(candidate.segments.first?.averageLogProbability ?? 0, -0.3, accuracy: 0.0001)
     }
+
+    func testBuiltPipelineExposesItsSource() {
+        // A `BuiltPipeline` is only produced by a successful build (device with models); this proves the type shape.
+        let source = MicrophoneCapture(controller: AudioSessionController(session: RecordingAudioSessionSeam()))
+        let built = BuiltPipeline(pipeline: nil, source: source)
+        XCTAssertNil(built.pipeline)
+        XCTAssertTrue(built.source is MicrophoneCapture)
+    }
 }

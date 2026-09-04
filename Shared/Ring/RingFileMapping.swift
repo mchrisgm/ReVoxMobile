@@ -81,7 +81,7 @@ final class RingFileMapping {
         var excluded = url
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
-        try? excluded.setResourceValues(&values)
+        try? excluded.setResourceValues(values)   // takes the values, not an inout — as ModelLayout does
         return try openExisting(at: url, layout: layout)
     }
 

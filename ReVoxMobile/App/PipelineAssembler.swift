@@ -2,21 +2,32 @@ import Foundation
 import SwiftData
 import ReVoxCore
 
-/// The composition root (§4.2, A6): adapters + core pipeline for one settings snapshot, microphone mode (M5 adds
-/// `BroadcastCapture` by mode). The speaker side comes from `SpeakerAssembly`; ducking goes through the session
-/// controller with `duckingEnabled = settings.ducking` in the configuration (F12).
+/// A successful build: the core pipeline plus the source it captures from (the keep-alive monitor reads the
+/// source's capture position). `pipeline` is optional only so the simulator tests can construct the value.
+struct BuiltPipeline: Sendable {
+    let pipeline: TranslationPipeline?
+    let source: any AudioSource
+}
+
+/// The composition root (§4.2, A6): adapters + core pipeline for one settings snapshot, microphone mode (Task 66
+/// adds `BroadcastCapture` by mode). The speaker side comes from `SpeakerAssembly`; ducking goes through the
+/// session controller with `duckingEnabled = settings.ducking` in the configuration (F12); the keep-alive monitor
+/// of §6.8 wraps every run.
 @MainActor
 final class PipelineAssembler {
     private let layout: ModelLayout
     private let sessionController: AudioSessionController
     private let transcriptContainer: ModelContainer
     private let speakerAssembly: SpeakerAssembly
+    private let keepAlive: KeepAliveMonitor
 
-    init(layout: ModelLayout, sessionController: AudioSessionController, transcriptContainer: ModelContainer, speakerAssembly: SpeakerAssembly) {
+    init(layout: ModelLayout, sessionController: AudioSessionController, transcriptContainer: ModelContainer,
+         speakerAssembly: SpeakerAssembly, keepAlive: KeepAliveMonitor) {
         self.layout = layout
         self.sessionController = sessionController
         self.transcriptContainer = transcriptContainer
         self.speakerAssembly = speakerAssembly
+        self.keepAlive = keepAlive
     }
 
     func supplier() -> PipelineSupplier {
@@ -24,11 +35,15 @@ final class PipelineAssembler {
         let controller = self.sessionController
         let container = self.transcriptContainer
         let assembly = self.speakerAssembly
+        let monitor = self.keepAlive
         let speakers = assembly.bundle(controller: controller)
         return { settings, progress in
-            let pipeline = try await PipelineAssembler.build(settings: settings, layout: layout, sessionController: controller,
-                                                            transcriptContainer: container, speakers: speakers, progress: progress)
-            return await assembly.wrap(pipeline)
+            let built = try await PipelineAssembler.build(settings: settings, layout: layout, sessionController: controller,
+                                                          transcriptContainer: container, speakers: speakers, progress: progress)
+            guard let pipeline = built.pipeline else { throw PipelineBuildError.vadLoadFailed("no pipeline was built") }
+            let source = built.source
+            let monitored = MonitoredPipeline(pipeline: pipeline, monitor: monitor, position: { await source.capturePosition() })
+            return await assembly.wrap(monitored)
         }
     }
 
@@ -45,7 +60,7 @@ final class PipelineAssembler {
 
     nonisolated static func build(settings: Settings, layout: ModelLayout, sessionController: AudioSessionController,
                                   transcriptContainer: ModelContainer, speakers: SpeakerBundle,
-                                  progress: @escaping @Sendable (String) -> Void) async throws -> TranslationPipeline {
+                                  progress: @escaping @Sendable (String) -> Void) async throws -> BuiltPipeline {
         // 1. Session first, in the foreground (§6.8).
         try await sessionController.configure(for: settings.capture)
 
@@ -65,12 +80,7 @@ final class PipelineAssembler {
         let translator = TimedTranslator(whisper)
 
         // 3. Adapters. The speaker, the player factory and the voice name come from the assembly (R11, §6.5, §6.7).
-        // The capture source's status line ("No microphone input", §6.1) rides the controller's SessionEvent
-        // stream, which `LiveViewModel.observe(sessionEvents:)` already renders; `onStatus` defaults to a no-op,
-        // so omitting it here would silently drop that line.
-        let source = MicrophoneCapture(controller: sessionController, onStatus: { status in
-            Task { await sessionController.publishCaptureStatus(status) }
-        })
+        let source = MicrophoneCapture(controller: sessionController)
         let transcriptFactory: TranscriptSinkFactory = {
             TranscriptStore(modelContainer: transcriptContainer,
                             metadata: PipelineAssembler.sessionMetadata(for: settings, startedAt: Date(), voice: speakers.voiceName()))
@@ -87,6 +97,6 @@ final class PipelineAssembler {
             ducker: sessionController,
             transcriptFactory: transcriptFactory
         )
-        return TranslationPipeline(dependencies: dependencies)
+        return BuiltPipeline(pipeline: TranslationPipeline(dependencies: dependencies), source: source)
     }
 }
