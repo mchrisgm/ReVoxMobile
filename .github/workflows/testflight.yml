@@ -19,6 +19,11 @@ on:
         type: choice
         options: [automatic, manual]
         default: automatic
+      revoke_development_certificates:
+        description: "Apple Development certificates to revoke when the run ends (this-run = the throw-away one Xcode created on this runner; all = every one on the team, the one-time cleanup after the cap was hit; none)"
+        type: choice
+        options: [this-run, all, none]
+        default: this-run
 
 concurrency:
   group: testflight
@@ -30,6 +35,7 @@ permissions:
 env:
   XCODE_VERSION: "26.6"
   SIGNING: ${{ github.event.inputs.signing || 'automatic' }}
+  REVOKE_DEVELOPMENT_CERTIFICATES: ${{ github.event.inputs.revoke_development_certificates || 'this-run' }}
 
 jobs:
   preflight:
@@ -191,14 +197,12 @@ jobs:
 
       - name: Archive (automatic signing)
         if: env.SIGNING == 'automatic'
-        # CODE_SIGN_IDENTITY="Apple Distribution": the archive signs with the
-        # cloud-managed distribution certificate and an App Store profile, the
-        # same pair the export uses. Without it, automatic signing archives with
-        # an Apple Development certificate that Xcode creates on every run (the
-        # runner is fresh each time, so the key is never reused); Apple caps
-        # those per account, and build 22 hit the cap ("Choose a certificate to
-        # revoke") after 21 builds. Distribution certificates are per team, not
-        # per machine, so this archive creates nothing new.
+        # Automatic signing archives with an Apple Development certificate that Xcode
+        # creates on every run (the runner is fresh each time, so the key is never
+        # reused); a distribution identity here is a "conflicting provisioning
+        # setting" (build 24). Apple caps development certificates per account and
+        # build 22 hit the cap after 21 builds, so the "Revoke this run's Apple
+        # Development certificate" step below revokes the one each run creates.
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -217,7 +221,6 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             REVOX_BUNDLE_PREFIX="$REVOX_BUNDLE_PREFIX" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             2>&1 | tee archive.log | xcbeautify --renderer github-actions
@@ -331,6 +334,22 @@ jobs:
             upload.log
           retention-days: 14
           if-no-files-found: ignore
+
+      - name: Revoke this run's Apple Development certificate
+        # Automatic signing archives with an Apple Development certificate, and every runner is a fresh machine,
+        # so Xcode creates a new one per run and its private key dies with the runner. Apple caps them per
+        # account (build 22 hit the cap), so the one this run created is revoked here whatever the run's
+        # outcome, found by serial number in the run's own keychain; `all` is the owner's one-time cleanup of
+        # the ones earlier builds left behind. Housekeeping: the script never fails the job.
+        if: always() && env.SIGNING == 'automatic' && env.REVOKE_DEVELOPMENT_CERTIFICATES != 'none' && env.ASC_KEY_PATH != ''
+        run: |
+          if [ "$REVOKE_DEVELOPMENT_CERTIFICATES" = "all" ]; then
+            python3 scripts/ci/asc-revoke-certificates.py --key-id "$ASC_KEY_ID" --issuer-id "$ASC_ISSUER_ID" \
+              --key-path "$ASC_KEY_PATH" --all-development
+          else
+            python3 scripts/ci/asc-revoke-certificates.py --key-id "$ASC_KEY_ID" --issuer-id "$ASC_ISSUER_ID" \
+              --key-path "$ASC_KEY_PATH" --keychain "$SIGNING_KEYCHAIN"
+          fi
 
       - name: Remove signing material
         if: always()
