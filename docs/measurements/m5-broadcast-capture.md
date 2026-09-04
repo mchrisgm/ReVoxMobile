@@ -31,3 +31,11 @@ Devices used: `pending` (model, iOS version per device).
 ## Raw logs
 
 (paste trimmed Console excerpts here, one heading per row)
+
+### Procedures for rows 8, 9, 11 and 12 (final build)
+
+- **Row 8 (extension footprint):** start a broadcast, play a video for 10 minutes; in Console filter subsystem `revox.broadcast`; copy every `footprint residentMB=…` line (one per ~30 s). Pass: every value ≤ 15 MB.
+- **Row 11 (MAP_SHARED accounting):** repeat row 8 twice — once with ReVox in the foreground on the Live tab (the app maps the ring), once with ReVox force-quit — and compare the `residentMB` values; the mapping (3.7 MB) must not appear as extension memory in the first run.
+- **Row 9 (auto-lock):** Settings → Display & Brightness → Auto-Lock 30 seconds; start a broadcast; do not touch the phone for 2 minutes; unlock; Diagnostics "State" must still be `running` and the `broadcast.state` record `running`.
+- **Row 12 (record freshness after a wake):** with ReVox on the Live tab in Other apps mode and not running, start and stop a broadcast from Control Center ten times, waiting 5 s between actions; in Console filter subsystem `revox` category `capture`; for every `wake=stopped` line the same line must show `record.state=finished` (or `failed`), and for every `wake=started` line `record.state=running`. Count stale reads.
+
