@@ -1,4 +1,5 @@
 import XCTest
+import ReVoxCore
 @testable import ReVoxMobile
 
 final class KeepAliveMonitorTests: XCTestCase {
