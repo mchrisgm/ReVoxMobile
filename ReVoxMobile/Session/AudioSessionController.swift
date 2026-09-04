@@ -31,7 +31,10 @@ actor AudioSessionController: Ducker {
     nonisolated let events: AsyncStream<SessionEvent>
     private let eventContinuation: AsyncStream<SessionEvent>.Continuation
     private let session: any AudioSessionSeam
+    private let center: NotificationCenter
     private var engine: (any AudioEngineSeam)?
+    /// The `AVAudioEngineConfigurationChange` observation of the current engine; removed with the engine.
+    private var configurationToken: NSObjectProtocol?
     private(set) var mode: CaptureMode?
     private var playHook: (@Sendable () -> Void)?
     private var routeChangeHandler: (@Sendable (AVAudioSession.RouteChangeReason) -> Void)?
@@ -72,11 +75,18 @@ actor AudioSessionController: Ducker {
     private var lastReportedDucked = false
     private let cycleQueue = DispatchQueue(label: "revox.session.cycle")
 
-    init(session: any AudioSessionSeam = LiveAudioSessionSeam()) {
+    init(session: any AudioSessionSeam = LiveAudioSessionSeam(), center: NotificationCenter = .default) {
         self.session = session
+        self.center = center
         let (stream, continuation) = AsyncStream<SessionEvent>.makeStream(bufferingPolicy: .unbounded)
         self.events = stream
         self.eventContinuation = continuation
+    }
+
+    deinit {
+        if let configurationToken {
+            center.removeObserver(configurationToken)
+        }
     }
 
     // MARK: Configuration (foreground, before pipeline.start)
@@ -84,7 +94,7 @@ actor AudioSessionController: Ducker {
     func configure(for mode: CaptureMode) throws {
         if self.mode != mode || engine == nil {
             tearDownEngine()
-            engine = session.makeEngine()
+            installNewEngine()
             self.mode = mode
         }
         try session.setCategory(Self.residentMask(for: mode))
@@ -152,8 +162,39 @@ actor AudioSessionController: Ducker {
 
     private func tearDownEngine() {
         engineRequested = false
+        if let configurationToken {
+            center.removeObserver(configurationToken)
+            self.configurationToken = nil
+        }
         engine?.stop()
         engine = nil
+    }
+
+    /// A fresh engine from the seam, observed for `AVAudioEngineConfigurationChange` for as long as it is the
+    /// controller's engine. `object:` is the real `AVAudioEngine`, so a torn-down engine's notification never
+    /// matches; it is nil for the test seams, which then observe every post on their private centre.
+    private func installNewEngine() {
+        let created = session.makeEngine()
+        engine = created
+        configurationToken = center.addObserver(forName: Notification.Name.AVAudioEngineConfigurationChange,
+                                                object: created.engine, queue: nil) { [weak self] _ in
+            Task { await self?.engineConfigurationDidChange() }
+        }
+    }
+
+    /// The output hardware's format changed (speaker ↔ headphones, a car): `AVAudioEngine` stops itself before it
+    /// posts, and a stopped engine never plays a scheduled clip — `.dataPlayedBack` never fires, `isSpeaking`
+    /// stays true, the self-capture gate drops every later chunk. In microphone mode `MicrophoneCapture` owns the
+    /// restart, because the tap must be re-seated on the new hardware format *before* the engine starts (§6.1);
+    /// in broadcast mode there is no tap and no other owner, so the controller restarts it — while a run wants it.
+    private func engineConfigurationDidChange() {
+        guard engineRequested, mode == .broadcast else { return }
+        do {
+            try startEngine()
+            Self.logger.info("engine restarted after a configuration change (broadcast mode)")
+        } catch {
+            Self.logger.error("engine restart after a configuration change failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: Interruptions, routes, media services (§6.8, §9)
@@ -181,7 +222,7 @@ actor AudioSessionController: Ducker {
         case .mediaServicesReset:
             let wasRequested = engineRequested                // read before the teardown clears it
             tearDownEngine()
-            engine = session.makeEngine()
+            installNewEngine()
             do {
                 if let mode {
                     try session.setCategory(Self.residentMask(for: mode))
