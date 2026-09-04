@@ -65,10 +65,11 @@ final class VoicesViewModelTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func makeModel(memoryGiB: UInt64 = 6, availableBytes: Int64? = 50_000_000_000) -> VoicesViewModel {
+    private func makeModel(memoryGiB: UInt64 = 6, availableBytes: Int64? = 50_000_000_000,
+                           fileRecord: InstalledFileRecord = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxFileRecord-\(UUID().uuidString)")!)) -> VoicesViewModel {
         let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout), verifiedLoads: VerifiedLoadRecord(defaults: defaults))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
-                                   availableBytes: { availableBytes }, host: host)
+                                   availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
         self.manager = manager
         let store = self.store!
         return VoicesViewModel(
@@ -327,5 +328,15 @@ final class VoicesViewModelTests: XCTestCase {
         model.deleteConfirmed()
         XCTAssertNil(model.deleteFailureAlert)
         XCTAssertFalse(model.isPocketTTSInstalled)
+    }
+
+    // MARK: Upstream-change caption (M7 Task 90)
+
+    func testPocketTTSNoticeAppearsWhenTheRecordedFileSetNoLongerMatches() throws {
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        let record = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxVoiceNotice-\(UUID().uuidString)")!)
+        XCTAssertNil(makeModel().pocketTTSNoticeText)
+        record.record(.pocketTTS, files: ["v2.1/english/constants_bin/gone.bin": 4])
+        XCTAssertEqual(makeModel(fileRecord: record).pocketTTSNoticeText, ModelManager.upstreamChangedText)
     }
 }

@@ -99,6 +99,9 @@ struct VADRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).font(.headline)
                 Text("Installed automatically with the first Whisper model").font(.caption).foregroundStyle(.secondary)
+                if let notice = row.noticeText {
+                    Label(notice, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

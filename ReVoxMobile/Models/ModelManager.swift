@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Observation
 import ReVoxCore
 
@@ -28,11 +29,13 @@ enum FreeSpaceVerdict: Equatable {
 @Observable
 final class ModelManager {
     /// Warn (not refuse) when less than this would remain after the install (ASSUMED, measured in M7).
+    private static let logger = Logger(subsystem: "revox", category: "models")
     static let lowRemainingThreshold: Int64 = 1_000_000_000
 
     let layout: ModelLayout
     let installer: ModelInstaller
     private let isPipelineRunning: @MainActor () -> Bool
+    private let fileRecord: InstalledFileRecord
     private let availableBytes: @MainActor () -> Int64?
 
     private(set) var states: [DownloadKind: ModelDownloadState] = [:]
@@ -40,6 +43,9 @@ final class ModelManager {
     private(set) var vadInstalled = false
     /// On-disk accounting (§6.9): refreshed by `refreshInstalledStates()`, i.e. after every install and delete.
     private(set) var storage: ModelStorageUsage = .empty
+    /// The unpinned FluidAudio downloads whose files no longer match what was recorded at install (§11).
+    private(set) var upstreamChanged: Set<DownloadKind> = []
+    static let upstreamChangedText = "Files changed since download — re-download to be sure"
     private(set) var pocketTTSInstalled = false
     /// Called after the active Whisper model was deleted with the smallest installed model, or nil.
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
@@ -55,12 +61,14 @@ final class ModelManager {
     private(set) var pausedKinds: Set<DownloadKind> = []
 
     init(layout: ModelLayout, installer: ModelInstaller, isPipelineRunning: @escaping @MainActor () -> Bool,
-         availableBytes: (@MainActor () -> Int64?)? = nil, host: (any InstallHost)? = nil) {
+         availableBytes: (@MainActor () -> Int64?)? = nil, host: (any InstallHost)? = nil,
+         fileRecord: InstalledFileRecord = InstalledFileRecord()) {
         self.layout = layout
         self.installer = installer
         self.isPipelineRunning = isPipelineRunning
         self.availableBytes = availableBytes ?? { layout.availableCapacityBytes() }
         self.host = host ?? UIApplicationInstallHost()
+        self.fileRecord = fileRecord
         refreshInstalledStates()
     }
 
@@ -100,12 +108,48 @@ final class ModelManager {
         if tasks[.pocketTTS] == nil, !pausedKinds.contains(.pocketTTS) {
             setState(.pocketTTS, phase: pocketTTSInstalled ? .installed : .idle, fraction: pocketTTSInstalled ? 1 : nil)
         }
+        refreshUpstreamChanges()
         refreshStorage()
     }
 
     /// Enumerates the model root (metadata only, no file reads) and re-reads the free space.
     func refreshStorage() {
         storage = ModelStorage.usage(layout: layout, availableBytes: availableBytes())
+    }
+
+    /// Compares the recorded file set of every unpinned download with what is on disk (§11). Cheap: metadata only.
+    func refreshUpstreamChanges() {
+        var changed: Set<DownloadKind> = []
+        for kind in InstalledFileRecord.unpinnedKinds {
+            guard let folder = ModelStorage.folders(for: kind, layout: layout).first,
+                  FileManager.default.fileExists(atPath: folder.path),
+                  let recorded = fileRecord.recorded(kind) else { continue }
+            if !InstalledFileRecord.changes(recorded: recorded, current: InstalledFileRecord.snapshot(of: folder)).isEmpty {
+                changed.insert(kind)
+            }
+        }
+        upstreamChanged = changed
+    }
+
+    /// The caption the Models and Voices screens show for a flagged download; nil when nothing changed.
+    func upstreamChangeText(for kind: DownloadKind) -> String? {
+        upstreamChanged.contains(kind) ? Self.upstreamChangedText : nil
+    }
+
+    /// Writes the file set of an unpinned download after a successful install; a difference against the previous
+    /// record is the upstream change itself, so it is logged before the new record replaces it (§11).
+    private func recordInstalledFiles(_ kind: DownloadKind) {
+        guard InstalledFileRecord.unpinnedKinds.contains(kind),
+              let folder = ModelStorage.folders(for: kind, layout: layout).first else { return }
+        let current = InstalledFileRecord.snapshot(of: folder)
+        if let previous = fileRecord.recorded(kind) {
+            let changes = InstalledFileRecord.changes(recorded: previous, current: current)
+            if !changes.isEmpty {
+                Self.logger.notice("upstream changed for \(InstalledFileRecord.key(for: kind), privacy: .public): \(changes.summary, privacy: .public)")
+            }
+        }
+        fileRecord.record(kind, files: current)
+        upstreamChanged.remove(kind)
     }
 
     private func setState(_ kind: DownloadKind, phase: ModelDownloadPhase, fraction: Double?) {
@@ -197,6 +241,7 @@ final class ModelManager {
             }
             await drainReports()
             finishTask(for: kind, cancelled: false)
+            recordInstalledFiles(kind)
             if case .whisper = kind, !layout.isVADInstalled(), tasks[.vad] == nil {
                 install(.vad)
             }
@@ -250,6 +295,8 @@ final class ModelManager {
             installer.deletePocketTTSSync()
             refreshInstalledStates()
         }
+        fileRecord.clear(kind)
+        upstreamChanged.remove(kind)
         onModelFilesChanged?()
     }
 

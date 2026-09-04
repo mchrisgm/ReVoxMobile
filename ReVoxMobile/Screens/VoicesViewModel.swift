@@ -70,6 +70,9 @@ final class VoicesViewModel {
 
     var storageFooterText: String { ModelsViewModel.storageFooterText(for: manager.storage) }
 
+    /// §11: pocket-tts is downloaded from FluidAudio's `main`; a changed file set is captioned in the footer.
+    var pocketTTSNoticeText: String? { manager.upstreamChangeText(for: .pocketTTS) }
+
     /// The checkmarked pocket-tts voice, nil when the system voice is selected.
     var selectedPocketVoice: String? {
         settings.settings.usesPocketTTSVoice ? settings.settings.voice : nil

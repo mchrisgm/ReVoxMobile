@@ -35,6 +35,7 @@ struct VoicesView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.storageFooterText)
+                    if let notice = model.pocketTTSNoticeText { Text(notice) }
                     if let advisory = model.advisoryText { Text(advisory) }
                     if let footer = model.footerText { Text(footer) }
                     if let warning = model.lowStorageWarning { Text(warning) }

@@ -25,11 +25,12 @@ final class ModelsViewModelTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func makeModel(memoryGiB: UInt64 = 6, availableBytes: Int64? = 50_000_000_000) -> ModelsViewModel {
+    private func makeModel(memoryGiB: UInt64 = 6, availableBytes: Int64? = 50_000_000_000,
+                           fileRecord: InstalledFileRecord = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxFileRecord-\(UUID().uuidString)")!)) -> ModelsViewModel {
         let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
                                        verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxModelsVM-\(UUID().uuidString)")!))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
-                                   availableBytes: { availableBytes }, host: host)
+                                   availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: memoryGiB * 1_073_741_824),
                                isPipelineRunning: { [unowned self] in self.pipelineRunning })
     }
@@ -258,5 +259,18 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertNil(model.deleteFailureAlert)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
         XCTAssertEqual(model.rows[1].state.phase, .idle)
+    }
+
+    // MARK: Upstream-change caption (M7 Task 90)
+
+    func testVADRowShowsTheUpstreamChangeCaptionOnlyWhenFlagged() throws {
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let model = makeModel()
+        XCTAssertNil(model.vadRow.noticeText, "nothing was recorded for a hand-fabricated layout, so nothing is compared")
+
+        let record = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxVADNotice-\(UUID().uuidString)")!)
+        record.record(.vad, files: ["stale-file": 1])
+        let flagged = makeModel(fileRecord: record)
+        XCTAssertEqual(flagged.vadRow.noticeText, ModelManager.upstreamChangedText)
     }
 }

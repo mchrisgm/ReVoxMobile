@@ -18,4 +18,6 @@ struct VADRow: Equatable {
     let name: String
     let sizeText: String
     let state: ModelDownloadState
+    /// §11: the bundle comes from FluidAudio's `main`, so a changed file set is captioned, never hidden.
+    let noticeText: String?
 }

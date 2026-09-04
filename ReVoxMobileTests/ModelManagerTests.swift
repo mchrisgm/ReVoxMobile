@@ -535,4 +535,29 @@ final class ModelManagerTests: XCTestCase {
         }
         XCTAssertEqual(refused.value, 0, "a refused delete removed nothing, so nothing changed")
     }
+
+    // MARK: Upstream-change flag for the unpinned downloads (M7 Task 90)
+
+    @MainActor
+    func testChangedVADFilesAreFlaggedAndClearedByAReinstall() async throws {
+        let manager = makeManager(host: FakeInstallHost())
+        manager.install(.vad)
+        await waitUntil("vad installed") { manager.state(for: .vad).phase == .installed }
+        XCTAssertNil(manager.upstreamChangeText(for: .vad), "the record was written by the install")
+        XCTAssertTrue(manager.upstreamChanged.isEmpty)
+
+        let stray = layout.vadRepoDirectory.appendingPathComponent("silero-vad-unified-v6.0.0.mlmodelc/upstream-new.bin")
+        try Data(count: 128).write(to: stray)
+        manager.refreshInstalledStates()
+        XCTAssertEqual(manager.upstreamChangeText(for: .vad), ModelManager.upstreamChangedText)
+        XCTAssertEqual(manager.upstreamChanged, [.vad])
+        XCTAssertNil(manager.upstreamChangeText(for: .pocketTTS), "pocket-tts is not installed, so nothing is compared")
+
+        manager.install(.vad)
+        await waitUntil("vad re-installed") { manager.state(for: .vad).phase == .installed && manager.upstreamChanged.isEmpty }
+        XCTAssertNil(manager.upstreamChangeText(for: .vad), "a re-download re-records the file set and clears the flag")
+
+        try manager.delete(.vad, activeModel: .small)
+        XCTAssertNil(manager.upstreamChangeText(for: .vad))
+    }
 }

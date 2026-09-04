@@ -61,7 +61,8 @@ final class ModelsViewModel {
         let state = manager.state(for: .vad)
         return VADRow(name: Self.vadName,
                       sizeText: Self.rowSizeText(catalogBytes: ModelCatalog.vad.approximateBytes, state: state, measuredBytes: manager.storage.bytes(for: .vad)),
-                      state: state)
+                      state: state,
+                      noticeText: manager.upstreamChangeText(for: .vad))
     }
 
     var canDelete: Bool { !isPipelineRunning() }
