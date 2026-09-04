@@ -7,7 +7,7 @@ struct RootView: View {
     var body: some View {
         TabView {
             NavigationStack {
-                LiveView(model: environment.live, models: environment.models)
+                LiveView(model: environment.live, models: environment.models, broadcastExtensionBundleID: environment.configuration.broadcastExtensionBundleID)
             }
             .tabItem { Label("Live", systemImage: "waveform") }
 

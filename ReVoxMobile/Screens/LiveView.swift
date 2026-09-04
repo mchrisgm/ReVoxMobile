@@ -3,12 +3,13 @@ import UIKit
 import ReVoxCore
 
 struct LiveView: View {
-    /// M5 adds `.broadcast` together with the `RPSystemBroadcastPickerView` button (§8.2).
-    static let availableSources: [CaptureMode] = [.microphone]
+    static let availableSources: [CaptureMode] = [.microphone, .broadcast]
+    static let broadcastEmptyStateText = "Choose Other apps, tap Start, then start the broadcast."
     private static let bottomSentinel = "live-transcript-bottom"
 
     @Bindable var model: LiveViewModel
     let models: ModelsViewModel
+    let broadcastExtensionBundleID: String
     @Environment(\.openURL) private var openURL
     @State private var isAtBottom = true
 
@@ -17,6 +18,9 @@ struct LiveView: View {
             sourcePicker
             statusLine
             bannerView
+            if model.showsBroadcastPicker {
+                broadcastPicker
+            }
             transcript
             startStopButton
         }
@@ -74,12 +78,33 @@ struct LiveView: View {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
             }
+            if let broadcastStatus = model.broadcastStatusText {
+                Label(broadcastStatus, systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Model \(model.modelStatusText). \(model.voiceStatusText).\(model.isFallingBehind ? " Falling behind." : "")\(model.duckingStatusText.map { " \($0)." } ?? "")\(model.sessionStatus.map { " \($0)." } ?? "")")
+        .accessibilityLabel("Model \(model.modelStatusText). \(model.voiceStatusText).\(model.isFallingBehind ? " Falling behind." : "")\(model.duckingStatusText.map { " \($0)." } ?? "")\(model.sessionStatus.map { " \($0)." } ?? "")\(model.broadcastStatusText.map { " \($0)." } ?? "")")
         .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// §8.2: the system picker with the Control Center explanation and the side-button footnote (C3).
+    private var broadcastPicker: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BroadcastPickerButton(preferredExtension: broadcastExtensionBundleID)
+                .frame(width: BroadcastPickerButton.size, height: BroadcastPickerButton.size)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(BroadcastPickerButton.captionText).font(.footnote)
+                Text(BroadcastPickerButton.footnoteText).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
     }
 
     @ViewBuilder
@@ -123,7 +148,8 @@ struct LiveView: View {
                 .buttonStyle(.borderedProminent)
             }
         } else if model.rows.isEmpty && model.state == .idle {
-            ContentUnavailableView("Ready to translate", systemImage: "waveform.and.mic", description: Text("Choose a source and tap Start."))
+            ContentUnavailableView("Ready to translate", systemImage: "waveform.and.mic",
+                                   description: Text(model.captureMode == .broadcast ? Self.broadcastEmptyStateText : "Choose a source and tap Start."))
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -174,6 +200,7 @@ struct LiveView: View {
         .keyboardShortcut(.space, modifiers: [])
         .padding(.horizontal)
         .accessibilityLabel(model.state == .running ? "Stop translating" : "Start translating")
+        .accessibilityHint(model.captureMode == .broadcast && model.state == .running ? "Stops translating; the broadcast itself ends from Control Center" : "")
     }
 
     static func title(for mode: CaptureMode) -> String {
