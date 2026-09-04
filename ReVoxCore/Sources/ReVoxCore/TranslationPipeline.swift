@@ -58,7 +58,7 @@ actor PipelineActor {
     private var transcript: (any TranscriptSink)?
     private var player: (any AudioPlayer)?
     private var wake: AsyncStream<Void>.Continuation?
-    private var texts: AsyncStream<String>.Continuation?
+    private var texts: AsyncStream<SpokenPhrase>.Continuation?
     private var edges: AsyncStream<Bool>.Continuation?
     private var tasks: [Task<Void, Never>] = []
 
@@ -98,7 +98,7 @@ actor PipelineActor {
                                      targetLanguage: configuration.twoWayLanguage)
 
         let (wakeStream, wakeContinuation) = AsyncStream.makeStream(of: Void.self)
-        let (textStream, textContinuation) = AsyncStream.makeStream(of: String.self)
+        let (textStream, textContinuation) = AsyncStream.makeStream(of: SpokenPhrase.self)
         let (edgeStream, edgeContinuation) = AsyncStream.makeStream(of: Bool.self)
         wake = wakeContinuation
         texts = textContinuation
@@ -235,7 +235,7 @@ actor PipelineActor {
             events.yield(.transcriptOnly(reason: reason))
         }
         guard routed.isSpoken else { return }
-        texts?.yield(result.english)
+        texts?.yield(SpokenPhrase(text: result.english, language: result.spokenLanguage))
     }
 
     func applySpeakingEdge(_ speaking: Bool, run: Int, ducking: DuckingCoordinator) async {
@@ -305,12 +305,12 @@ actor PipelineActor {
         }
     }
 
-    private func speakTask(texts: AsyncStream<String>, speaker: any Speaker, player: any AudioPlayer, run: Int) -> Task<Void, Never> {
+    private func speakTask(texts: AsyncStream<SpokenPhrase>, speaker: any Speaker, player: any AudioPlayer, run: Int) -> Task<Void, Never> {
         Task.detached { [self] in
-            for await text in texts {
+            for await phrase in texts {
                 guard await self.isRunning(run) else { return }
                 do {
-                    let clip = try await speaker.synthesize(text)
+                    let clip = try await speaker.synthesize(phrase.text, language: phrase.language)
                     await player.enqueue(clip)
                 } catch {
                     if error is CancellationError { return }

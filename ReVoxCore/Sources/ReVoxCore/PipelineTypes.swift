@@ -31,6 +31,27 @@ public protocol Speaker: Sendable {
     var sampleRate: Int { get }
     /// Whitespace-only text must return an empty clip without touching the engine.
     func synthesize(_ text: String) async throws -> AudioClip
+    /// The same, for a phrase written in `language` (M8: the second direction of a two-way conversation speaks
+    /// the other person's language). An engine that only has one language ignores the code — that is the default.
+    /// An engine that has no voice for `language` returns an empty clip rather than speaking it in the wrong one.
+    func synthesize(_ text: String, language: String) async throws -> AudioClip
+}
+
+extension Speaker {
+    public func synthesize(_ text: String, language: String) async throws -> AudioClip {
+        try await synthesize(text)
+    }
+}
+
+/// One thing to say, and the language it is written in (M8). Everything one-way is English.
+public struct SpokenPhrase: Sendable, Equatable {
+    public var text: String
+    public var language: String
+
+    public init(text: String, language: String = "en") {
+        self.text = text
+        self.language = language
+    }
 }
 
 public protocol AudioPlayer: Sendable {

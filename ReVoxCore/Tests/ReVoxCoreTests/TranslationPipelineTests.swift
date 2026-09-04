@@ -523,8 +523,9 @@ final class TranslationPipelineTests: XCTestCase {
         h.source.feed(segment())
         let spoke = await eventually { await h.speaker.texts.isEmpty == false }
         XCTAssertTrue(spoke)
-        let spoken = await h.speaker.texts
-        XCTAssertEqual(spoken.first, "Buenos días.")
+        let spoken = await h.speaker.phrases
+        XCTAssertEqual(spoken.first, SpokenPhrase(text: "Buenos días.", language: "fr"),
+                       "the reply is spoken in the target language, not in English")
         let entries = await h.transcript.entries
         XCTAssertEqual(entries.first?.english, "Buenos días.")
         await h.pipeline.stop()
