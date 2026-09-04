@@ -165,6 +165,7 @@ struct SettingsView: View {
         switch preset {
         case .balanced: return "Balanced"
         case .fast: return "Fast"
+        case .veryFast: return "Very fast"
         }
     }
 
