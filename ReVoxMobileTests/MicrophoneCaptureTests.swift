@@ -175,16 +175,20 @@ final class MicrophoneCaptureTests: XCTestCase {
     /// pass while the returned format still had a zero sample rate or zero channels — and `installTapOnBus`
     /// answers an invalid format with an NSException, which Swift cannot catch, so the process aborts.
     /// A format is only usable if the value actually handed to `install` is valid.
-    func testTheLiveSeamRejectsAFormatItWouldNotBeAbleToInstall() throws {
+    func testTheLiveSeamRejectsAFormatItWouldNotBeAbleToInstall() {
         let engine = AVAudioEngine()
-        let format = TapSeam.live.inputFormat(engine)
-        if let format {
-            XCTAssertGreaterThan(format.sampleRate, 0, "a format offered for installTap must have a real rate")
-            XCTAssertGreaterThan(format.channelCount, 0, "installTapOnBus raises on a zero-channel format")
+        let raw = engine.inputNode.outputFormat(forBus: 0)
+        let offered = TapSeam.live.inputFormat(engine)
+        if raw.sampleRate > 0, raw.channelCount > 0 {
+            // A usable node: the seam offers the node's own format, the only one the input node accepts.
+            XCTAssertEqual(offered?.sampleRate, raw.sampleRate)
+            XCTAssertEqual(offered?.channelCount, raw.channelCount)
+        } else {
+            // The other branch, and the one the simulator actually takes: CI reports this node as 0 Hz with 2
+            // channels — the exact shape that made build 15 abort, since a guard on the *input* format's rate can
+            // pass while this one is still unusable. Offering it would raise inside installTapOnBus.
+            XCTAssertNil(offered, "a format installTapOnBus would reject must never be offered, got \(String(describing: offered))")
         }
-        // The seam reports the node's own output format, which is the only format the input node accepts.
-        XCTAssertEqual(format?.sampleRate, engine.inputNode.outputFormat(forBus: 0).sampleRate)
-        XCTAssertEqual(format?.channelCount, engine.inputNode.outputFormat(forBus: 0).channelCount)
     }
 
     /// The second half of the same crash: `installTapOnBus` also raises when a tap is already on the bus. A run
