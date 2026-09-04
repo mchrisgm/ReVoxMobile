@@ -1,5 +1,6 @@
 import AVFAudio
 import Foundation
+import os
 import SwiftData
 import ReVoxCore
 
@@ -15,6 +16,7 @@ final class AppEnvironment {
     let sessionController: AudioSessionController
     let interruptions: InterruptionObserver
     let transcriptContainer: ModelContainer
+    let exporter: TranscriptExporter
     let mute: PlaybackMute
     let signals: DeviceSignals
     let assembler: PipelineAssembler
@@ -45,7 +47,7 @@ final class AppEnvironment {
 
     init(configuration: AppConfiguration, deviceInfo: DeviceInfo, settingsURL: URL, modelRoot: URL, transcriptContainer: ModelContainer,
          sessionSeam: any AudioSessionSeam, installSteps: InstallSteps, installHost: any InstallHost, verifiedLoads: VerifiedLoadRecord,
-         permission: MicrophonePermission) throws {
+         permission: MicrophonePermission, exportDirectory: URL = TranscriptExporter.defaultDirectory()) throws {
         self.configuration = configuration
         self.deviceInfo = deviceInfo
         self.settings = SettingsStore(fileURL: settingsURL)
@@ -53,6 +55,7 @@ final class AppEnvironment {
         try ModelLayout.excludeFromBackup(modelRoot)
         self.installer = ModelInstaller(layout: layout, steps: installSteps, verifiedLoads: verifiedLoads)
         self.transcriptContainer = transcriptContainer
+        self.exporter = TranscriptExporter(directory: exportDirectory)
         self.sessionController = AudioSessionController(session: sessionSeam)
         self.interruptions = InterruptionObserver()
         self.mute = PlaybackMute()
@@ -116,6 +119,10 @@ final class AppEnvironment {
                 await controller.handle(event)
             }
         }
+        let pruned = exporter.pruneOldExports()
+        if pruned > 0 {
+            Logger(subsystem: "revox", category: "history").info("pruned \(pruned, privacy: .public) export(s) older than a day")
+        }
     }
 
     /// The production environment; every failure here is a build-configuration error, so it is fatal (§6.11).
@@ -161,7 +168,8 @@ final class AppEnvironment {
             installSteps: recorded,
             installHost: NoopInstallHost(),
             verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxAppEnvironmentTesting-\(UUID().uuidString)")!),
-            permission: .fixed(.granted)
+            permission: .fixed(.granted),
+            exportDirectory: root.appendingPathComponent("Exports", isDirectory: true)
         )
     }
 

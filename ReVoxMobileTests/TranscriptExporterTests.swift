@@ -99,4 +99,27 @@ final class TranscriptExporterTests: XCTestCase {
         XCTAssertEqual(url.lastPathComponent, TranscriptExporter.directoryName)
         XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL, FileManager.default.temporaryDirectory.standardizedFileURL)
     }
+
+    func testPruneRemovesFilesOlderThanADayAndKeepsNewerOnes() throws {
+        let exporter = TranscriptExporter(directory: directory, formatter: TranscriptFormatter(timeZone: utc))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let old = directory.appendingPathComponent("2023-11-13_10-00-00.txt")
+        let fresh = directory.appendingPathComponent("2023-11-14_22-13-20.txt")
+        try Data("old".utf8).write(to: old)
+        try Data("fresh".utf8).write(to: fresh)
+        let now = Date()
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-TranscriptExporter.maxAge - 60)], ofItemAtPath: old.path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-60)], ofItemAtPath: fresh.path)
+        XCTAssertEqual(TranscriptExporter.maxAge, 86_400)
+        XCTAssertEqual(exporter.pruneOldExports(now: now), 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))
+        XCTAssertEqual(exporter.pruneOldExports(now: now), 0, "a second pass removes nothing")
+    }
+
+    func testPruneWithoutADirectoryIsANoOp() {
+        let exporter = TranscriptExporter(directory: directory)
+        XCTAssertEqual(exporter.pruneOldExports(), 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path), "pruning never creates the directory")
+    }
 }

@@ -41,4 +41,26 @@ struct TranscriptExporter: Sendable {
         try Data(text(for: session).utf8).write(to: url, options: .atomic)
         return url
     }
+
+    /// Exports older than this are deleted at launch (§6.10).
+    static let maxAge: TimeInterval = 86_400
+
+    /// Deletes every file in `directory` whose modification date is older than `maxAge` and returns the count.
+    /// A missing directory is 0; a file that cannot be removed is left for the next launch. The modification-date
+    /// read is the FileTimestamp required-reason API covered by `C617.1` (§11).
+    @discardableResult
+    func pruneOldExports(now: Date = Date(), fileManager: FileManager = .default) -> Int {
+        guard let urls = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
+            return 0
+        }
+        var removed = 0
+        for url in urls {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? now
+            guard now.timeIntervalSince(modified) > Self.maxAge else { continue }
+            if (try? fileManager.removeItem(at: url)) != nil {
+                removed += 1
+            }
+        }
+        return removed
+    }
 }
