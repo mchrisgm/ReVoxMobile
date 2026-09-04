@@ -117,6 +117,65 @@ final class AudioSessionControllerTests: XCTestCase {
         XCTAssertTrue(seam.lastEngine?.isRunning ?? false)
     }
 
+    /// The session is never deactivated by a stop (`.mixWithOthers`, §6.8), so iOS keeps delivering interruptions to
+    /// an idle ReVox. One that lands while nothing runs must neither start the engine — a `.playAndRecord` engine
+    /// pulling the input lights the microphone indicator with no run in progress — nor tell the Live screen that a
+    /// translation was paused.
+    func testInterruptionWhileNothingRunsTouchesNeitherTheEngineNorTheScreen() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let hookCalls = Counter()
+        await controller.setPlayHook { hookCalls.increment() }
+        try await controller.configure(for: .microphone)
+        let engine = try XCTUnwrap(seam.lastEngine)
+        var iterator = controller.events.makeAsyncIterator()
+        let callsBefore = seam.calls.count
+
+        await controller.handle(.began)
+        await controller.handle(.ended(shouldResume: true))
+        XCTAssertEqual(engine.startCount, 0, "no run was in progress: the engine stays down")
+        XCTAssertEqual(hookCalls.value, 0)
+        XCTAssertEqual(seam.calls.count, callsBefore, "the session is not reactivated either")
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event, "nothing is paused, so nothing is reported")
+    }
+
+    /// The same after a run: `AudioPlayer.stop()` stops the engine, and an interruption that follows is not a reason
+    /// to bring it back.
+    func testInterruptionAfterStopEngineDoesNotRestartIt() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        try await controller.startEngine()
+        await controller.stopEngine()
+        let engine = try XCTUnwrap(seam.lastEngine)
+        var iterator = controller.events.makeAsyncIterator()
+
+        await controller.handle(.began)
+        await controller.handle(.ended(shouldResume: true))
+        XCTAssertEqual(engine.startCount, 1, "only the run's own start")
+        XCTAssertFalse(engine.isRunning)
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event)
+    }
+
+    /// A media-services reset while idle still rebuilds the engine and re-applies the resident mask (the next run
+    /// needs both), but the rebuilt engine is left stopped and the screen is not told that audio restarted.
+    func testMediaServicesResetWhileIdleRebuildsWithoutStartingTheEngine() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        var iterator = controller.events.makeAsyncIterator()
+
+        await controller.handle(.mediaServicesReset)
+        XCTAssertEqual(seam.engines.count, 2)
+        XCTAssertEqual(seam.calls.suffix(3), ["makeEngine", "setCategory", "setActive(true)"])
+        XCTAssertEqual(seam.lastEngine?.startCount, 0, "idle: the rebuilt engine is not started")
+        XCTAssertFalse(seam.lastEngine?.isRunning ?? true)
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event, "no run to restart, nothing to show")
+    }
+
     func testRouteChangesReachTheTapHandlerAndTheEventStreamWithoutSessionCalls() async throws {
         let seam = RecordingAudioSessionSeam()
         let controller = AudioSessionController(session: seam)

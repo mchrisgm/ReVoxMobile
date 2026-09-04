@@ -36,6 +36,12 @@ actor AudioSessionController: Ducker {
     private var playHook: (@Sendable () -> Void)?
     private var routeChangeHandler: (@Sendable (AVAudioSession.RouteChangeReason) -> Void)?
     private(set) var playCount = 0
+    /// True from a successful `startEngine()` until `stopEngine()` or a teardown: a run wants the engine up. The
+    /// session is never deactivated by a stop (`.mixWithOthers`, §6.8), so iOS keeps delivering interruptions and
+    /// media-services resets to an idle ReVox; with nothing running they must not start the engine — a
+    /// `.playAndRecord` engine pulling its input lights the microphone indicator with no run in progress — nor
+    /// tell the Live screen that a translation was paused or that audio restarted.
+    private(set) var engineRequested = false
     private static let logger = Logger(subsystem: "revox", category: "session")
     private static let duckingLogger = Logger(subsystem: "revox", category: "ducking")
 
@@ -124,6 +130,7 @@ actor AudioSessionController: Ducker {
         guard let engine else { throw AudioSessionError.notConfigured }
         engine.prepare()
         try engine.start()
+        engineRequested = true
         guardedPlay()
     }
 
@@ -135,6 +142,7 @@ actor AudioSessionController: Ducker {
     }
 
     func stopEngine() {
+        engineRequested = false
         engine?.stop()
     }
 
@@ -143,6 +151,7 @@ actor AudioSessionController: Ducker {
     }
 
     private func tearDownEngine() {
+        engineRequested = false
         engine?.stop()
         engine = nil
     }
@@ -152,8 +161,10 @@ actor AudioSessionController: Ducker {
     func handle(_ event: InterruptionEvent) {
         switch event {
         case .began:
+            guard engineRequested else { return }             // nothing runs: nothing was paused
             eventContinuation.yield(.pausedByIOS)
         case .ended(let shouldResume):
+            guard engineRequested else { return }             // nothing runs: nothing to bring back
             Self.logger.info("interruption ended shouldResume=\(shouldResume, privacy: .public)")
             do {
                 try session.setActive(true, options: [])
@@ -168,6 +179,7 @@ actor AudioSessionController: Ducker {
             Self.duckingLogger.info("route change reason=\(reason.rawValue, privacy: .public)")
             eventContinuation.yield(.routeChanged(reason))
         case .mediaServicesReset:
+            let wasRequested = engineRequested                // read before the teardown clears it
             tearDownEngine()
             engine = session.makeEngine()
             do {
@@ -176,11 +188,15 @@ actor AudioSessionController: Ducker {
                     try session.setActive(true, options: [])
                     clearDucking()
                 }
-                try startEngine()
+                if wasRequested {
+                    try startEngine()
+                }
             } catch {
                 Self.logger.error("rebuild after media services reset failed: \(String(describing: error), privacy: .public)")
             }
-            eventContinuation.yield(.audioRestarted)
+            if wasRequested {
+                eventContinuation.yield(.audioRestarted)
+            }
         }
     }
 
