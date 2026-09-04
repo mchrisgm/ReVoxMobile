@@ -113,7 +113,8 @@ final class TranslationStageTests: XCTestCase {
                                      transcriber: transcriber, secondary: secondary,
                                      ignoredLanguage: "en", twoWay: true, targetLanguage: "es")
         let routed = try await stage.route(audio)
-        XCTAssertEqual(routed?.translation, Translation(english: "Buenos días.", language: "en", spokenLanguage: "es"))
+        XCTAssertEqual(routed?.translation, Translation(english: "Buenos días.", language: "es", spokenLanguage: "es"),
+                       "the row is tagged with the language it is written in, so the transcript reads as the conversation did")
         XCTAssertEqual(routed?.route, .toTarget("es"))
         XCTAssertEqual(routed?.isSpoken, true)
         let transcribed = await transcriber.calls

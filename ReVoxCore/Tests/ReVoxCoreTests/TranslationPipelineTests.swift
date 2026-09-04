@@ -528,6 +528,7 @@ final class TranslationPipelineTests: XCTestCase {
                        "the reply is spoken in the target language, not in English")
         let entries = await h.transcript.entries
         XCTAssertEqual(entries.first?.english, "Buenos días.")
+        XCTAssertEqual(entries.first?.language, "fr", "tagged with the language the row is written in")
         await h.pipeline.stop()
     }
 

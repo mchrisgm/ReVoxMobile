@@ -147,7 +147,9 @@ public struct TranslationStage: Sendable {
         }
         let cleaned = SpokenText.clean(translated)
         guard !cleaned.isEmpty else { return nil }
-        return RoutedTranslation(translation: Translation(english: cleaned, language: language, spokenLanguage: targetLanguage),
+        // Tagged with the language the text is written in, not the one it came from: a transcript reader — and the
+        // export — sees "[fr] Bonjour", which is what was said to the other person. `route` keeps the direction.
+        return RoutedTranslation(translation: Translation(english: cleaned, language: targetLanguage, spokenLanguage: targetLanguage),
                                  route: .toTarget(targetLanguage), isSpoken: true)
     }
 

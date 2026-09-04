@@ -1,8 +1,60 @@
 # ReVox Mobile
 
-ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox). It listens to audio (the microphone, or other apps through a screen-broadcast extension), detects phrases with Silero VAD, translates them to English on-device with Whisper via WhisperKit, speaks the English with Kyutai pocket-tts (using the system voice until the pocket-tts voice is downloaded), and keeps a transcript of everything it heard. After the one-time model download it works fully offline: no audio, text or usage data ever leaves the phone.
+ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox). It listens to audio — the microphone, or other apps through a screen-broadcast extension — cuts it into phrases with Silero VAD, translates each phrase to English on-device with Whisper via WhisperKit, speaks the English aloud, and keeps a searchable transcript of everything it heard. After the one-time model download it works fully offline: no audio, text or usage data ever leaves the phone.
+
+|  |  |  |  |
+|---|---|---|---|
+| ![The Live screen, ready to start](docs/screenshots/live-idle.png) | ![The Live screen translating](docs/screenshots/live-running.png) | ![The Models screen](docs/screenshots/models.png) | ![The Settings screen](docs/screenshots/settings.png) |
+| Live, ready | Live, translating | Models | Settings |
+
+<sub>The screenshots are rendered from the real screens by CI (`ScreenshotTests`), so they cannot drift from the app.</sub>
+
+## Using ReVox
+
+### First run
+
+1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model.
+2. Keep ReVox open while the download runs — iOS stops the transfer when the app is suspended. A paused row resumes when you come back.
+3. Optionally go to **Settings › Voices** and download a pocket-tts voice (*alba*, *azelma*, *cosette* or *javert*). Until you do, ReVox speaks with the iPhone's own voice, which needs no download.
+
+### Translating
+
+1. On the **Live** tab, choose what to listen to:
+   - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
+   - **Other apps** — a call, a video, anything playing on the iPhone. Tap **Start**, then start the broadcast from the picker ReVox shows (or from Control Center's **Screen Recording** control) and choose ReVox. Pressing the side button ends the broadcast.
+2. Tap **Start**. The button shows a spinner and the model's own progress while it loads — the first load of a model takes a few seconds — then turns into a red **Stop**.
+3. Speak, or start playing. Each finished phrase appears in the transcript with its detected language and its English translation, and is spoken aloud.
+4. Tap **Stop** when you are done. The session is saved to **History**.
+
+The source and the two-way controls are locked while a session runs: ReVox reads them once, at Start. Stop and start again to change them.
+
+### Two-way conversation
+
+By default ReVox translates everything it hears into English, including you. In a real conversation that is usually not what you want: your own language should be left alone, and what you say should be spoken back to the other person in *their* language.
+
+1. In **Settings › Skip a language**, choose the language ReVox should leave alone — normally your own. From then on ReVox neither translates nor transcribes it, and **Source language** must stay on **Auto-detect** for it to work (a pinned language is never detected).
+2. On the **Live** tab, turn on **Two-way**. Two pickers appear: **Don't translate** (the same setting, so you can change it mid-conversation) and **Reply in**.
+3. Choose the other person's language under **Reply in**. Now both directions are live: their language is translated to English and spoken to you, and yours is transcribed and spoken back to them in the language you chose. Both sides appear in the transcript.
+
+Two things to know about the reply direction:
+
+- Whisper translates *into English only*, so the reply is produced by iOS's own on-device translator. That needs **iOS 18 or later**; on iOS 17, and on any language pair iOS cannot translate, the phrase is still transcribed — it is simply not spoken, and ReVox says so on the screen rather than falling silent without explanation.
+- The reply is spoken by an iOS voice for that language (pocket-tts speaks English only). If your iPhone has no voice for the language you picked, ReVox tells you while you are picking it; add one in **iOS Settings › Accessibility › Spoken Content › Voices**.
+
+### While translating
+
+- **Mute** the voice with the speaker button in the navigation bar; the transcript keeps running.
+- **Ducking** lowers other apps' audio while ReVox speaks. Turn it off in Settings; the change applies at the next Start.
+- **Voice volume** in Settings sets how loud ReVox's own voice is.
+- **Latency mode** trades responsiveness for context: *Balanced* (500 ms of silence ends a phrase, 10 s maximum) or *Fast* (300 ms, 4 s).
+- If phrases arrive faster than they can be translated, ReVox keeps the newest three, shows **Falling behind** and marks the gap in the transcript.
+
+### Afterwards
+
+The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Sessions older than 30 days are pruned automatically.
 
 ## Status
+
 
 | # | Milestone | Status |
 |---|-----------|--------|
@@ -13,9 +65,10 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 | 4 | pocket-tts, voices, ducking | Done |
 | 5 | Other-apps capture via the broadcast extension | Done |
 | 6 | History, export, About screen, HIG polish | Done |
-| 7 | Hardening | **Current** |
+| 7 | Hardening: storage accounting, recovery, thermal and memory pressure | Done |
+| 8 | Two-way conversation, the skipped language, Live screen polish, screenshots | **Current** |
 
-Milestone 7 is the hardening pass: storage accounting, deletion only while idle, recovery from a model that will not load, and thermal and memory pressure handling.
+Milestone 8 adds the language ReVox leaves alone and the second direction that answers it, and reworks the Live screen: a source card that says what each source listens to, the two-way controls beside it, and a Start button that shows the model loading instead of going grey and silent.
 
 ## Requirements
 
@@ -77,7 +130,8 @@ These are iOS rules, not bugs, and they make the iPhone app behave differently f
 3. **Extension memory.** The broadcast extension has a 50 MB cap; it only forwards audio, and every model runs in the app. A Control Center broadcast started while ReVox is closed is buffered for at most 60 s.
 4. **Background.** Translation continues under the `audio` background mode while the audio session and engine run; the app must be started from the foreground first. iOS may still suspend the app under memory pressure, in which case the transcript shows a gap. The audio session and engine configuration that keeps a session alive in the background was measured and is recorded in [docs/broadcast-bridge.md](docs/broadcast-bridge.md).
 5. **Self-capture.** In broadcast mode the extension also hears ReVox's English voice; the timing gate drops audio while ReVox speaks and for 300 ms after, so speech that overlaps ReVox's voice is not translated.
-6. **Heat and battery.** Every model can be downloaded on every supported iPhone. ReVox recommends small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
+6. **The second direction.** Whisper's translate task produces English and nothing else, so translating *out of* English — the reply half of a two-way conversation — uses Apple's on-device `Translation` framework, which is iOS 18 and later. On iOS 17, and for any pair iOS has no model for, the phrase is transcribed in the language it was spoken in and not spoken back; the Live screen says which. Replies are spoken by an iOS voice for the target language, because pocket-tts speaks English only.
+7. **Heat and battery.** Every model can be downloaded on every supported iPhone. ReVox recommends small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
 
 ## How ReVox handles failure
 
@@ -107,7 +161,7 @@ Every session is stored on the iPhone (SwiftData, in the app's own container, ne
 
 ## Delivery
 
-- **CI on every push:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `swift test` for `ReVoxCore` in a Linux container (job `core-linux`) and builds and tests the app and the extension on an iPhone simulator with Xcode 26 (job `ios-simulator`).
+- **CI on every push:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `swift test` for `ReVoxCore` in a Linux container (job `core-linux`) and builds and tests the app and the extension on an iPhone simulator with Xcode 26 (job `ios-simulator`). The simulator job also renders this README's screenshots from the real screens and uploads them as an artifact; `scripts/ci/collect-screenshots.sh` copies them out of the simulator's app container.
 - **TestFlight on demand:** [`.github/workflows/testflight.yml`](.github/workflows/testflight.yml) runs the tests, archives, exports and uploads the build to App Store Connect (jobs `preflight` and `upload`). It is started by hand (`workflow_dispatch`) or by pushing a `v*` tag: a macOS runner bills at ten times the minute rate, so a release is a decision rather than a side effect of every merge. Until the Apple secrets are configured the upload is skipped with a notice and the workflow stays green.
 - [docs/release.md](docs/release.md): one-time Apple setup, GitHub secrets, signing paths and troubleshooting for the repository owner.
 - [docs/testing.md](docs/testing.md): how to install and try the app through TestFlight, for testers.
