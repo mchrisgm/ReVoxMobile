@@ -48,6 +48,7 @@ jobs:
         run: |
           python3 scripts/dev/check-core-imports.py --all
           python3 scripts/dev/check-test-autoclosures.py
+          python3 scripts/dev/check-tests-are-discoverable.py
       - name: Verify docs/broadcast-bridge.md against RingHeader.Offset
         run: python3 scripts/ci/check-broadcast-bridge-doc.py
       - name: Verify Info.plists and privacy manifests

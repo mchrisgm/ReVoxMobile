@@ -167,69 +167,6 @@ final class MicrophoneCaptureTests: XCTestCase {
         await capture.stop()
         engine.stop()   // give the real engine's CoreAudio resources back; see AudioPlayerTests for what leaks cost
     }
-}
-
-/// A `TapSeam` whose input can be switched off, so the `.noInput` rebuild branch runs without hardware.
-final class TapProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private let format: AVAudioFormat
-    private var available = true
-    private var formats = 0
-    private var installs = 0
-    private var removals = 0
-    private var calls: [String] = []
-
-    init(format: AVAudioFormat) {
-        self.format = format
-    }
-
-    var inputAvailable: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return available }
-        set { lock.lock(); available = newValue; lock.unlock() }
-    }
-
-    var formatCalls: Int { lock.lock(); defer { lock.unlock() }; return formats }
-    var installCount: Int { lock.lock(); defer { lock.unlock() }; return installs }
-    var removeCount: Int { lock.lock(); defer { lock.unlock() }; return removals }
-    /// "install" / "remove" in the order AVFAudio saw them, so a second install with no remove between is visible.
-    var operations: [String] { lock.lock(); defer { lock.unlock() }; return calls }
-
-    /// True when the recorded order ever installs twice with no remove in between — the state in which the real
-    /// `installTapOnBus` raises an NSException, which is uncatchable and therefore a crash.
-    var installedOverALiveTap: Bool {
-        var live = false
-        for call in operations {
-            if call == "install" {
-                if live { return true }
-                live = true
-            } else {
-                live = false
-            }
-        }
-        return false
-    }
-
-    func seam() -> TapSeam {
-        TapSeam(
-            inputFormat: { [self] _ in
-                lock.lock()
-                formats += 1
-                let ok = available
-                lock.unlock()
-                return ok ? format : nil
-            },
-            install: { [self] _, _, _, _ in lock.lock(); installs += 1; calls.append("install"); lock.unlock() },
-            remove: { [self] _ in lock.lock(); removals += 1; calls.append("remove"); lock.unlock() }
-        )
-    }
-}
-
-/// Lock-guarded recorder for the capture status line, which is published from the rebuild queue.
-final class StatusRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [String?] = []
-    func record(_ status: String?) { lock.lock(); values.append(status); lock.unlock() }
-    var all: [String?] { lock.lock(); defer { lock.unlock() }; return values }
 
     // MARK: TestFlight build 15 crash — `installTapOnBus` raising NSException on a route change
 
@@ -312,3 +249,68 @@ final class StatusRecorder: @unchecked Sendable {
         XCTAssertFalse(probe.installedOverALiveTap)
     }
 }
+
+
+/// A `TapSeam` whose input can be switched off, so the `.noInput` rebuild branch runs without hardware.
+final class TapProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let format: AVAudioFormat
+    private var available = true
+    private var formats = 0
+    private var installs = 0
+    private var removals = 0
+    private var calls: [String] = []
+
+    init(format: AVAudioFormat) {
+        self.format = format
+    }
+
+    var inputAvailable: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return available }
+        set { lock.lock(); available = newValue; lock.unlock() }
+    }
+
+    var formatCalls: Int { lock.lock(); defer { lock.unlock() }; return formats }
+    var installCount: Int { lock.lock(); defer { lock.unlock() }; return installs }
+    var removeCount: Int { lock.lock(); defer { lock.unlock() }; return removals }
+    /// "install" / "remove" in the order AVFAudio saw them, so a second install with no remove between is visible.
+    var operations: [String] { lock.lock(); defer { lock.unlock() }; return calls }
+
+    /// True when the recorded order ever installs twice with no remove in between — the state in which the real
+    /// `installTapOnBus` raises an NSException, which is uncatchable and therefore a crash.
+    var installedOverALiveTap: Bool {
+        var live = false
+        for call in operations {
+            if call == "install" {
+                if live { return true }
+                live = true
+            } else {
+                live = false
+            }
+        }
+        return false
+    }
+
+    func seam() -> TapSeam {
+        TapSeam(
+            inputFormat: { [self] _ in
+                lock.lock()
+                formats += 1
+                let ok = available
+                lock.unlock()
+                return ok ? format : nil
+            },
+            install: { [self] _, _, _, _ in lock.lock(); installs += 1; calls.append("install"); lock.unlock() },
+            remove: { [self] _ in lock.lock(); removals += 1; calls.append("remove"); lock.unlock() }
+        )
+    }
+}
+
+/// Lock-guarded recorder for the capture status line, which is published from the rebuild queue.
+final class StatusRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String?] = []
+    func record(_ status: String?) { lock.lock(); values.append(status); lock.unlock() }
+    var all: [String?] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
