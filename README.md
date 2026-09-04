@@ -117,7 +117,7 @@ The first launch opens a short interactive tutorial: seven pages that show a dem
 <details>
 <summary><strong>Translating</strong></summary>
 
-The Live screen keeps its controls to two rows of pills above the transcript — source, latency, ducking, Learning, Two-way and volume — and an ⓘ button that unfolds what each one does, so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
+The Live screen keeps its controls to two rows of pills above the transcript — source, latency, ducking, Learning, Two-way and volume, with a third row for the two-way languages — and an ⓘ button that unfolds what each one does, so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
 
 1. On the **Live** tab, choose what to listen to:
    - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
