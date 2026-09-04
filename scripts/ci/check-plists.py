@@ -26,6 +26,8 @@ EXT_REASONS = {
     "NSPrivacyAccessedAPICategoryUserDefaults": {"1C8F.1"},
     "NSPrivacyAccessedAPICategoryFileTimestamp": {"C617.1"},
 }
+# §7.4 / §11: the extension checks no free space and uses no UserDefaults.standard, so it declares neither.
+EXT_FORBIDDEN_CATEGORIES = {"NSPrivacyAccessedAPICategoryDiskSpace", "NSPrivacyAccessedAPICategorySystemBootTime"}
 FORBIDDEN_CATEGORIES = {"NSPrivacyAccessedAPICategorySystemBootTime"}
 
 
@@ -61,7 +63,8 @@ def check_extension_plist(problems):
         problems.append(f"{EXT_PLIST}: RPBroadcastProcessMode must be a direct child of NSExtension")
 
 
-def check_privacy(path, expected, problems):
+def check_privacy(path, expected, problems, forbidden=FORBIDDEN_CATEGORIES, exact=False):
+    """`exact` (the extension): the declared categories are exactly `expected`, with exactly those reasons."""
     manifest = load(path)
     if manifest.get("NSPrivacyTracking") is not False:
         problems.append(f"{path}: NSPrivacyTracking must be false")
@@ -71,11 +74,17 @@ def check_privacy(path, expected, problems):
     for entry in manifest.get("NSPrivacyAccessedAPITypes", []):
         category = entry.get("NSPrivacyAccessedAPIType")
         declared[category] = set(entry.get("NSPrivacyAccessedAPITypeReasons", []))
-    for category in FORBIDDEN_CATEGORIES & set(declared):
-        problems.append(f"{path}: {category} must not be declared (no host-time API is used, §11)")
+    for category in forbidden & set(declared):
+        problems.append(f"{path}: {category} must not be declared (§11)")
+    if exact:
+        for category in sorted(set(declared) - set(expected) - forbidden):
+            problems.append(f"{path}: {category} is declared but nothing in the target uses it (§11)")
     for category, reasons in expected.items():
-        if not reasons <= declared.get(category, set()):
-            problems.append(f"{path}: {category} must declare {sorted(reasons)}, found {sorted(declared.get(category, set()))}")
+        found = declared.get(category, set())
+        if exact and found != reasons:
+            problems.append(f"{path}: {category} must declare exactly {sorted(reasons)}, found {sorted(found)}")
+        elif not reasons <= found:
+            problems.append(f"{path}: {category} must declare {sorted(reasons)}, found {sorted(found)}")
 
 
 def check_entitlements(problems):
@@ -96,7 +105,7 @@ def main():
     check_app_plist(problems)
     check_extension_plist(problems)
     check_privacy(APP_PRIVACY, APP_REASONS, problems)
-    check_privacy(EXT_PRIVACY, EXT_REASONS, problems)
+    check_privacy(EXT_PRIVACY, EXT_REASONS, problems, forbidden=EXT_FORBIDDEN_CATEGORIES, exact=True)
     check_entitlements(problems)
     for problem in problems:
         print(f"::error::{problem}")

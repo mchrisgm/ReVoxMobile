@@ -32,6 +32,8 @@ jobs:
         run: swift test
       - name: Every ported constant is asserted
         run: bash scripts/ci/check-constant-coverage.sh
+      - name: Extension surface (design spec §7.5, §11)
+        run: bash scripts/ci/check-extension-surface.sh
 
   ios-simulator:
     name: App and extension (iOS simulator)
