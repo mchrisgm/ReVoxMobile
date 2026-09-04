@@ -58,3 +58,73 @@ final class PipelineConfigurationTests: XCTestCase {
         XCTAssertFalse(AudioClip(samples: [0], sampleRate: 24_000).isEmpty)
     }
 }
+
+final class PipelineTypesProtocolTests: XCTestCase {
+    private struct PlainSpeaker: Speaker {
+        let sampleRate = 16_000
+        func synthesize(_ text: String) async throws -> AudioClip {
+            AudioClip(samples: [Float(text.count)], sampleRate: sampleRate)
+        }
+    }
+
+    /// A `Speaker` that only implements the one-language method gets the two-way one for free.
+    func testSpeakerDefaultLanguageOverloadForwardsToThePlainOne() async throws {
+        let clip = try await PlainSpeaker().synthesize("abc", language: "fr")
+        XCTAssertEqual(clip, AudioClip(samples: [3], sampleRate: 16_000))
+    }
+
+    func testSpokenPhraseDefaultsToEnglish() {
+        XCTAssertEqual(SpokenPhrase(text: "hi"), SpokenPhrase(text: "hi", language: "en"))
+        XCTAssertNotEqual(SpokenPhrase(text: "hi"), SpokenPhrase(text: "hi", language: "fr"))
+    }
+
+    /// The synthesized `Equatable` must keep covering the M8 and M9 fields: the view model rebuilds the pipeline
+    /// when the configuration changes, and a field left out of the comparison would be a change it never sees.
+    func testConfigurationEqualityCoversTheM8AndM9Fields() {
+        let base = PipelineConfiguration(captureMode: .microphone, preset: .balanced)
+        XCTAssertEqual(base, PipelineConfiguration(captureMode: .microphone, preset: .balanced))
+        XCTAssertNil(base.ignoredLanguage)
+        XCTAssertFalse(base.twoWay)
+        XCTAssertNil(base.twoWayLanguage)
+        XCTAssertFalse(base.wantsOriginal)
+        var other = base
+        other.wantsOriginal = true
+        XCTAssertNotEqual(base, other)
+        other = base
+        other.ignoredLanguage = "es"
+        XCTAssertNotEqual(base, other)
+        other = base
+        other.twoWay = true
+        XCTAssertNotEqual(base, other)
+        other = base
+        other.twoWayLanguage = "fr"
+        XCTAssertNotEqual(base, other)
+        other = base
+        other.pinnedLanguage = "fr"
+        XCTAssertNotEqual(base, other)
+        other = base
+        other.preset = .veryFast
+        XCTAssertNotEqual(base, other)
+    }
+
+    func testDefaultDependenciesBuildARealSegmenterWithThePresetAndNoSecondDirection() {
+        let dependencies = PipelineDependencies(
+            source: FakeAudioSource(), vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: FakeTranslator(),
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in FakePlayer(onSpeaking: onSpeaking) },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() })
+        let segmenter = dependencies.segmenterFactory(EnergyVAD(), .fast) as? Segmenter
+        XCTAssertEqual(segmenter?.preset, .fast)
+        XCTAssertNil(dependencies.transcriber)
+        XCTAssertNil(dependencies.secondaryTranslator)
+        XCTAssertLessThan(abs(dependencies.clock().timeIntervalSinceNow), 5)   // the default clock is the wall clock
+    }
+
+    func testPipelineEventsCompareByPayload() {
+        XCTAssertEqual(PipelineEvent.transcriptOnly(reason: "a"), .transcriptOnly(reason: "a"))
+        XCTAssertNotEqual(PipelineEvent.transcriptOnly(reason: "a"), .transcriptOnly(reason: "b"))
+        XCTAssertNotEqual(PipelineEvent.speaking(true), .speaking(false))
+        XCTAssertEqual(PipelineState(rawValue: "error"), .error)
+    }
+}

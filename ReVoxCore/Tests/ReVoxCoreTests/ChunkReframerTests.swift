@@ -53,4 +53,26 @@ final class ChunkReframerTests: XCTestCase {
         XCTAssertEqual(chunks, [AudioChunk(samples: [1, 2, 3, 4], endPosition: 4), AudioChunk(samples: [5, 6, 7, 8], endPosition: 8)])
         XCTAssertEqual(reframer.drain(), [9])
     }
+
+    func testAnEmptyItemAtTheExpectedPositionChangesNothing() {
+        var reframer = ChunkReframer()
+        XCTAssertTrue(reframer.push([Float](repeating: 1, count: 300), endingAt: 300).isEmpty)
+        XCTAssertTrue(reframer.push([], endingAt: 300).isEmpty)
+        XCTAssertEqual(reframer.pendingCount, 300)
+        XCTAssertEqual(reframer.expectedNextPosition, 300)
+        XCTAssertTrue(reframer.push([], endingAt: 900).isEmpty)          // an empty item at a new position re-seats
+        XCTAssertEqual(reframer.pendingCount, 0)
+        XCTAssertEqual(reframer.expectedNextPosition, 900)
+    }
+
+    /// A position that goes backwards (a broadcast writer restarting at zero) is a discontinuity like any other.
+    func testABackwardsPositionReseatsLikeAnyDiscontinuity() {
+        var reframer = ChunkReframer()
+        XCTAssertTrue(reframer.push([Float](repeating: 1, count: 300), endingAt: 5_300).isEmpty)
+        let chunks = reframer.push([Float](repeating: 2, count: 512), endingAt: 512)
+        XCTAssertEqual(chunks.map(\.endPosition), [512])
+        XCTAssertTrue(chunks[0].samples.allSatisfy { $0 == 2 })
+        XCTAssertEqual(reframer.pendingCount, 0)
+        XCTAssertEqual(reframer.expectedNextPosition, 512)
+    }
 }

@@ -143,4 +143,37 @@ final class SegmenterTests: XCTestCase {
         let resets = await vad.resetCount
         XCTAssertEqual(resets, 1)
     }
+
+    func testAThrowingVADPropagatesAndLeavesNoPhraseBehind() async {
+        let segmenter = Segmenter(vad: EnergyVAD(fail: true))
+        do {
+            _ = try await segmenter.feed(speech(100))
+            XCTFail("expected the VAD's error")
+        } catch {
+            XCTAssertTrue(error is FakeTranslatorError)
+        }
+        XCTAssertNil(segmenter.flush())
+    }
+
+    func testThresholdAndPaddingAreHonoured() async throws {
+        let strict = Segmenter(vad: EnergyVAD(), speechThreshold: 1.5)      // the fake never scores above 1.0
+        let segments = try await feedAll(strict, speech(1000) + silence(700))
+        XCTAssertTrue(segments.isEmpty)
+        XCTAssertNil(strict.flush())
+        XCTAssertEqual(Segmenter(vad: EnergyVAD(), paddingMs: 0).paddingChunks, 1)        // max(1, …)
+        XCTAssertEqual(Segmenter(vad: EnergyVAD(), paddingMs: 1000).paddingChunks, 31)    // int(1.0 × 16000 / 512)
+        XCTAssertEqual(Segmenter(vad: EnergyVAD(), speechThreshold: 0.9).speechThreshold, 0.9)
+    }
+
+    /// A remainder shorter than a chunk waits for the next feed; nothing is scored until 512 samples exist.
+    func testARemainderShorterThanAChunkIsScoredWithTheNextFeed() async throws {
+        let vad = EnergyVAD()
+        let segmenter = Segmenter(vad: vad)
+        _ = try await segmenter.feed([Float](repeating: 0.5, count: 511))
+        let none = await vad.callCount
+        XCTAssertEqual(none, 0)
+        _ = try await segmenter.feed([0.5])
+        let one = await vad.callCount
+        XCTAssertEqual(one, 1)
+    }
 }

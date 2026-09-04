@@ -35,6 +35,21 @@ final class BoundedSegmentQueueTests: XCTestCase {
         XCTAssertEqual(queue.pop(), "d")
     }
 
+    /// "At most `capacity` pending elements" cannot hold for a capacity of 0 or less: the push loop stops at an
+    /// empty queue and appends anyway, so the queue held one element while reporting a capacity of zero. Windows
+    /// behaves the same for `max_pending = 0` (drop everything, then append), which is a capacity of one — so
+    /// that is what the queue reports.
+    func testACapacityBelowOneIsClampedToOneSoTheContractHolds() {
+        var queue = BoundedSegmentQueue<Int>(capacity: 0)
+        XCTAssertEqual(queue.capacity, 1)
+        XCTAssertEqual(queue.push(1), 0)
+        XCTAssertEqual(queue.push(2), 1)
+        XCTAssertEqual(queue.count, 1)
+        XCTAssertLessThanOrEqual(queue.count, queue.capacity)
+        XCTAssertEqual(queue.pop(), 2)
+        XCTAssertEqual(BoundedSegmentQueue<Int>(capacity: -3).capacity, 1)
+    }
+
     func testRemoveAllEmpties() {
         var queue = BoundedSegmentQueue<Int>()
         _ = queue.push(1)

@@ -66,4 +66,15 @@ final class TranscriptFormatterTests: XCTestCase {
         let minusFive = TranscriptFormatter(timeZone: TimeZone(secondsFromGMT: -18_000)!)
         XCTAssertEqual(minusFive.dropMarkerLine(at: start), "[17:13:20] … (skipped: falling behind)\n")
     }
+
+    func testTranscriptEntryRoundTripsThroughCodable() throws {
+        let entry = TranscriptEntry(timestamp: start, language: "es", original: "hola", english: "hello")
+        let data = try JSONEncoder().encode(entry)
+        XCTAssertEqual(try JSONDecoder().decode(TranscriptEntry.self, from: data), entry)
+    }
+
+    func testExportOfAnEmptySessionIsJustTheHeader() {
+        let formatter = TranscriptFormatter(timeZone: utc)
+        XCTAssertEqual(formatter.export(startedAt: start, items: []), formatter.header(startedAt: start))
+    }
 }

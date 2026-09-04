@@ -139,4 +139,40 @@ final class CaptureGateTests: XCTestCase {
         XCTAssertTrue(gate.allows(chunkEndingAt: 130_000))
         XCTAssertFalse(gate.allows(chunkEndingAt: 150_000))    // the second window still closes
     }
+
+    func testAZeroHoldOpensAtTheSpeakingFalseEdge() {
+        var gate = CaptureGate(holdFrames: 0)
+        gate.speakingChanged(true, atPosition: 10_000)
+        gate.speakingChanged(false, atPosition: 20_000)
+        XCTAssertFalse(gate.allows(chunkEndingAt: 19_999))
+        XCTAssertTrue(gate.allows(chunkEndingAt: 20_000))
+        XCTAssertTrue(gate.isClosed, "isClosed reflects the edges seen, not chunk positions")
+    }
+
+    /// One displaced slot by design: the window before the previous one is forgotten when a third opens. The
+    /// reader lag it covers is bounded (2 s), so a window two utterances back has always been consumed by then.
+    func testOnlyTheMostRecentlyDisplacedWindowIsRemembered() {
+        var gate = CaptureGate()
+        gate.speakingChanged(true, atPosition: 100_000)
+        gate.speakingChanged(false, atPosition: 110_000)       // first: [100 000, 114 800)
+        gate.speakingChanged(true, atPosition: 150_000)
+        gate.speakingChanged(false, atPosition: 160_000)       // second: [150 000, 164 800), first displaced
+        XCTAssertFalse(gate.allows(chunkEndingAt: 105_000))
+        gate.speakingChanged(true, atPosition: 200_000)        // third: second displaced, first forgotten
+        XCTAssertTrue(gate.allows(chunkEndingAt: 105_000))
+        XCTAssertFalse(gate.allows(chunkEndingAt: 155_000))
+        XCTAssertTrue(gate.allows(chunkEndingAt: 164_800))
+        XCTAssertFalse(gate.allows(chunkEndingAt: 200_000))
+    }
+
+    func testGatesWithTheSameHistoryAreEqual() {
+        var a = CaptureGate(holdFrames: 100, captureLatencyFrames: 5)
+        var b = CaptureGate(holdFrames: 100, captureLatencyFrames: 5)
+        XCTAssertEqual(a, b)
+        a.speakingChanged(true, atPosition: 1)
+        XCTAssertNotEqual(a, b)
+        b.speakingChanged(true, atPosition: 1)
+        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, CaptureGate(holdFrames: 101, captureLatencyFrames: 5))
+    }
 }

@@ -53,9 +53,11 @@ public final class RingReader {
     }
 
     /// Decides live/stale/idle from state, generation and heartbeat; positions readCursor = max(stored, writeCursor − catchUp).
-    /// A stored record from another generation is ignored (the header is trusted).
+    /// A stored record from another generation is ignored (the header is trusted). A negative `catchUp` reads as
+    /// zero (attach at the writer): `UInt64(_:)` traps below zero, and nothing else it could mean.
     public func attach(now: Double, storedReadCursor: UInt64?, storedGeneration: UInt64?,
                        catchUp: Int = RingReader.defaultCatchUpFrames) -> AttachState {
+        let catchUp = max(0, catchUp)
         self.catchUp = catchUp
         guard let header else { return .noRing }
         switch header.state {

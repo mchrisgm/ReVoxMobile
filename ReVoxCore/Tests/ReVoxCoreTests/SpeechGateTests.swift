@@ -79,4 +79,57 @@ final class SpeechGateTests: XCTestCase {
     func testEmptyAfterSegmentGatesIsDropped() {
         XCTAssertNil(SpeechGate.evaluate(candidate([segment("   ", logProb: -0.3), segment("gone", logProb: -3)])))
     }
+
+    /// Windows evaluates `probability < 0.4 → drop`, which a NaN passes; here `probability >= 0.4 → keep`, which a
+    /// NaN fails. The deliberate side: a detector that cannot score the language should not have its phrase
+    /// translated. The app never produces one anyway (`WhisperKitTranslator.probability(fromLogProbability:)`
+    /// clamps to [0, 1]), so this pins the deviation rather than a live path.
+    func testANaNLanguageProbabilityIsDropped() {
+        XCTAssertFalse(SpeechGate.languagePasses(probability: .nan))
+        XCTAssertNil(SpeechGate.evaluate(candidate([segment("text")], probability: .nan)))
+    }
+
+    /// `strip` only touches the ends: inner punctuation, accents and combining marks survive.
+    func testNormalizeStripsOnlyTheEnds() {
+        XCTAssertEqual(SpeechGate.normalize("¿¡Hola!?"), "hola")
+        XCTAssertEqual(SpeechGate.normalize("a.b"), "a.b")
+        XCTAssertEqual(SpeechGate.normalize("e\u{301}."), "e\u{301}")
+        XCTAssertEqual(SpeechGate.normalize("  You  "), "you")
+        XCTAssertEqual(SpeechGate.normalize("!!!"), "")
+        XCTAssertEqual(SpeechGate.normalize("Straße"), "straße")
+    }
+
+    func testSegmentsAreStrippedBeforeTheyAreJoined() {
+        let result = SpeechGate.evaluate(candidate([segment("\n Uno "), segment("\tdos\r\n"), segment("   ")]))
+        XCTAssertEqual(result?.english, "Uno dos")
+    }
+}
+
+/// `Translation` is stored by the app (SwiftData rows and the export); records written before M8 have no
+/// `spokenLanguage` and before M9 no `original`, and both must still decode.
+final class TranslationCodableTests: XCTestCase {
+    func testRecordsWrittenBeforeM8AndM9Decode() throws {
+        let decoder = JSONDecoder()
+        let preM8 = try decoder.decode(Translation.self, from: Data(#"{"english":"hello","language":"es"}"#.utf8))
+        XCTAssertEqual(preM8, Translation(english: "hello", language: "es", spokenLanguage: "en", original: ""))
+        let preM9 = try decoder.decode(Translation.self, from: Data(#"{"english":"hola","language":"en","spokenLanguage":"es"}"#.utf8))
+        XCTAssertEqual(preM9, Translation(english: "hola", language: "en", spokenLanguage: "es", original: ""))
+        let nulls = try decoder.decode(Translation.self, from: Data(#"{"english":"x","language":"fr","spokenLanguage":null,"original":null}"#.utf8))
+        XCTAssertEqual(nulls.spokenLanguage, "en")
+        XCTAssertEqual(nulls.original, "")
+    }
+
+    func testRoundTripKeepsEveryField() throws {
+        let translation = Translation(english: "Bonjour.", language: "fr", spokenLanguage: "fr", original: "Good morning.")
+        let data = try JSONEncoder().encode(translation)
+        XCTAssertEqual(try JSONDecoder().decode(Translation.self, from: data), translation)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["english", "language", "spokenLanguage", "original"])
+    }
+
+    func testAMissingRequiredKeyThrows() {
+        XCTAssertThrowsError(try JSONDecoder().decode(Translation.self, from: Data(#"{"language":"es"}"#.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(Translation.self, from: Data(#"{"english":"x"}"#.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(Translation.self, from: Data(#"{"english":1,"language":"es"}"#.utf8)))
+    }
 }

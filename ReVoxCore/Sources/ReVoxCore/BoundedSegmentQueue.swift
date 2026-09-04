@@ -7,8 +7,10 @@ public struct BoundedSegmentQueue<Element: Sendable>: Sendable {
     public let capacity: Int
     private var elements: [Element] = []
 
+    /// A capacity below one is one: the push loop drops everything and then appends, which is what Windows does for
+    /// `max_pending = 0` too — so that is the capacity the queue reports, and "at most `capacity` pending" holds.
     public init(capacity: Int = 3) {
-        self.capacity = capacity
+        self.capacity = max(1, capacity)
     }
 
     /// Drops the oldest elements until count < capacity, then appends. Returns the number dropped.

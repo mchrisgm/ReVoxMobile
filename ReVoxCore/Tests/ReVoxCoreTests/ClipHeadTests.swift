@@ -60,4 +60,17 @@ final class ClipHeadTests: XCTestCase {
         XCTAssertEqual(ClipHead.onsetRatio, 0.05)
         XCTAssertEqual(ClipHead.leadMilliseconds, 10)
     }
+
+    /// A sample rate of zero (an engine that reported nothing) or below must degrade, never trap or hang.
+    func testAZeroOrNegativeSampleRateDoesNotTrap() {
+        let clip = tone(50)
+        for badRate in [0, -24_000] {
+            let out = ClipHead.conditioned(clip, sampleRate: badRate)
+            XCTAssertLessThanOrEqual(out.count, clip.count, "\(badRate)")
+            XCTAssertFalse(out.isEmpty, "\(badRate)")
+            if let onset = ClipHead.onset(of: clip, sampleRate: badRate) {
+                XCTAssertTrue((0 ..< clip.count).contains(onset), "\(badRate)")
+            }
+        }
+    }
 }

@@ -146,27 +146,40 @@ public struct TranslationStage: Sendable {
             return RoutedTranslation(translation: translation, route: .toEnglish, isSpoken: true)
         }
 
-        let source = transcriber ?? TranslateTaskTranscriber(translator: translator)
+        // Without a transcribe seam Whisper's translate task stands in, and its output is English whatever was
+        // spoken: the secondary engine must be told so (one that trusts the source code would translate English as
+        // if it were `language`), a transcript-only row is tagged with the English it holds, and Learning mode gets
+        // no original from it — the words as spoken were never decoded.
+        let source: any Transcriber
+        let transcribedLanguage: String
+        if let transcriber {
+            source = transcriber
+            transcribedLanguage = language
+        } else {
+            source = TranslateTaskTranscriber(translator: translator)
+            transcribedLanguage = "en"
+        }
         var candidate = try await source.transcribe(audio, language: language)
         candidate.languageProbability = probability
         guard let spoken = SpeechGate.evaluate(candidate) else { return nil }
 
+        let transcribedOnly = Translation(english: spoken.english, language: transcribedLanguage, spokenLanguage: transcribedLanguage)
         guard let secondary else {
-            return RoutedTranslation(translation: Translation(english: spoken.english, language: language, spokenLanguage: language),
-                                     route: .transcribedOnly(reason: Self.noEngineReason), isSpoken: false)
+            return RoutedTranslation(translation: transcribedOnly, route: .transcribedOnly(reason: Self.noEngineReason), isSpoken: false)
         }
-        guard let translated = try await secondary.translate(spoken.english, from: language, to: targetLanguage) else {
-            return RoutedTranslation(translation: Translation(english: spoken.english, language: language, spokenLanguage: language),
-                                     route: .transcribedOnly(reason: Self.unavailablePairReason(from: language, to: targetLanguage)),
+        guard let translated = try await secondary.translate(spoken.english, from: transcribedLanguage, to: targetLanguage) else {
+            return RoutedTranslation(translation: transcribedOnly,
+                                     route: .transcribedOnly(reason: Self.unavailablePairReason(from: transcribedLanguage, to: targetLanguage)),
                                      isSpoken: false)
         }
         let cleaned = SpokenText.clean(translated)
         guard !cleaned.isEmpty else { return nil }
         // Tagged with the language the text is written in, not the one it came from: a transcript reader — and the
         // export — sees "[fr] Bonjour", which is what was said to the other person. `route` keeps the direction.
-        // The words as spoken were transcribed anyway, so Learning mode gets them for free here.
+        // With a real transcriber the words as spoken were decoded anyway, so Learning mode gets them for free here.
+        let original = wantsOriginal && transcriber != nil ? spoken.english : ""
         return RoutedTranslation(translation: Translation(english: cleaned, language: targetLanguage, spokenLanguage: targetLanguage,
-                                                          original: wantsOriginal ? spoken.english : ""),
+                                                          original: original),
                                  route: .toTarget(targetLanguage), isSpoken: true)
     }
 
