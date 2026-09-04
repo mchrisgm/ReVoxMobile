@@ -87,7 +87,9 @@ struct LiveView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Model \(model.modelStatusText). \(model.voiceStatusText).\(model.isFallingBehind ? " Falling behind." : "")\(model.duckingStatusText.map { " \($0)." } ?? "")\(model.sessionStatus.map { " \($0)." } ?? "")\(model.broadcastStatusText.map { " \($0)." } ?? "")")
+        .accessibilityLabel(LiveStatusAccessibility.label(modelStatus: model.modelStatusText, voiceStatus: model.voiceStatusText,
+                                                          isFallingBehind: model.isFallingBehind, duckingStatus: model.duckingStatusText,
+                                                          sessionStatus: model.sessionStatus, broadcastStatus: model.broadcastStatusText))
         .accessibilityAddTraits(.updatesFrequently)
     }
 
@@ -132,6 +134,8 @@ struct LiveView: View {
         .padding()
         .background(Color.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(text)
     }
 
     @ViewBuilder

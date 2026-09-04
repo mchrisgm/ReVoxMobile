@@ -220,4 +220,9 @@ final class ScreenHostingTests: XCTestCase {
     func testAboutViewHosts() {
         host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
     }
+
+    func testBroadcastPickerButtonHosts() {
+        host(BroadcastPickerButton(preferredExtension: "com.example.revox.Broadcast")
+            .frame(width: BroadcastPickerButton.size, height: BroadcastPickerButton.size))
+    }
 }

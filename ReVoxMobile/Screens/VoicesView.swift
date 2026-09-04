@@ -165,12 +165,14 @@ private struct PocketTTSDownloadRow: View {
         case .listing, .downloading, .compiling, .verifying:
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: state.fraction ?? 0)
+                    .accessibilityValue(LiveStatusAccessibility.percentText(state.fraction))
                 HStack {
                     Text(ModelsViewModel.phaseText(state.phase)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Cancel", role: .cancel, action: onCancel).font(.caption)
                 }
             }
+            .accessibilityAddTraits(.updatesFrequently)
         case .paused:
             HStack {
                 Text("Paused").font(.caption).foregroundStyle(.secondary)

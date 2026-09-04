@@ -44,12 +44,14 @@ struct ModelRowView: View {
         case .listing, .downloading, .compiling, .verifying:
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: row.state.fraction ?? 0)
+                    .accessibilityValue(LiveStatusAccessibility.percentText(row.state.fraction))
                 HStack {
                     Text(ModelsViewModel.phaseText(row.state.phase)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Cancel", role: .cancel, action: onCancel).font(.caption)
                 }
             }
+            .accessibilityAddTraits(.updatesFrequently)
         case .paused:
             HStack {
                 Text("Paused").font(.caption).foregroundStyle(.secondary)
