@@ -80,4 +80,52 @@ final class LiveControlsTests: XCTestCase {
         XCTAssertEqual(HistoryView.mergeButtonTitle(count: 3), "Merge (3)")
         XCTAssertEqual(HistoryView.deleteButtonTitle(count: 2), "Delete (2)")
     }
+
+    // MARK: M10 — the control strip
+
+    /// The pipeline reads source, latency, ducking, Learning and two-way once at Start, so the strip locks them
+    /// from the moment the model starts loading, not only once audio flows.
+    func testTheStripLocksTheStartTimeControlsWhilePreparingAndRunning() {
+        XCTAssertFalse(LiveControlStrip.locksControls(in: .idle))
+        XCTAssertFalse(LiveControlStrip.locksControls(in: .error))
+        XCTAssertTrue(LiveControlStrip.locksControls(in: .preparing))
+        XCTAssertTrue(LiveControlStrip.locksControls(in: .running))
+        XCTAssertEqual(LiveControlStrip.lockedText, "Stop to change", "one shared hint, not a caption per control")
+        XCTAssertNotEqual(LiveControlStrip.lockedText, LiveView.lockedWhileRunningText, "the M8 copy is still what VoiceOver hears")
+    }
+
+    func testEachPillSaysItsValueInAFewCharacters() {
+        XCTAssertEqual(LiveControlStrip.sourcePillTitle(for: .microphone), "Mic")
+        XCTAssertEqual(LiveControlStrip.sourcePillTitle(for: .broadcast), LiveView.title(for: .broadcast))
+        XCTAssertEqual(LiveControlStrip.togglePillTitle(LiveControlStrip.duckingPillName, isOn: true), "Duck on")
+        XCTAssertEqual(LiveControlStrip.togglePillTitle(LiveControlStrip.learningPillName, isOn: false), "Learn off")
+        XCTAssertEqual(LiveControlStrip.togglePillTitle(LiveControlStrip.twoWayPillName, isOn: true), "Two-way on")
+        XCTAssertEqual(LiveControlStrip.moreTitle(expanded: false), "More")
+        XCTAssertEqual(LiveControlStrip.moreTitle(expanded: true), "Less")
+        for preset in SegmenterPreset.allCases {
+            XCTAssertFalse(LiveControlStrip.latencySymbol(for: preset).isEmpty)
+            XCTAssertTrue(LiveControlStrip.latencyDetailText(for: preset).hasPrefix(SettingsView.title(for: preset)))
+            XCTAssertTrue(LiveControlStrip.latencyDetailText(for: preset).hasSuffix(SettingsViewModel.presetDescription(preset)))
+        }
+        XCTAssertEqual(Set(SegmenterPreset.allCases.map(LiveControlStrip.latencySymbol(for:))).count, 3, "each preset has its own gauge")
+    }
+
+    func testTheVolumePillRoundsToWholePercentAndSpeaksTheWord() {
+        XCTAssertEqual(LiveControlStrip.volumePillText(0.8), "80%")
+        XCTAssertEqual(LiveControlStrip.volumePillText(0.804), "80%")
+        XCTAssertEqual(LiveControlStrip.volumePercentText(0.35), "35 percent")
+        XCTAssertEqual(LiveControlStrip.volumePercent(4), 100, "clamped like the setter")
+        XCTAssertEqual(LiveControlStrip.volumePercent(-1), 0)
+        XCTAssertEqual(LiveControlStrip.volumeSymbol(for: 0), "speaker.slash")
+        XCTAssertEqual(LiveControlStrip.volumeSymbol(for: 0.2), "speaker.wave.1")
+        XCTAssertEqual(LiveControlStrip.volumeSymbol(for: 0.5), "speaker.wave.2")
+        XCTAssertEqual(LiveControlStrip.volumeSymbol(for: 1), "speaker.wave.3")
+    }
+
+    /// "Ducking off" is the strip's pill now; the status line's badge is for the moment other audio is lowered.
+    func testTheStatusLineShowsDuckingOnlyWhileDucked() {
+        XCTAssertNil(LiveView.duckingBadge(isDucked: false, status: LiveViewModel.duckingOffText))
+        XCTAssertNil(LiveView.duckingBadge(isDucked: false, status: nil))
+        XCTAssertEqual(LiveView.duckingBadge(isDucked: true, status: LiveViewModel.duckingText), LiveViewModel.duckingText)
+    }
 }

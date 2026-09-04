@@ -122,7 +122,7 @@ final class ScreenHostingTests: XCTestCase {
         await waitUntil { broadcast.rows.count == 1 }
         XCTAssertFalse(broadcast.showsBroadcastPicker)
         host(NavigationStack { LiveView(model: broadcast, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // attached, joined row
-        // M8, §8.2: the two-way card expanded, and the button's preparing state with its spinner and progress line.
+        // M8, §8.2: two-way on, which (M10) adds the language row under the strip.
         let twoWay = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
                                    supplier: { _, _ in FakeLivePipeline() })
         twoWay.ignoredLanguage = "en"
@@ -133,6 +133,24 @@ final class ScreenHostingTests: XCTestCase {
         twoWay.handle(.transcriptOnly(reason: TranslationStage.noEngineReason))
         host(NavigationStack { LiveView(model: twoWay, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })
         XCTAssertEqual(twoWay.transcriptOnlyNote, TranslationStage.noEngineReason)
+        // M10: the strip's own states, which `LiveView` keeps in `@State` — the volume slider unfolded, the details
+        // panel expanded (with and without two-way, and with a reply language this iPhone has no voice for), the
+        // locked row while running, and the third latency preset's gauge.
+        twoWay.twoWayLanguage = "zz"
+        XCTAssertNotNil(twoWay.twoWayVoiceNote)
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(true), isMoreExpanded: .constant(true)))
+        host(LiveDetailsPanel(model: twoWay))
+        twoWay.isTwoWay = false
+        twoWay.latencyMode = .veryFast
+        twoWay.ducking = false
+        twoWay.isLearning = true
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(false)))
+        host(LiveDetailsPanel(model: twoWay))
+        host(LiveControlStrip(model: live, showsVolumeSlider: .constant(true), isMoreExpanded: .constant(false)))   // `live` ended in .error; the strip is unlocked
+        host(LiveControlStrip(model: broadcast, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(false)))   // running: dimmed pills behind the lock
+        XCTAssertTrue(LiveControlStrip.locksControls(in: broadcast.state))
+        host(LiveControlPill(systemImage: "mic", title: "Mic"))
+        host(LiveControlPill(systemImage: "speaker.wave.2", title: "Volume", value: "80%", isOn: true).disabled(true))
 
         XCTAssertEqual(LiveView.availableSources, [.microphone, .broadcast])
         XCTAssertEqual(BroadcastPickerButton.size, 50)
