@@ -138,4 +138,32 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(Romanizer.romanize(SettingExamples.japaneseOriginal), "ohayou",
                        "the example is kana on purpose: ICU reads kanji by their Chinese readings")
     }
+
+    /// M10: the skip example must say what actually happens while Source language is pinned. The core never detects
+    /// a pinned language, so nothing is skipped — unless the pinned language *is* the skipped one, when every
+    /// phrase is left alone. The old example promised a skip in both cases.
+    func testTheSkipLanguageExampleFollowsThePinnedSourceLanguage() {
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: nil, pinned: nil), SettingExamples.skipLanguageNone)
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: nil, pinned: "French"), SettingExamples.skipLanguageNone)
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: "English", pinned: nil), SettingExamples.skipLanguage("English"))
+        let pinnedElsewhere = SettingExamples.skipLanguageText(ignored: "English", pinned: "French")
+        XCTAssertEqual(pinnedElsewhere, SettingExamples.skipLanguageWhilePinned(ignored: "English", pinned: "French"))
+        XCTAssertTrue(pinnedElsewhere.contains("French"))
+        XCTAssertTrue(pinnedElsewhere.contains("English"))
+        XCTAssertTrue(pinnedElsewhere.contains("Auto-detect"), "the way out is named")
+        XCTAssertFalse(pinnedElsewhere.contains("left alone"), "nothing is skipped while the source language is pinned elsewhere")
+        let pinnedToItself = SettingExamples.skipLanguageText(ignored: "English", pinned: "English")
+        XCTAssertTrue(pinnedToItself.contains("every phrase"))
+        XCTAssertNotEqual(pinnedToItself, pinnedElsewhere)
+    }
+
+    /// M10: with Learning off no original is shown at all, so the Romanize example cannot claim "the original is
+    /// shown in its own script"; it says what to turn on instead, next to the disabled toggle.
+    func testTheRomanizeExampleNeedsLearning() {
+        XCTAssertEqual(SettingExamples.romanizeText(on: true, learning: true), SettingExamples.romanize(true))
+        XCTAssertEqual(SettingExamples.romanizeText(on: false, learning: true), SettingExamples.romanize(false))
+        XCTAssertEqual(SettingExamples.romanizeText(on: true, learning: false), SettingExamples.romanizeNeedsLearning)
+        XCTAssertEqual(SettingExamples.romanizeText(on: false, learning: false), SettingExamples.romanizeNeedsLearning)
+        XCTAssertTrue(SettingExamples.romanizeNeedsLearning.contains("Learning"))
+    }
 }
