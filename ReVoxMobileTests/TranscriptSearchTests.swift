@@ -78,17 +78,20 @@ final class TranscriptSearchTests: XCTestCase {
         XCTAssertEqual(result.hits.count, 1)
     }
 
-    /// §10.4 / §13 Q12: `localizedStandardContains` is case-insensitive when the store translates it; the `contains`
-    /// fallback is case-sensitive. The assertion follows whichever path ran and the path is printed, so the CI log is
-    /// the simulator evidence for row 1 of `docs/measurements/m6-history-export.md`.
-    func testCaseInsensitiveMatchDependsOnPredicateTranslation() throws {
+    /// §10.4 / §13 Q12 was ASSUMED, and this is where it is pinned: `localizedStandardContains` is case-insensitive
+    /// when the store translates it, and the `contains` fallback is case-sensitive. A green run is the simulator
+    /// evidence for row 1 of `docs/measurements/m6-history-export.md`.
+    ///
+    /// The plan expected a `print` here and a `grep` of the CI log, but xcbeautify does not carry test stdout into
+    /// the log (run 33887832648 contains no such line), so a print would be evidence nobody can read. Asserting the
+    /// assumption is both visible and stronger: if a future SwiftData stops translating the predicate this test goes
+    /// red, which is exactly the discovery the measurement row asks for. Search itself keeps working either way —
+    /// `TranscriptSearch` falls back at runtime — so the failure is a documentation task, not an outage: record it
+    /// in the measurement row and add the "Search matches exact case only" sentence to the README, as row 1 says.
+    func testTheStoreTranslatesLocalizedStandardContains() throws {
         let result = try TranscriptSearch.hits(query: "GOOD", in: ModelContext(container))
-        print("MEASUREMENT search predicate usedFallback=\(result.usedFallback) hits=\(result.hits.count)")
-        if result.usedFallback {
-            XCTAssertEqual(result.hits.count, 0, "the contains fallback is case-sensitive")
-        } else {
-            XCTAssertEqual(result.hits.count, 2, "localizedStandardContains matches regardless of case")
-        }
+        XCTAssertFalse(result.usedFallback, "the store rejected localizedStandardContains and the contains fallback answered")
+        XCTAssertEqual(result.hits.count, 2, "localizedStandardContains matches regardless of case")
     }
 
     func testFallbackPredicateIsPlainContains() throws {
