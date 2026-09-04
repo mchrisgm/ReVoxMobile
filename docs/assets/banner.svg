@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">ReVox Mobile</title>
+  <desc id="desc">Live speech translation, entirely on your iPhone</desc>
+  <defs>
+    <!-- The app's accent colour is #12788C (AccentColor.colorset); the banner runs from deep navy into it. -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B2A3A"/>
+      <stop offset="0.55" stop-color="#0F5F6F"/>
+      <stop offset="1" stop-color="#12788C"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9FE3EC" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#9FE3EC" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#9FE3EC" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#9FE3EC"/>
+    </linearGradient>
+    <clipPath id="frame">
+      <rect width="1200" height="360" rx="24"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="360" fill="url(#bg)"/>
+    <!-- Soft light band behind the waveform -->
+    <ellipse cx="900" cy="180" rx="420" ry="170" fill="url(#glow)"/>
+
+    <!-- Waveform motif: symmetric bars, the phrase ReVox listens to -->
+    <g fill="url(#bars)" opacity="0.95">
+      <rect x="700" y="164" width="10" height="32" rx="5"/>
+      <rect x="722" y="140" width="10" height="80" rx="5"/>
+      <rect x="744" y="118" width="10" height="124" rx="5"/>
+      <rect x="766" y="92" width="10" height="176" rx="5"/>
+      <rect x="788" y="130" width="10" height="100" rx="5"/>
+      <rect x="810" y="72" width="10" height="216" rx="5"/>
+      <rect x="832" y="104" width="10" height="152" rx="5"/>
+      <rect x="854" y="146" width="10" height="68" rx="5"/>
+      <rect x="876" y="96" width="10" height="168" rx="5"/>
+      <rect x="898" y="124" width="10" height="112" rx="5"/>
+      <rect x="920" y="152" width="10" height="56" rx="5"/>
+    </g>
+    <!-- The arrow: a phrase in, English out -->
+    <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+      <path d="M 960 180 H 1040"/>
+      <path d="M 1018 158 L 1040 180 L 1018 202"/>
+    </g>
+    <!-- The spoken-back phrase: quieter bars, the translation -->
+    <g fill="#FFFFFF" opacity="0.6">
+      <rect x="1064" y="160" width="8" height="40" rx="4"/>
+      <rect x="1082" y="140" width="8" height="80" rx="4"/>
+      <rect x="1100" y="124" width="8" height="112" rx="4"/>
+      <rect x="1118" y="148" width="8" height="64" rx="4"/>
+      <rect x="1136" y="166" width="8" height="28" rx="4"/>
+    </g>
+
+    <!-- Small mark next to the name -->
+    <g transform="translate(72 118)">
+      <rect width="56" height="56" rx="14" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.5"/>
+      <g fill="#FFFFFF">
+        <rect x="11" y="24" width="4" height="8" rx="2"/>
+        <rect x="19" y="17" width="4" height="22" rx="2"/>
+        <rect x="27" y="10" width="4" height="36" rx="2"/>
+        <rect x="35" y="19" width="4" height="18" rx="2"/>
+        <rect x="43" y="25" width="4" height="6" rx="2"/>
+      </g>
+    </g>
+
+    <!-- Wordmark -->
+    <text x="148" y="164" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="-1.5">ReVox Mobile</text>
+    <text x="150" y="212" fill="#CDEFF5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="400" letter-spacing="0.2">Live speech translation, entirely on your iPhone</text>
+
+    <!-- Fact pills: each one is a statement the README makes -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="600" fill="#FFFFFF">
+      <g transform="translate(150 252)">
+        <rect width="118" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.14" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
+        <text x="59" y="22" text-anchor="middle">100% on-device</text>
+      </g>
+      <g transform="translate(280 252)">
+        <rect width="176" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.14" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
+        <text x="88" y="22" text-anchor="middle">Offline after download</text>
+      </g>
+      <g transform="translate(468 252)">
+        <rect width="150" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.14" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1"/>
+        <text x="75" y="22" text-anchor="middle">Whisper + Silero VAD</text>
+      </g>
+    </g>
+  </g>
+</svg>
