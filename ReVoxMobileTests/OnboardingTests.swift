@@ -193,6 +193,11 @@ final class OnboardingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let environment = try AppEnvironment.testing(root: root)
         XCTAssertEqual(environment.onboarding.pages.count, 7)
-        XCTAssertEqual(environment.onboarding.shouldShowNow, OnboardingViewModel.shouldShow(defaults: .standard))
+        // `testing(root:)` marks the tutorial as seen in a suite of its own, so a screen hosted in a test never
+        // presents the first-run cover and the app's own defaults are never read (build 23 failed on a fresh
+        // simulator when this asserted equality with `.standard`).
+        XCTAssertFalse(environment.onboarding.shouldShowNow, "a test environment never presents the tutorial")
+        environment.onboarding.reset()
+        XCTAssertTrue(environment.onboarding.shouldShowNow, "reset still brings it back for the Settings button")
     }
 }
