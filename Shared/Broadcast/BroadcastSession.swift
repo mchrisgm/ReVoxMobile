@@ -111,11 +111,17 @@ final class BroadcastSession {
         notifiers.resumed()
     }
 
+    /// Ends the broadcast. `annotatedBundleID` is cleared here and in `failed()`: it names the third-party app whose
+    /// content the user was consuming — the most disclosing value in the whole bridge — and unlike the ring file the
+    /// App Group's plist is not excluded from backup, so a value left behind is copied into every iCloud backup and
+    /// stays until the next broadcast, which may never come. It is only useful while one is live, which is exactly
+    /// when the Diagnostics screen is worth looking at (docs/security-review-m5.md finding 5).
     func finished() {
         let now = clock()
         writer.setState(.finished, at: now)
         record.state = .finished
         record.finishedAt = now
+        record.annotatedBundleID = nil          // §11, see the note on `finished()`
         records?.write(record)
         notifiers.stopped()
     }
@@ -127,6 +133,7 @@ final class BroadcastSession {
         record.state = .failed
         record.finishedAt = now
         record.finishReason = reason
+        record.annotatedBundleID = nil          // §11, see the note on `finished()`
         records?.write(record)
         notifiers.stopped()
     }

@@ -108,6 +108,22 @@ final class BroadcastSessionTests: XCTestCase {
         XCTAssertNil(records.readBroadcastState(), "the record is written on the first mic buffer only")
     }
 
+    /// docs/security-review-m5.md finding 5: the bundle id of the app being broadcast names the third-party app whose
+    /// content the user was consuming, and the App Group's plist — unlike the ring file — goes into iCloud backups.
+    func testTheAnnotatedBundleIDDoesNotOutliveTheBroadcast() throws {
+        let session = makeSession()
+        session.annotated(bundleID: "com.example.player")
+        XCTAssertEqual(records.readBroadcastState()?.annotatedBundleID, "com.example.player")
+        session.finished()
+        XCTAssertNil(records.readBroadcastState()?.annotatedBundleID, "cleared when the broadcast ends")
+
+        let failing = makeSession(previousGeneration: 9)
+        failing.annotated(bundleID: "com.example.player")
+        failing.failed(reason: "ReVox could not read the audio format")
+        XCTAssertNil(records.readBroadcastState()?.annotatedBundleID, "cleared on a failure too")
+        XCTAssertEqual(records.readBroadcastState()?.finishReason, "ReVox could not read the audio format")
+    }
+
     func testPauseResumeFinishTransitions() throws {
         let session = makeSession()
         now = 1_010

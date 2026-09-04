@@ -18,6 +18,7 @@ enum BroadcastCaptureEvent: Equatable, Sendable {
 final class BroadcastCapture: AudioSource, @unchecked Sendable {
     static let pollIntervalNanoseconds: UInt64 = 100_000_000
     static let scratchFrames = 16_000
+    static let minimumWakeSpacingSeconds: Double = 0.01
     private static let readerRecordIntervalSeconds: Double = 1
     private static let logger = Logger(subsystem: "revox", category: "capture")
 
@@ -53,6 +54,8 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
     private var lastReaderRecordAt: Double?
     private var probe = SelfCaptureProbe()
     private var lastMeasurement: SelfCaptureProbe.Measurement?
+    private var lastWakePoll: Double?
+    private(set) var pollCount = 0
     private var pollTask: Task<Void, Never>?
     private var wakeTask: Task<Void, Never>?
     private var observer: DarwinNotificationObserver?
@@ -114,7 +117,7 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         if let storage {
             lastKnownWriteCursor = storage.loadCursor(at: RingHeader.Offset.writeCursor)
         }
-        probe.speakingChanged(speaking, atPosition: Int64(lastKnownWriteCursor))
+        probe.speakingChanged(speaking, atPosition: Int64(clamping: lastKnownWriteCursor))
     }
 
     /// The pipeline's `noteCaptureGap()` (drop marker + `.lag`), wired by the assembler after the pipeline exists.
@@ -140,7 +143,7 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         if let storage {
             lastKnownWriteCursor = storage.loadCursor(at: RingHeader.Offset.writeCursor)
         }
-        return Int64(lastKnownWriteCursor)
+        return Int64(clamping: lastKnownWriteCursor)
     }
 
     func start(_ mode: CaptureMode) async throws {
@@ -154,6 +157,7 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         silence.reset()
         probe = SelfCaptureProbe()                     // a fresh run measures its own phrases only
         lastMeasurement = nil
+        lastWakePoll = nil
         let observer = DarwinNotificationObserver(names: names.extensionToApp)
         self.observer = observer
         observer.start()
@@ -201,10 +205,21 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         defer { lock.unlock() }
         guard running else { return }
         let now = clock()
+        // The six Darwin names derive from the App Group id, which ships in the Info.plist, and Darwin notifications
+        // are system-wide and unauthenticated: any app on the device can post them. Each wake costs a plist decode
+        // and a poll under `lock`, so a flood is a battery and responsiveness attack from outside our sandbox.
+        // Timer ticks are never coalesced — only wakes, which the bridge doc already calls hints rather than facts
+        // (docs/security-review-m5.md finding 6).
+        if wake != nil {
+            if let last = lastWakePoll, now - last < Self.minimumWakeSpacingSeconds, now >= last { return }
+            lastWakePoll = now
+        }
+        pollCount += 1
         if let wake, wake != names.audio {
-            // Measurement row 12: is the cross-process record fresh right after a Darwin wake?
+            // Measurement row 12: is the cross-process record fresh right after a Darwin wake? `.debug` because a
+            // foreign poster would otherwise fill the unified log through it; raise it while filling row 12.
             let recordState = records?.readBroadcastState()?.state.rawValue ?? "none"
-            Self.logger.info("wake=\(wake.split(separator: ".").last.map(String.init) ?? wake, privacy: .public) record.state=\(recordState, privacy: .public)")
+            Self.logger.debug("wake=\(wake.split(separator: ".").last.map(String.init) ?? wake, privacy: .public) record.state=\(recordState, privacy: .public)")
         }
         guard ensureMapped() else {
             emit(.noRing)
@@ -213,7 +228,12 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         }
         guard let reader, let storage else { return }
         if case .attachedLive(let generation) = state {
-            let header = reader.header
+            guard let header = reader.header else {          // the magic stopped being ours: treat it as no ring
+                state = .noRing
+                attachedGeneration = nil
+                emit(.noRing)
+                return
+            }
             if header.generation != generation {
                 state = .idle                              // a new broadcast started: re-attach on this tick
                 attachedGeneration = nil
@@ -241,7 +261,11 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
     }
 
     private func attach(reader: RingReader, now: Double) {
-        let headerBefore = reader.header
+        guard let headerBefore = reader.header else {
+            state = .noRing
+            emit(.noRing)
+            return
+        }
         let stored = records?.readCaptureReader()
         let result = reader.attach(now: now, storedReadCursor: stored?.lastReadCursor, storedGeneration: stored?.generation)
         state = result
@@ -286,7 +310,7 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
                 emit(.idle)
                 return
             }
-            if now - header.lastWriteAt > RingReader.staleAfterSeconds {
+            if !header.isHeartbeatFresh(now: now) {
                 state = .stale(lastWriteAt: header.lastWriteAt)
                 attachedGeneration = nil
                 markLost(now: now)

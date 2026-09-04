@@ -44,7 +44,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
                                        previousGeneration: previousGeneration, pid: getpid(), clock: { Date().timeIntervalSince1970 })
             Self.logger.info("broadcast started generation=\(previousGeneration + 1, privacy: .public) pid=\(getpid(), privacy: .public)")
         } catch {
-            Self.logger.error("ring mapping failed: \(String(describing: error), privacy: .public)")
+            // The case name and errno, never `String(describing:)`: a CocoaError renders its userInfo, which carries
+            // the absolute App Group container path, and this line is `.public` in a log that leaves the device in
+            // every sysdiagnose (docs/security-review-m5.md finding 8).
+            Self.logger.error("ring mapping failed: \(Self.describe(error), privacy: .public)")
             fail(code: 3, "ReVox could not open its shared audio buffer", records: records)
         }
     }
@@ -113,6 +116,12 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     override func broadcastFinished() {
         session?.finished()                                                 // state, record, `stopped`; never truncates (§7.1 step 5)
+        // §11 zeroes the data region on start; that leaves the last minute of whatever the user broadcast sitting in
+        // the file until the *next* broadcast, which may never come. The class is completeUntilFirstUserAuthentication
+        // — correct and unavoidable for an extension that must run after a lock — so that plaintext is readable from
+        // first unlock onwards. Zeroing on the way out too costs one memset off the real-time path and at most the
+        // ≤ 100 ms the app had not yet polled (docs/security-review-m5.md finding 4).
+        mapping?.zeroDataRegion()
         session = nil
         mapping = nil                                                       // munmap + close in deinit
         Self.logger.info("broadcast finished")
@@ -132,8 +141,23 @@ final class SampleHandler: RPBroadcastSampleHandler {
             records.write(record)
         }
         session = nil
+        mapping?.zeroDataRegion()
         mapping = nil
         finishBroadcastWithError(NSError(domain: Self.errorDomain, code: code, userInfo: [NSLocalizedDescriptionKey: description]))
+    }
+
+    /// The error's shape without its text: a case name plus an errno, both safe at `.public`.
+    private static func describe(_ error: Error) -> String {
+        guard let ringError = error as? RingFileError else { return "unexpected(\(type(of: error)))" }
+        switch ringError {
+        case .absent: return "absent"
+        case .tooSmall(let bytes): return "tooSmall(\(bytes))"
+        case .openFailed(let code): return "openFailed(errno \(code))"
+        case .statFailed(let code): return "statFailed(errno \(code))"
+        case .mapFailed(let code): return "mapFailed(errno \(code))"
+        case .createFailed: return "createFailed"
+        case .growFailed: return "growFailed"
+        }
     }
 
     /// The M5 measurement of the real `.audioApp` format (§7.2): `.info` the first time, `.error` on later changes.

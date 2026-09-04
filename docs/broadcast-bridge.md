@@ -26,7 +26,7 @@ The extension is a thin forwarder (≤ 15 MB resident target, 50 MB hard cap): f
 | Created by | the extension only (`RingFileMapping.openCreating`), with `FileProtectionType.completeUntilFirstUserAuthentication` (Apple's documented default, the only class a process can open after a later lock) and `isExcludedFromBackup = true` |
 | Grown by | the extension only, with `FileHandle.truncate(atOffset:)` upward; never shrunk; a layout change gets a new file name (`audio-ring-v2.bin`), never a resize |
 | Mapped by | both processes with `mmap(nil, 3 844 096, PROT_READ \| PROT_WRITE, MAP_SHARED, fd, 0)`; the app opens with `RingFileMapping.openExisting` and never creates, truncates or grows the file (absent or short → `AttachState.noRing`) |
-| Zeroed | the data region, by the extension, on every `broadcastStarted` (design spec §11) |
+| Zeroed | the data region, by the extension, on every `broadcastStarted` **and** on `broadcastFinished` and on its own failures — a broadcast's audio does not outlive it (design spec §11, `docs/security-review-m5.md` finding 4) |
 | Cursors | 64-bit, accessed only through `RingStorage.loadCursor` / `storeCursor`: `RingAtomics.c` (`atomic_load_explicit(memory_order_acquire)` / `atomic_store_explicit(memory_order_release)`) in both processes, an `NSLock` in the test `HeapRingStorage` |
 
 ## 3. Header layout
@@ -94,7 +94,7 @@ Posted with `CFNotificationCenterPostNotification(center, name, nil, nil, true)`
 | `<appGroup>.broadcast.audio` | ext → app | at most every 1 600 written frames (≤ 10/s) |
 | `<appGroup>.app.attached` | app → ext | diagnostics only; the extension does not observe it |
 
-A notification is a hint, never a fact: the app re-reads the header and the record on every wake. Any process may post these names; the worst a foreign post can do is trigger one extra poll.
+A notification is a hint, never a fact: the app re-reads the header and the record on every wake. The names derive from the App Group id, which ships in the Info.plist, and Darwin notifications are system-wide and unauthenticated, so any app on the device can post them. A foreign post cannot start the pipeline (that needs a real `running` header with a fresh heartbeat) and carries nothing into the app, but each one used to cost a property-list decode and — on `started`/`stopped` — an `mmap` of the whole ring on the main actor. Since `docs/security-review-m5.md` finding 6 the observer streams keep only the newest name, wake-driven polls are coalesced to one per 10 ms (the 100 ms timer is not), and the coordinator holds one mapping for its lifetime instead of one per probe.
 
 ## 7. UserDefaults records (`UserDefaults(suiteName: appGroup)`, privacy reason 1C8F.1 in both manifests)
 
@@ -111,7 +111,7 @@ A notification is a hint, never a fact: the app re-reads the header and the reco
 | `writerPID` | Int32 | |
 | `sourceASBD` | dictionary | `sampleRate`, `formatID`, `formatFlags`, `bytesPerPacket`, `framesPerPacket`, `bytesPerFrame`, `channelsPerFrame`, `bitsPerChannel` |
 | `asbdChangeCount` | Int | |
-| `annotatedBundleID` | String? | `RPApplicationInfoBundleIdentifierKey` from `broadcastAnnotated` (diagnostic; shown on the Diagnostics screen, never logged, never leaves the device) |
+| `annotatedBundleID` | String? | `RPApplicationInfoBundleIdentifierKey` from `broadcastAnnotated` (diagnostic; shown on the Diagnostics screen, never logged). Cleared by `finished()` and `failed()`: it names the app whose content the user was consuming, and this plist — unlike the ring file — is not excluded from backup |
 | `micToggleSeen` | Bool | a `.audioMic` buffer was received (the buffers themselves are ignored) |
 
 `"capture.reader"` — written by the app on attach, on every gap and at most once per second while reading: `lastAttachedAt` (Double), `lastReadCursor` (UInt64), `generation` (UInt64).
@@ -122,7 +122,7 @@ A notification is a hint, never a fact: the app re-reads the header and the reco
 2. `broadcastAnnotated`: store the bundle id in the record.
 3. `processSampleBuffer`: `.video` → return; `.audioMic` → count; `.audioApp` → `BroadcastConverter.convert` inside `autoreleasepool` (runtime ASBD, rebuild on change, big-endian byte swap when `AVAudioConverter` refuses the flag, preallocated 45 192-frame input and 90 448-frame output buffers, once-`.haveData`-then-`.noDataNow` until `.inputRanDry`) → `RingWriter.write` → `.audio` every 1 600 frames. The first ASBD is logged at `.info`, later changes at `.error`; a resident-footprint line every ~30 s.
 4. `broadcastPaused` / `broadcastResumed`: header state + record + notification; `converter.reset()` on resume.
-5. `broadcastFinished`: state `finished`, record with `finishedAt`, post `stopped`, `munmap`, close. Never truncate.
+5. `broadcastFinished`: state `finished`, record with `finishedAt` and `annotatedBundleID` cleared, post `stopped`, zero the data region, `munmap`, close. Never truncate.
 6. `finishBroadcastWithError` only for real failures (App Group missing, container missing, ring mapping failed), with an `NSError` in domain `REVOXBroadcastErrorDomain` whose `localizedDescription` iOS shows to the user; the record gets `failed` + `finishReason`.
 
 Never in the extension (`scripts/ci/check-extension-surface.sh`): CoreML, WhisperKit, FluidAudio, `AVAudioEngine`, `AVAudioSession`, network, keychain, models, VAD, per-buffer allocation or logging, Swift concurrency, dispatch queues, host-time APIs, shrinking the ring file, `finishBroadcastWithError` for non-failures, reliance on the app being alive. Entitlements: the App Group only (no increased-memory-limit). Privacy manifest: UserDefaults `1C8F.1`, FileTimestamp `C617.1`.

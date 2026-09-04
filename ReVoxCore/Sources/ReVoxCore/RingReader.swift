@@ -19,6 +19,11 @@ public final class RingReader {
     public static let defaultGuardFrames = 16_000          // 1 s
     public static let defaultCatchUpFrames = 32_000        // 2 s
     public static let staleAfterSeconds: Double = 3
+    /// A cursor above this cannot be a real frame count (557 years at 16 kHz), so the header is corrupt or lying.
+    /// The header carries no checksum: one flipped bit in bit 63 of the 8 bytes at offset 32 passes both the magic
+    /// and the geometry check, and `Int(_: UInt64)` on the result traps. The file persists, so that trap would be a
+    /// crash on every launch until the app is deleted — docs/security-review-m5.md finding 1.
+    public static let maxPlausibleCursor: UInt64 = 1 << 48
 
     private let storage: any RingStorage
     private let layout: RingLayout
@@ -41,8 +46,10 @@ public final class RingReader {
         overrunCount = header.overrunCount
     }
 
-    public var header: RingHeader {
-        RingHeader.read(from: storage)!
+    /// nil once the shared page stops being a ring header (a corrupted magic after `init` succeeded). Optional
+    /// rather than force-unwrapped: the writer is another process and the page can change under us at any time.
+    public var header: RingHeader? {
+        RingHeader.read(from: storage)
     }
 
     /// Decides live/stale/idle from state, generation and heartbeat; positions readCursor = max(stored, writeCursor − catchUp).
@@ -50,15 +57,16 @@ public final class RingReader {
     public func attach(now: Double, storedReadCursor: UInt64?, storedGeneration: UInt64?,
                        catchUp: Int = RingReader.defaultCatchUpFrames) -> AttachState {
         self.catchUp = catchUp
-        let header = header
+        guard let header else { return .noRing }
         switch header.state {
         case .running:
-            guard now - header.lastWriteAt <= RingReader.staleAfterSeconds else {
+            guard header.isHeartbeatFresh(now: now) else {
                 return .stale(lastWriteAt: header.lastWriteAt)
             }
             let generationMatches = storedGeneration == nil || storedGeneration == header.generation
             let stored = generationMatches ? (storedReadCursor ?? 0) : 0
             let writeCursor = storage.loadCursor(at: RingHeader.Offset.writeCursor)
+            guard writeCursor <= RingReader.maxPlausibleCursor else { return .noRing }
             let behind = writeCursor > UInt64(catchUp) ? writeCursor - UInt64(catchUp) : 0
             readCursor = max(min(stored, writeCursor), behind)
             storage.storeCursor(readCursor, at: RingHeader.Offset.readCursor)
@@ -75,6 +83,7 @@ public final class RingReader {
         let safeDistance = capacity - UInt64(max(0, min(guardFrames, layout.capacityFrames)))
         let start = readCursor
         let writeCursor = storage.loadCursor(at: RingHeader.Offset.writeCursor)      // acquire
+        guard writeCursor <= RingReader.maxPlausibleCursor else { return .idle }     // a lying header, not a gap
         guard writeCursor > start else { return .idle }
         if writeCursor - start > safeDistance {
             return overrun(from: start, writeCursor: writeCursor)
@@ -91,10 +100,17 @@ public final class RingReader {
             UnsafeMutableRawPointer(destination + firstPart)
                 .copyMemory(from: data, byteCount: (count - firstPart) * MemoryLayout<Float>.size)
         }
+        // The samples come from a page another process writes; nothing has validated them. One NaN reaching the VAD
+        // poisons its LSTM state for the rest of the run — every later probability is NaN, `probability >= threshold`
+        // is false for NaN, so no phrase is ever detected again and nothing reports an error. Zeroing here covers the
+        // pipeline, the level meters and the self-capture probe at once (docs/security-review-m5.md finding 2).
+        for index in 0 ..< count where !destination[index].isFinite {
+            destination[index] = 0
+        }
         let recheck = storage.loadCursor(at: RingHeader.Offset.writeCursor)          // did the writer lap us meanwhile?
         // A writer restart between the two loads rewinds the cursor (`RingWriter.begin` zeroes it for a new
         // generation): nothing is consumable, so discard the copy — the same rule as the entry guard above.
-        guard recheck > start else { return .idle }
+        guard recheck > start, recheck <= RingReader.maxPlausibleCursor else { return .idle }
         if recheck - start > safeDistance {
             return overrun(from: start, writeCursor: recheck)
         }
@@ -109,6 +125,6 @@ public final class RingReader {
         let target = writeCursor > UInt64(catchUp) ? writeCursor - UInt64(catchUp) : 0
         readCursor = max(target, start)
         storage.storeCursor(readCursor, at: RingHeader.Offset.readCursor)
-        return .gap(dropped: Int(readCursor - start))
+        return .gap(dropped: Int(clamping: readCursor - start))
     }
 }

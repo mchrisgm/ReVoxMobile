@@ -39,6 +39,17 @@ actor SileroVAD: SpeechProbabilityModel {
         guard let predictor else { throw SileroVADError.notLoaded }
         let input = try assembler.input(for: chunk)
         let output = try predictor(input, assembler.hidden, assembler.cell)
+        // Defence in depth behind `RingReader`'s sanitising: a single non-finite value in the LSTM state is permanent.
+        // Every later probability would be NaN, `probability >= speechThreshold` is false for NaN, so no phrase would
+        // ever be detected again — and `Segmenter.reset()` runs once per pipeline start, so the run would stay
+        // silently dead with no error anywhere (docs/security-review-m5.md finding 2). Dropping the poisoned state
+        // costs one chunk of LSTM context; keeping it costs the session.
+        guard output.probability.isFinite,
+              output.hidden.allSatisfy({ $0.isFinite }),
+              output.cell.allSatisfy({ $0.isFinite }) else {
+            assembler.reset()
+            return 0
+        }
         try assembler.update(hidden: output.hidden, cell: output.cell)
         return output.probability
     }

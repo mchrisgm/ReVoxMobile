@@ -47,6 +47,12 @@ final class BroadcastCoordinatorTests: XCTestCase {
         var lost = running
         lost.state = .lost
         XCTAssertEqual(BroadcastCoordinator.evaluate(record: lost, header: header(state: .running, lastWriteAt: 999), now: 1_000), .attachedLive(generation: 1), "a fresh heartbeat overrides a stale record")
+        // docs/security-review-m5.md finding 3: `lastWriteAt` is wall-clock time written by another process. A
+        // backwards clock step after the extension was killed with `state == running` makes `now - lastWriteAt`
+        // negative, and a one-sided window would call that dead broadcast live — which starts the pipeline
+        // unattended through `probe()` and speaks whatever residual audio is still in the ring.
+        XCTAssertEqual(BroadcastCoordinator.evaluate(record: running, header: header(state: .running, lastWriteAt: 5_000), now: 1_000), .stale(lastWriteAt: 5_000))
+        XCTAssertEqual(BroadcastCoordinator.evaluate(record: running, header: header(state: .running, lastWriteAt: .infinity), now: 1_000), .stale(lastWriteAt: .infinity))
     }
 
     func testCaptureEventsBecomeStatusTextsAndEvents() async throws {

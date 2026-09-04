@@ -49,6 +49,12 @@ final class BroadcastCoordinator {
     @ObservationIgnored private var captureTask: Task<Void, Never>?
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
     @ObservationIgnored private var observer: DarwinNotificationObserver?
+    /// Kept for the coordinator's life rather than re-created per probe: `openExisting` is an open + fstat + mmap of
+    /// 3.84 MB, and `probe()` runs on the main actor on every `started`/`stopped` wake — which any app on the device
+    /// can post (docs/security-review-m5.md finding 6). The extension only ever grows this file, never replaces it,
+    /// so one mapping stays valid across broadcasts; a new generation is detected from the header, not the mapping.
+    @ObservationIgnored private var mapping: RingFileMapping?
+    @ObservationIgnored private var storage: MappedRingStorage?
 
     init(capture: BroadcastCapture, records: BroadcastRecordStore?, containerURL: URL?, names: BroadcastNotificationNames,
          clock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 }) {
@@ -100,7 +106,7 @@ final class BroadcastCoordinator {
     /// asks the environment to start the pipeline from the foreground (§6.2).
     func probe() async {
         let record = records?.readBroadcastState()
-        let header = Self.readHeader(containerURL: containerURL)
+        let header = currentHeader()
         let evaluated = Self.evaluate(record: record, header: header, now: clock())
         if case .attachedLive = evaluated {
             isBroadcastLive = true
@@ -153,15 +159,21 @@ final class BroadcastCoordinator {
         guard let header else { return .noRing }
         switch header.state {
         case .running:
-            return now - header.lastWriteAt <= RingReader.staleAfterSeconds ? .attachedLive(generation: header.generation) : .stale(lastWriteAt: header.lastWriteAt)
+            return header.isHeartbeatFresh(now: now) ? .attachedLive(generation: header.generation) : .stale(lastWriteAt: header.lastWriteAt)
         case .idle, .paused, .finished, .failed:
             return .idle
         }
     }
 
-    /// A transient read-only look at the header; nil when the file is absent, short or its header unwritten.
-    static func readHeader(containerURL: URL?) -> RingHeader? {
-        guard let containerURL, let mapping = try? RingFileMapping.openExisting(at: RingFileMapping.ringURL(in: containerURL)) else { return nil }
-        return RingHeader.read(from: MappedRingStorage(mapping: mapping))
+    /// The header through the cached mapping; nil while the file is absent, short or its header unwritten.
+    func currentHeader() -> RingHeader? {
+        if storage == nil {
+            guard let containerURL,
+                  let mapping = try? RingFileMapping.openExisting(at: RingFileMapping.ringURL(in: containerURL)) else { return nil }
+            self.mapping = mapping
+            storage = MappedRingStorage(mapping: mapping)
+        }
+        guard let storage else { return nil }
+        return RingHeader.read(from: storage)
     }
 }

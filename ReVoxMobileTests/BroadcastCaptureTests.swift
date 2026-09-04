@@ -323,4 +323,54 @@ final class BroadcastCaptureTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.5, "noteSpeakingEdge blocked on the poll lock")
         await parked.stop()
     }
+
+    // MARK: docs/security-review-m5.md
+
+    /// Finding 2, end to end: the sanitising lives in `RingReader.read`, so this proves the composition — nothing
+    /// non-finite reaches the pipeline, and therefore nothing can wedge the VAD's LSTM state for the rest of the run.
+    func testNonFiniteRingSamplesNeverReachThePipeline() async throws {
+        let writer = try startExtension(generation: 1)
+        var events = capture.events.makeAsyncIterator()
+        let frames = capture.frames()
+        try await capture.start(.broadcast)
+        let attached = await nextEvent(&events)
+        XCTAssertEqual(attached, .attached(generation: 1, joinedInProgress: false))
+        var poisoned = [Float](repeating: 0.25, count: 512)
+        poisoned[7] = .nan
+        poisoned[300] = .infinity
+        poisoned[301] = -.infinity
+        write(writer, poisoned)
+        var iterator = frames.makeAsyncIterator()
+        let next = await withTimeout(seconds: 3) { await iterator.next() }
+        let chunk = try XCTUnwrap(next)
+        XCTAssertTrue(chunk.samples.allSatisfy { $0.isFinite })
+        XCTAssertEqual(chunk.samples[7], 0)
+        XCTAssertEqual(chunk.samples[300], 0)
+        XCTAssertEqual(chunk.samples[301], 0)
+        XCTAssertEqual(chunk.samples[8], 0.25)
+        await capture.stop()
+    }
+
+    /// Finding 6: the six Darwin names derive from the App Group id, which ships in the Info.plist, and Darwin
+    /// notifications are unauthenticated — any app on the device can post them in a loop. Each wake costs a plist
+    /// decode and a poll under `lock`, so the wake path is rate-limited while timer ticks are not.
+    func testAWakeFloodIsCoalescedButTimerTicksAreNot() async throws {
+        _ = try startExtension(generation: 1)
+        var events = capture.events.makeAsyncIterator()
+        _ = capture.frames()
+        try await capture.start(.broadcast)
+        let attached = await nextEvent(&events)
+        XCTAssertEqual(attached, .attached(generation: 1, joinedInProgress: false))
+        let before = capture.pollCount
+        for _ in 0 ..< 1_000 {
+            capture.poll(wake: names.audio)                       // a hostile flood, synchronously
+        }
+        let afterFlood = capture.pollCount
+        XCTAssertLessThanOrEqual(afterFlood - before, 2, "1 000 wakes inside one clock tick collapse to at most one poll, plus at most one timer tick")
+        capture.poll(wake: nil)
+        capture.poll(wake: nil)
+        XCTAssertGreaterThanOrEqual(capture.pollCount - afterFlood, 2, "the 100 ms timer is never coalesced: it is how a missed notification is recovered")
+        XCTAssertEqual(BroadcastCapture.minimumWakeSpacingSeconds, 0.01)
+        await capture.stop()
+    }
 }

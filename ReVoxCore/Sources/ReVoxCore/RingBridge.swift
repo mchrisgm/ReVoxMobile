@@ -164,6 +164,19 @@ public struct RingHeader: Sendable, Equatable {
     }
 
     /// Byte offsets of every header field (all little-endian; 8-byte fields 8-byte aligned).
+    /// The heartbeat window of §5.9, two-sided. `lastWriteAt` is wall-clock time written by another process, so a
+    /// backwards clock step (an NTP correction after a long offline period, the user editing the date) makes
+    /// `now - lastWriteAt` negative and a one-sided `<= 3` test call a dead broadcast live — which, through
+    /// `BroadcastCoordinator.probe`, starts the pipeline unattended and speaks whatever residual audio is in the
+    /// ring. A non-finite `lastWriteAt` fails both comparisons and is therefore stale, which is also correct.
+    /// One method, three call sites (`RingReader.attach`, `BroadcastCapture.readAttached`,
+    /// `BroadcastCoordinator.evaluate`), so the rule cannot be fixed in two of them and missed in the third.
+    /// See docs/security-review-m5.md finding 3.
+    public func isHeartbeatFresh(now: Double, tolerance: Double = RingReader.staleAfterSeconds) -> Bool {
+        let age = now - lastWriteAt
+        return age >= -tolerance && age <= tolerance
+    }
+
     public enum Offset {
         public static let magic = 0                 // [8]UInt8
         public static let headerBytes = 8           // UInt32

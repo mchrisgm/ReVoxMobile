@@ -2,8 +2,11 @@ import Foundation
 
 /// `CFNotificationCenterAddObserver` over the Darwin centre for a fixed set of names (§6.2). The centre delivers
 /// on the main run loop; each delivery is forwarded as the name into `names` (unbounded), from which the
-/// capture task hops off the main thread. `@unchecked Sendable`: the observer registration is guarded by a lock
-/// and the continuation is thread-safe.
+/// capture task hops off the main thread. The stream keeps only the newest name: the producer is the main run
+/// loop and the consumers decode property lists, so an unbounded buffer lets any app on the device grow ReVox's
+/// memory by posting in a loop — and N pending wakes and one pending wake produce the same state read, because a
+/// notification is a hint and every wake re-reads the header (docs/security-review-m5.md finding 6).
+/// `@unchecked Sendable`: the observer registration is guarded by a lock and the continuation is thread-safe.
 final class DarwinNotificationObserver: @unchecked Sendable {
     let names: AsyncStream<String>
     private let continuation: AsyncStream<String>.Continuation
@@ -13,7 +16,7 @@ final class DarwinNotificationObserver: @unchecked Sendable {
 
     init(names: [String]) {
         observed = names
-        let (stream, continuation) = AsyncStream<String>.makeStream(bufferingPolicy: .unbounded)
+        let (stream, continuation) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(1))
         self.names = stream
         self.continuation = continuation
     }
