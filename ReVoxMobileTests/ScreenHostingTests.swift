@@ -216,4 +216,8 @@ final class ScreenHostingTests: XCTestCase {
                        root.appendingPathComponent("exports", isDirectory: true).standardizedFileURL,
                        "the screen carries the injected exporter, not the defaulted temporary-folder one")
     }
+
+    func testAboutViewHosts() {
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
+    }
 }
