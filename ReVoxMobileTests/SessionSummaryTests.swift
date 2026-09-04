@@ -31,6 +31,7 @@ final class SessionSummaryTests: XCTestCase {
         ]))
         XCTAssertEqual(summary.entryCount, 2)
         XCTAssertEqual(summary.dropCount, 2)
+        XCTAssertEqual(summary.dropCountText, "2 phrases skipped", "M10: the Session detail header shows the skips")
         XCTAssertEqual(summary.firstEnglishLine, "first")
         XCTAssertEqual(summary.previewText, "first")
         XCTAssertEqual(summary.entryCountText, "2 entries")
@@ -58,11 +59,19 @@ final class SessionSummaryTests: XCTestCase {
         XCTAssertEqual(summary.previewText, SessionSummary.noEntriesText)
         XCTAssertNil(summary.duration)
         XCTAssertEqual(summary.durationText, "0:00")
+        XCTAssertNil(summary.dropCountText, "no skips, no row")
     }
 
     func testOneEntryIsSingular() throws {
         let summary = SessionSummary(session: try session(entries: [(1, "hi", false)]))
         XCTAssertEqual(summary.entryCountText, "1 entry")
+    }
+
+    func testOneSkipIsSingular() throws {
+        let summary = SessionSummary(session: try session(entries: [(1, "hi", false), (2, "", true)]))
+        XCTAssertEqual(summary.dropCount, 1)
+        XCTAssertEqual(summary.dropCountText, "1 phrase skipped")
+        XCTAssertEqual(summary.entryCountText, "1 entry", "skips never count as entries")
     }
 
     func testInvalidCaptureModeFallsBackToMicrophone() throws {

@@ -190,7 +190,13 @@ final class ScreenHostingTests: XCTestCase {
         let marker = Entry(timestamp: Date().addingTimeInterval(1.5), language: "", original: "", english: "", isDropMarker: true)
         marker.session = session
         context.insert(marker)
+        // M10: a Learning-mode entry — the words as spoken are shown above the translation here too, and a
+        // non-Latin original exercises the romanization line.
+        let learned = Entry(timestamp: Date().addingTimeInterval(3), language: "ja", original: "おはよう", english: "Good morning.", isDropMarker: false)
+        learned.session = session
+        context.insert(learned)
         try context.save()
+        XCTAssertEqual(SessionSummary(session: session).dropCountText, "1 phrase skipped", "the header's Skipped row is present")
         let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
         host(NavigationStack { SessionDetailView(session: session, exporter: exporter) }.modelContainer(container))
         let empty = Session(startedAt: Date(), captureMode: "broadcast", pinnedLanguage: nil, modelID: "base", voice: "system", joinedInProgress: true)

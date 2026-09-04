@@ -43,6 +43,15 @@ struct SessionSummary: Equatable, Sendable {
 
     var entryCountText: String { entryCount == 1 ? "1 entry" : "\(entryCount) entries" }
 
+    /// M10: the drop markers as a count for the Session detail header; nil when there were none, so the row is absent.
+    var dropCountText: String? {
+        switch dropCount {
+        case 0: return nil
+        case 1: return "1 phrase skipped"
+        default: return "\(dropCount) phrases skipped"
+        }
+    }
+
     var previewText: String { firstEnglishLine ?? Self.noEntriesText }
 
     /// "m:ss" below an hour, "h:mm:ss" from one hour; negative input reads "0:00".
