@@ -30,7 +30,17 @@ def code_only(text: str) -> str:
     return re.sub(r"/\*(?:.|\n)*?\*/", " ", text)
 
 
+ALL_TREES = ("ReVoxMobile", "ReVoxMobileTests", "ReVoxBroadcast", "Shared")
+
+
 def changed_files() -> list[str]:
+    """Every Swift file under the app trees with `--all`; otherwise the branch's own changes (fast, for pre-push).
+
+    CI must pass `--all`: a shallow checkout has no local `main`, so the `git diff` below would come back empty
+    and the check would pass without reading a single file.
+    """
+    if "--all" in sys.argv:
+        return sorted(str(f.relative_to(ROOT)) for tree in ALL_TREES for f in (ROOT / tree).rglob("*.swift"))
     tracked = subprocess.run(["git", "diff", "--name-only", "main...HEAD"], capture_output=True, text=True, cwd=ROOT)
     working = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT)
     paths = set(tracked.stdout.split())

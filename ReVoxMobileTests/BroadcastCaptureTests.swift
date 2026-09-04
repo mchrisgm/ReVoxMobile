@@ -111,7 +111,8 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         let frames = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 1, joinedInProgress: false))
+        let event1 = await nextEvent(&events)
+        XCTAssertEqual(event1, .attached(generation: 1, joinedInProgress: false))
 
         now.mutate { $0 = 1_002 }
         let written = (0 ..< 1_536).map { Float($0) / 2_000 }
@@ -149,7 +150,8 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         let frames = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 3, joinedInProgress: true))
+        let event2 = await nextEvent(&events)
+        XCTAssertEqual(event2, .attached(generation: 3, joinedInProgress: true))
         XCTAssertTrue(capture.joinedInProgress)
         var iterator = frames.makeAsyncIterator()
         let first = await withTimeout(seconds: 3) { await iterator.next() }
@@ -165,7 +167,8 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         _ = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 1, joinedInProgress: false))
+        let event3 = await nextEvent(&events)
+        XCTAssertEqual(event3, .attached(generation: 1, joinedInProgress: false))
         // One write larger than the ring laps the attached reader in a single cursor step (RingWriter keeps the tail).
         let lap = [Float](repeating: 0.1, count: 976_000)
         lap.withUnsafeBufferPointer { _ = writer.write($0, at: now.value, pts: RingHeader.PTS()) }
@@ -188,9 +191,11 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         _ = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 1, joinedInProgress: false))
+        let event4 = await nextEvent(&events)
+        XCTAssertEqual(event4, .attached(generation: 1, joinedInProgress: false))
         now.mutate { $0 = 1_005 }                              // 5 s without a heartbeat
-        XCTAssertEqual(await nextEvent(&events), .stale(lastWriteAt: 1_000))
+        let event5 = await nextEvent(&events)
+        XCTAssertEqual(event5, .stale(lastWriteAt: 1_000))
         XCTAssertEqual(capture.attachState, .stale(lastWriteAt: 1_000))
         XCTAssertEqual(records.readBroadcastState()?.state, .lost)
         await capture.stop()
@@ -201,12 +206,15 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         _ = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 1, joinedInProgress: false))
+        let event6 = await nextEvent(&events)
+        XCTAssertEqual(event6, .attached(generation: 1, joinedInProgress: false))
         writer.setState(.finished, at: now.value)
-        XCTAssertEqual(await nextEvent(&events), .idle)
+        let event7 = await nextEvent(&events)
+        XCTAssertEqual(event7, .idle)
         XCTAssertEqual(capture.attachState, .idle)
         let second = try startExtension(generation: 2)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 2, joinedInProgress: false))
+        let event8 = await nextEvent(&events)
+        XCTAssertEqual(event8, .attached(generation: 2, joinedInProgress: false))
         write(second, [Float](repeating: 0.2, count: 512))
         let cursor = await capture.capturePosition()
         XCTAssertEqual(cursor, 512)
@@ -218,7 +226,8 @@ final class BroadcastCaptureTests: XCTestCase {
         var events = capture.events.makeAsyncIterator()
         _ = capture.frames()
         try await capture.start(.broadcast)
-        XCTAssertEqual(await nextEvent(&events), .attached(generation: 1, joinedInProgress: false))
+        let event9 = await nextEvent(&events)
+        XCTAssertEqual(event9, .attached(generation: 1, joinedInProgress: false))
         try? await Task.sleep(nanoseconds: 60_000_000)   // one readAttached at now = 1_000 arms SilenceDetector.quietSince
         for second in 1 ... 11 {
             now.mutate { $0 = 1_000 + Double(second) }
@@ -254,5 +263,64 @@ final class BroadcastCaptureTests: XCTestCase {
         let stillOpen = await withTimeout(seconds: 0.3) { await freshIterator.next() }
         XCTAssertNil(stillOpen, "no frames were written; the new stream is open, not finished")
         await capture.stop()
+    }
+
+    func testSpeakingEdgesProduceASelfCaptureMeasurement() async throws {
+        let writer = try startExtension(generation: 1)
+        var events = capture.events.makeAsyncIterator()
+        let frames = capture.frames()
+        try await capture.start(.broadcast)
+        let event10 = await nextEvent(&events)
+        XCTAssertEqual(event10, .attached(generation: 1, joinedInProgress: false))
+        capture.noteSpeakingEdge(true)
+        try? await Task.sleep(nanoseconds: 50_000_000)                            // the drain task stamps it at writeCursor 0
+        write(writer, [Float](repeating: 0.5, count: 8_000))                      // ReVox's voice, re-captured
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        capture.noteSpeakingEdge(false)                                           // player finished at writeCursor 8 000
+        try? await Task.sleep(nanoseconds: 50_000_000)                            // the drain task stamps the false edge
+        write(writer, [Float](repeating: 0.5, count: 3_072))                      // the tail still in flight
+        write(writer, [Float](repeating: 0, count: 40_960))                       // silence past the 2 s window
+        var iterator = frames.makeAsyncIterator()
+        var consumed = 0
+        while consumed < 52_032, let chunk = await withTimeout(seconds: 3, { await iterator.next() }) {
+            consumed += chunk.samples.count
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let measurement = try XCTUnwrap(capture.lastSelfCaptureMeasurement)
+        XCTAssertEqual(measurement.edgePosition, 8_000)
+        XCTAssertEqual(Double(measurement.tailFrames), 3_072, accuracy: 512, "the voice tail after the false edge, in ring frames")
+        XCTAssertEqual(measurement.peakWhileSpeaking, 0.5)
+        await capture.stop()
+    }
+
+    /// §4.3: the player's `SpeakingCallback` may fire on an audio-completion thread, so `noteSpeakingEdge` must never
+    /// wait on `lock` — which `poll` holds across `records?.write`, the frame `yield` and `feedProbe`. The injected
+    /// clock is called inside that lock, so parking it there parks a poll inside the lock for the whole measurement.
+    func testSpeakingEdgeDoesNotWaitForAPollHoldingTheLock() async throws {
+        let release = DispatchSemaphore(value: 0)
+        let park = LockedBox<Bool>(false)
+        let inside = LockedBox<Bool>(false)
+        let clock = now!
+        let parked = BroadcastCapture(appGroup: suite, containerURL: container, records: records, clock: {
+            if park.value {
+                park.mutate { $0 = false }                 // park exactly one poll, inside `lock`
+                inside.mutate { $0 = true }
+                release.wait()
+            }
+            return clock.value
+        }, pollInterval: 20_000_000)
+        try await parked.start(.broadcast)                 // the 20 ms poll task starts calling the clock
+        park.mutate { $0 = true }
+        for _ in 0 ..< 300 where !inside.value {           // await, never block this thread: the poll needs one
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(inside.value, "a poll is parked inside the lock")
+        let began = Date()
+        parked.noteSpeakingEdge(true)                      // yields into the edge stream; must not touch `lock`
+        parked.noteSpeakingEdge(false)
+        let elapsed = Date().timeIntervalSince(began)
+        release.signal()                                   // let the parked poll finish before any assertion fails
+        XCTAssertLessThan(elapsed, 0.5, "noteSpeakingEdge blocked on the poll lock")
+        await parked.stop()
     }
 }

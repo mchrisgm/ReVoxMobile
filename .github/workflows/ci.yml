@@ -34,6 +34,11 @@ jobs:
         run: bash scripts/ci/check-constant-coverage.sh
       - name: Extension surface (design spec §7.5, §11)
         run: bash scripts/ci/check-extension-surface.sh
+      # Two compile errors that swiftc -parse cannot see, so they otherwise cost a full macOS round each.
+      - name: Swift mistakes -parse cannot catch
+        run: |
+          python3 scripts/dev/check-core-imports.py --all
+          python3 scripts/dev/check-test-autoclosures.py
 
   ios-simulator:
     name: App and extension (iOS simulator)
