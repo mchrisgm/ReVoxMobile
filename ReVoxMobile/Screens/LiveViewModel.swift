@@ -358,6 +358,21 @@ final class LiveViewModel {
         await start()
     }
 
+    /// M10: a media-services reset made the controller rebuild its engine, but the run's player node and its
+    /// microphone tap lived on the engine that was thrown away, so a run that was going is dead until it is rebuilt.
+    /// The cached pipeline is dropped (its nodes belong to the old engine) and the run restarts the way the memory
+    /// row does. An idle screen only shows the status line.
+    private func restartAfterAudioReset() {
+        guard state == .running || state == .preparing else { return }
+        signature = nil
+        Task { [weak self] in
+            guard let self else { return }
+            await self.stop()
+            self.setState(.idle)
+            await self.start()
+        }
+    }
+
     /// Thermal `.critical`: stop the run and remember that heat, not the user, stopped it.
     func pauseForHeat() async {
         guard state == .running || state == .preparing else { return }
@@ -530,7 +545,9 @@ final class LiveViewModel {
         case .pausedByIOS: sessionStatus = Self.pausedByIOSText
         case .resumed: sessionStatus = nil
         case .resumeFailed: sessionStatus = Self.tapStartText
-        case .audioRestarted: sessionStatus = Self.audioRestartedText
+        case .audioRestarted:
+            sessionStatus = Self.audioRestartedText
+            restartAfterAudioReset()
         case .duckingChanged(let ducked): isDucked = ducked
         case .routeChanged: break   // §9: no user-visible surface; the tap rebuild happens in MicrophoneCapture (Task 30)
         case .captureStatus(let text): sessionStatus = text   // §6.1 "No microphone input"; nil clears the line

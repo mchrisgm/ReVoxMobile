@@ -7,6 +7,9 @@ import ReVoxCore
 final class ModelsViewModel {
     static let keepOpenText = "Keep ReVox open while downloading"
     static let stopToDeleteText = "Stop translation to delete models"
+    /// M10: verifying a download is a full WhisperKit load; two models resident beside a running session is what
+    /// the §9 memory rows exist to prevent, so a download waits for the session to stop.
+    static let stopToDownloadText = "Stop translation to download models"
     static let notRecommendedText = "Not recommended for this iPhone"
     static let confirmDeleteMessage = "You can download it again later."
     static let vadName = "Voice detector"
@@ -22,6 +25,8 @@ final class ModelsViewModel {
     var lowStorageWarning: String?
     /// Set only when a failure follows the user's own Download / Resume / Retry (§8.8); the row state is the other surface.
     var downloadFailureAlert: String?
+    /// M10: the "Can't download now" alert; only the running-session refusal produces it.
+    var downloadRefusedAlert: String?
     @ObservationIgnored private var awaitingUserResult: Set<WhisperModelID> = []
 
     init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, isPipelineRunning: @escaping @MainActor () -> Bool) {
@@ -66,6 +71,7 @@ final class ModelsViewModel {
     }
 
     var canDelete: Bool { !isPipelineRunning() }
+    var canDownload: Bool { !isPipelineRunning() }
 
     var footerText: String? {
         if manager.hasActiveDownload || !manager.pausedKinds.isEmpty { return Self.keepOpenText }
@@ -80,6 +86,10 @@ final class ModelsViewModel {
 
     func download(_ id: WhisperModelID) {
         lowStorageWarning = nil
+        guard canDownload else {
+            downloadRefusedAlert = Self.stopToDownloadText
+            return
+        }
         switch manager.freeSpaceVerdict(for: .whisper(id)) {
         case .refuse(let message):
             lowStorageAlert = message

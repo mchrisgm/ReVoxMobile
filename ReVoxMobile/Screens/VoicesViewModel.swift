@@ -12,6 +12,8 @@ final class VoicesViewModel {
     static let engineFooterText = "ReVox uses the system voice until pocket-tts is downloaded, and falls back to it automatically if pocket-tts fails."
     static let stopToDeleteText = "Stop translation to delete voices"
     static let stopToPlaySampleText = "Stop translation to play a sample"
+    /// M10: verifying pocket-tts loads it; beside a running session that is a second model resident (§9).
+    static let stopToDownloadText = "Stop translation to download voices"
     static let confirmDeleteMessage = "ReVox will use the system voice until you download it again."
     static let pocketTTSName = "pocket-tts"
     static let systemVoiceValue = "system"
@@ -50,6 +52,8 @@ final class VoicesViewModel {
     var deleteFailureAlert: String?
     var lowStorageWarning: String?
     var downloadFailureAlert: String?
+    /// M10: the "Can't download now" alert; only the running-session refusal produces it.
+    var downloadRefusedAlert: String?
     @ObservationIgnored private var awaitingUserResult = false
 
     init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, speakerStatus: SpeakerStatusRelay,
@@ -104,6 +108,7 @@ final class VoicesViewModel {
 
     var canDelete: Bool { isPocketTTSInstalled && !isPipelineRunning() }
     var canPlaySample: Bool { !isPipelineRunning() && !isPlayingSample }
+    var canDownload: Bool { !isPipelineRunning() }
 
     /// M10: why Play sample is disabled, for the caption under it (a disabled control never goes unexplained).
     /// nil while a sample plays: the spinner beside the button is the reason then.
@@ -117,6 +122,10 @@ final class VoicesViewModel {
 
     func download() {
         lowStorageWarning = nil
+        guard canDownload else {
+            downloadRefusedAlert = Self.stopToDownloadText
+            return
+        }
         switch manager.freeSpaceVerdict(for: .pocketTTS) {
         case .refuse(let message):
             lowStorageAlert = message

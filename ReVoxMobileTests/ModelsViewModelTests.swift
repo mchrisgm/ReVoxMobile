@@ -273,4 +273,24 @@ final class ModelsViewModelTests: XCTestCase {
         let flagged = makeModel(fileRecord: record)
         XCTAssertEqual(flagged.vadRow.noticeText, ModelManager.upstreamChangedText)
     }
+
+    /// M10: verifying a download is a full WhisperKit load, so a download is refused while a session runs (§9).
+    func testDownloadRefusedWhileRunningAndAllowedWhenIdle() async {
+        let model = makeModel()
+        pipelineRunning = true
+        XCTAssertFalse(model.canDownload)
+        model.download(.tiny)
+        XCTAssertEqual(model.downloadRefusedAlert, "Stop translation to download models")
+        XCTAssertNil(model.lowStorageAlert)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.variantDownloads, [])
+        XCTAssertEqual(model.rows[0].state.phase, .idle)
+
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+        XCTAssertTrue(model.canDownload)
+        model.download(.tiny)
+        XCTAssertNil(model.downloadRefusedAlert)
+        await waitUntil { model.rows[0].state.phase == .installed }
+    }
 }

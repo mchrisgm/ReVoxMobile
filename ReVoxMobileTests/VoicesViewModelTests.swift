@@ -378,4 +378,24 @@ final class VoicesViewModelTests: XCTestCase {
         record.record(.pocketTTS, files: ["v2.1/english/constants_bin/gone.bin": 4])
         XCTAssertEqual(makeModel(fileRecord: record).pocketTTSNoticeText, ModelManager.upstreamChangedText)
     }
+
+    /// M10: verifying pocket-tts loads it, so the download is refused while a session runs (§9).
+    func testDownloadRefusedWhileRunningAndAllowedWhenIdle() async {
+        let model = makeModel()
+        pipelineRunning = true
+        XCTAssertFalse(model.canDownload)
+        model.download()
+        XCTAssertEqual(model.downloadRefusedAlert, "Stop translation to download voices")
+        XCTAssertNil(model.lowStorageAlert)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.pocketTTSDownloads, 0)
+        XCTAssertEqual(model.pocketTTSState.phase, .idle)
+
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+        XCTAssertTrue(model.canDownload)
+        model.download()
+        XCTAssertNil(model.downloadRefusedAlert)
+        await waitUntil { model.pocketTTSState.phase == .installed }
+    }
 }

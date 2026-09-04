@@ -721,4 +721,26 @@ final class LiveViewModelTests: XCTestCase {
         model.dismissBanner()
         XCTAssertNil(model.banner)
     }
+
+    /// M10: after a media-services reset the controller's rebuilt engine has neither the run's player node nor its
+    /// tap, so a run that was going is restarted on a fresh pipeline; an idle screen only shows the status line.
+    func testAudioRestartedRestartsARunningSessionAndLeavesAnIdleOneAlone() async {
+        let model = makeModel()
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+        XCTAssertEqual(model.supplierCallCount, 1)
+
+        model.handle(SessionEvent.audioRestarted)
+        XCTAssertEqual(model.sessionStatus, "Audio restarted")
+        await waitUntil("restarted on a new pipeline") { model.state == .running && model.supplierCallCount == 2 }
+        XCTAssertEqual(pipelines.value[0].stopCount, 2, "stopped, then torn down before the rebuild, as the memory row does")
+        XCTAssertEqual(pipelines.value[1].startedWith.count, 1)
+
+        let idle = makeModel()
+        idle.handle(SessionEvent.audioRestarted)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(idle.sessionStatus, "Audio restarted")
+        XCTAssertEqual(idle.state, .idle)
+        XCTAssertEqual(idle.supplierCallCount, 0, "nothing to restart while idle")
+    }
 }
