@@ -165,6 +165,7 @@ final class MicrophoneCaptureTests: XCTestCase {
         XCTAssertEqual(position, 512)
 
         await capture.stop()
+        engine.stop()   // give the real engine's CoreAudio resources back; see AudioPlayerTests for what leaks cost
     }
 }
 

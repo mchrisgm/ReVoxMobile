@@ -7,5 +7,6 @@ enum SessionEvent: Equatable, Sendable {
     case resumeFailed                                   // "Tap Start to resume"
     case routeChanged(AVAudioSession.RouteChangeReason)
     case audioRestarted                                 // "Audio restarted"
+    case duckingChanged(Bool)                           // Live "Ducking" pill (§8.2); emitted at the end of every cycle whose result changed
     case captureStatus(String?)                         // the capture source's own line, e.g. "No microphone input"; nil clears it (§6.1)
 }

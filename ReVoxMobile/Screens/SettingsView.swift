@@ -4,6 +4,7 @@ import ReVoxCore
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let models: ModelsViewModel
+    let voices: VoicesViewModel
 
     var body: some View {
         Form {
@@ -44,7 +45,29 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Duck other audio while speaking", isOn: $model.ducking)
+                    .accessibilityHint("Lowers other apps' audio while the English voice plays")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice volume")
+                    Slider(value: $model.voiceVolume, in: 0...1, step: 0.05) {
+                        Text("Voice volume")
+                    } minimumValueLabel: {
+                        Image(systemName: "speaker.fill").accessibilityHidden(true)
+                    } maximumValueLabel: {
+                        Image(systemName: "speaker.wave.3.fill").accessibilityHidden(true)
+                    }
+                    .accessibilityValue("\(Int((model.voiceVolume * 100).rounded())) percent")
+                }
+                .frame(minHeight: 44)
+            } header: {
+                Text("Ducking")
+            } footer: {
+                Text("\(SettingsViewModel.duckingHelpText)\n\(SettingsViewModel.duckingAppliesOnStartText)")
+            }
+
+            Section {
                 NavigationLink("Models") { ModelsView(model: models) }
+                NavigationLink("Voices") { VoicesView(model: voices) }
             }
         }
         .navigationTitle("Settings")

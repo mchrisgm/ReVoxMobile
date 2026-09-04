@@ -1,8 +1,12 @@
 name: TestFlight
 
+# Deliberate, not automatic. Every run archives, tests and uploads on a macOS runner, which bills at ten
+# times the minute rate; running it on each push to main alongside CI exhausted the account's Actions
+# allowance twice (runs 33811704361 and 33819325082 failed in seconds with no readable log, the signature
+# of a job that was never started). A release is a decision, so it is dispatched or tagged.
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       signing:

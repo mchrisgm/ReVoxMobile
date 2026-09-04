@@ -11,7 +11,10 @@ final class FakeInstallSteps: @unchecked Sendable {
     private(set) var variantDownloads: [String] = []
     private(set) var vadDownloads = 0
     private(set) var vadDeletes = 0
+    private(set) var pocketTTSDownloads = 0
+    private(set) var pocketTTSDeletes = 0
     var failVariantOnce = false
+    var failPocketTTSOnce = false
 
     var holdDownloads: Bool {
         get { lock.lock(); defer { lock.unlock() }; return held }
@@ -94,6 +97,21 @@ final class FakeInstallSteps: @unchecked Sendable {
         try touch(layout.vadBundle.appendingPathComponent(ModelLayout.compiledMarker))
     }
 
+    /// The complete `.ane` / fp16 English pack of §6.9: four bundles, the constants files and every offered voice.
+    static func fabricatePocketTTS(in layout: ModelLayout) throws {
+        let folder = layout.pocketTTSLanguageFolder
+        for bundle in ModelLayout.pocketTTSBundles {
+            try touch(folder.appendingPathComponent(bundle).appendingPathComponent(ModelLayout.compiledMarker))
+        }
+        let constants = folder.appendingPathComponent(ModelLayout.pocketTTSConstantsFolder)
+        for file in ModelLayout.pocketTTSConstantFiles {
+            try touch(constants.appendingPathComponent(file))
+        }
+        for voice in ModelCatalog.pocketTTS.offeredVoices {
+            try touch(constants.appendingPathComponent(ModelLayout.pocketTTSVoiceFile(voice)))
+        }
+    }
+
     func steps(layout: ModelLayout) -> InstallSteps {
         InstallSteps(
             downloadWhisperVariant: { [self] descriptor, _, progress in
@@ -130,7 +148,24 @@ final class FakeInstallSteps: @unchecked Sendable {
                 note { vadDeletes += 1 }
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(ModelLayout.vadFolder))
             },
-            setOfflineMode: { [self] offline in note { offlineModeHistory.append(offline) } }
+            setOfflineMode: { [self] offline in note { offlineModeHistory.append(offline) } },
+            downloadPocketTTS: { [self] _, progress in
+                note { pocketTTSDownloads += 1 }
+                if failPocketTTSOnce {
+                    failPocketTTSOnce = false
+                    throw URLError(.notConnectedToInternet)
+                }
+                progress(0, .listing)
+                try await waitWhileHeld()
+                progress(0.5, .downloading(completedFiles: 3, totalFiles: 6))
+                try Self.fabricatePocketTTS(in: layout)
+                progress(1, .compiling("flowlm_step_ane.mlmodelc"))
+            },
+            verifyPocketTTS: { _ in },
+            deletePocketTTS: { [self] directory in
+                note { pocketTTSDeletes += 1 }
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(ModelLayout.pocketTTSFolder))
+            }
         )
     }
 }

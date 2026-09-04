@@ -6,14 +6,17 @@ import ReVoxCore
 /// session controller (§6.7). Mute discards, never pauses (W7); held clips play after the next engine start.
 final class AudioPlayer: ReVoxCore.AudioPlayer {
     let sink: PlayerNodeSink
+    /// Shared with the settings writer: the slider's value reaches every enqueue without another hop (§8.5).
+    let voiceVolume: VoiceVolume
     private let queue: PlaybackQueue
     private let controller: AudioSessionController
 
-    init(controller: AudioSessionController, onSpeaking: @escaping SpeakingCallback) {
+    init(controller: AudioSessionController, onSpeaking: @escaping SpeakingCallback, voiceVolume: VoiceVolume = VoiceVolume()) {
         self.controller = controller
+        self.voiceVolume = voiceVolume
         let sink = PlayerNodeSink(onStopped: { [controller] in
             Task { await controller.guardedPlay() }
-        })
+        }, voiceVolume: voiceVolume)
         self.sink = sink
         self.queue = PlaybackQueue(sink: sink, onSpeakingChanged: onSpeaking)
     }
@@ -57,5 +60,11 @@ final class AudioPlayer: ReVoxCore.AudioPlayer {
 
     func setVoiceVolume(_ volume: Float) {
         sink.setVoiceVolume(volume)
+    }
+
+    /// `PlayerNodeSink.pocketTTSEngineGain` while pocket-tts speaks, 1.0 for the system voice (§6.7); set by the
+    /// speaker assembly whenever the effective speaker's status changes.
+    func setEngineGain(_ gain: Float) {
+        sink.setEngineGain(gain)
     }
 }

@@ -360,4 +360,131 @@ final class ModelManagerTests: XCTestCase {
         }
         XCTAssertFalse(host.isIdleTimerDisabled)
     }
+
+    // MARK: pocket-tts installed check (Task 45, §6.9)
+
+    private func fabricatePocketTTS(missing: String? = nil) throws {
+        let folder = layout.pocketTTSLanguageFolder
+        for bundle in ModelLayout.pocketTTSBundles {
+            try touch(folder.appendingPathComponent(bundle).appendingPathComponent(ModelLayout.compiledMarker))
+        }
+        let constants = folder.appendingPathComponent(ModelLayout.pocketTTSConstantsFolder)
+        for file in ModelLayout.pocketTTSConstantFiles where file != missing {
+            try touch(constants.appendingPathComponent(file))
+        }
+        for voice in ModelCatalog.pocketTTS.offeredVoices where ModelLayout.pocketTTSVoiceFile(voice) != missing {
+            try touch(constants.appendingPathComponent(ModelLayout.pocketTTSVoiceFile(voice)))
+        }
+    }
+
+    func testPocketTTSInstalledWhenEveryRequiredFileIsPresent() throws {
+        XCTAssertFalse(layout.isPocketTTSInstalled())
+        try fabricatePocketTTS()
+        XCTAssertTrue(layout.isPocketTTSInstalled())
+        XCTAssertEqual(ModelLayout.pocketTTSBundles, ["cond_prefill_ane.mlmodelc", "flowlm_step_ane.mlmodelc", "flow_decoder_fused.mlmodelc", "mimi_decoder.mlmodelc"])
+        XCTAssertEqual(ModelLayout.pocketTTSConstantsFolder, "constants_bin")
+        XCTAssertEqual(ModelLayout.pocketTTSConstantFiles, ["text_embed_table.bin", "tokenizer.model", "bos_emb.bin", "bos_before_voice.bin"])
+        XCTAssertEqual(ModelLayout.pocketTTSVoiceFile("alba"), "alba.safetensors")
+        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+    }
+
+    func testPocketTTSNotReadyWhenVoiceOrBosMissing() throws {
+        try fabricatePocketTTS(missing: "bos_before_voice.bin")
+        XCTAssertFalse(layout.isPocketTTSInstalled(), "bos_before_voice.bin is the runtime backfill guard (§6.5)")
+
+        try FileManager.default.removeItem(at: layout.pocketTTSLanguageFolder)
+        try fabricatePocketTTS(missing: ModelLayout.pocketTTSVoiceFile("javert"))
+        XCTAssertFalse(layout.isPocketTTSInstalled(), "every offered voice file is required")
+
+        try FileManager.default.removeItem(at: layout.pocketTTSLanguageFolder)
+        try fabricatePocketTTS()
+        try touch(layout.pocketTTSLanguageFolder.appendingPathComponent("mimi_decoder.mlmodelc/weights/weight.bin.partial"))
+        XCTAssertFalse(layout.isPocketTTSInstalled(), "no partial file anywhere beneath the language folder")
+    }
+
+
+    // MARK: pocket-tts row (Task 46, §6.9, §8.4)
+
+    @MainActor
+    func testInstallPocketTTSUpdatesTheRowAndReadiness() async {
+        let manager = makeManager()
+        XCTAssertEqual(manager.state(for: .pocketTTS).phase, .idle)
+        XCTAssertEqual(manager.state(for: .pocketTTS).bytesExpected, ModelCatalog.download(for: .pocketTTS).expectedBytes)
+        XCTAssertFalse(manager.pocketTTSInstalled)
+
+        manager.install(.pocketTTS)
+        await waitUntil("pocket-tts installed") { manager.state(for: .pocketTTS).phase == .installed }
+        XCTAssertTrue(manager.pocketTTSInstalled)
+        XCTAssertEqual(manager.state(for: .pocketTTS).fraction, 1)
+        XCTAssertEqual(fakeSteps.pocketTTSDownloads, 1)
+        XCTAssertEqual(fakeSteps.vadDownloads, 0, "pocket-tts never pulls the VAD bundle")
+        XCTAssertFalse(manager.hasActiveDownload)
+        let ready = await manager.isPocketTTSReady()
+        XCTAssertTrue(ready)
+    }
+
+    @MainActor
+    func testPocketTTSRowIsDeterminateWhileDownloading() async {
+        let manager = makeManager()
+        fakeSteps.holdDownloads = true
+        manager.install(.pocketTTS)
+        await waitUntil { manager.state(for: .pocketTTS).phase == .listing }
+        XCTAssertNotNil(manager.state(for: .pocketTTS).fraction)
+        XCTAssertTrue(manager.hasActiveDownload)
+        fakeSteps.holdDownloads = false
+        await waitUntil { manager.state(for: .pocketTTS).phase == .installed }
+    }
+
+    @MainActor
+    func testCancelPocketTTSReturnsToIdle() async {
+        let manager = makeManager()
+        fakeSteps.holdDownloads = true
+        manager.install(.pocketTTS)
+        await waitUntil { manager.state(for: .pocketTTS).phase.isActive }
+        manager.cancel(.pocketTTS)
+        await waitUntil { manager.state(for: .pocketTTS).phase == .idle }
+        XCTAssertFalse(manager.pocketTTSInstalled)
+        XCTAssertFalse(layout.isPocketTTSInstalled())
+        XCTAssertEqual(fakeSteps.offlineModeHistory.last, true)
+    }
+
+    @MainActor
+    func testFailedPocketTTSInstallShowsFailedAndRetryInstalls() async {
+        let manager = makeManager()
+        fakeSteps.failPocketTTSOnce = true
+        manager.install(.pocketTTS)
+        await waitUntil { if case .failed = manager.state(for: .pocketTTS).phase { return true } else { return false } }
+        manager.install(.pocketTTS)
+        await waitUntil { manager.state(for: .pocketTTS).phase == .installed }
+        XCTAssertEqual(fakeSteps.pocketTTSDownloads, 2)
+    }
+
+    @MainActor
+    func testDeletePocketTTSRefusedWhileRunningAndClearsWhenIdle() throws {
+        let running = makeManager(pipelineRunning: true)
+        XCTAssertThrowsError(try running.delete(.pocketTTS, activeModel: .small)) { error in
+            XCTAssertEqual(error as? ModelManagerError, .pipelineRunning)
+        }
+
+        let idle = makeManager()
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        idle.refreshInstalledStates()
+        XCTAssertTrue(idle.pocketTTSInstalled)
+        XCTAssertEqual(idle.state(for: .pocketTTS).phase, .installed)
+        try idle.delete(.pocketTTS, activeModel: .small)
+        XCTAssertEqual(fakeSteps.pocketTTSDeletes, 1)
+        XCTAssertFalse(idle.pocketTTSInstalled)
+        XCTAssertEqual(idle.state(for: .pocketTTS).phase, .idle)
+        XCTAssertFalse(layout.isPocketTTSInstalled())
+    }
+
+    @MainActor
+    func testPocketTTSInstallRefusedWithoutSpace() async {
+        let manager = makeManager(availableBytes: 300_000_000)
+        manager.install(.pocketTTS)
+        await waitUntil { if case .failed = manager.state(for: .pocketTTS).phase { return true } else { return false } }
+        XCTAssertEqual(manager.state(for: .pocketTTS).phase, .failed("Not enough space: needs about 0.9 GB, 0.3 GB free"))
+        XCTAssertEqual(fakeSteps.pocketTTSDownloads, 0)
+    }
+
 }

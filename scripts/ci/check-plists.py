@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Verify the Info.plists and privacy manifests before a build or an upload (design spec §11, C7).
+"""Verify the Info.plists, privacy manifests and entitlements before a build or an upload (design spec §11, C7, §5.6).
 
 Exit 0 when every rule holds; prints one line per violation and exits 1 otherwise.
 """
@@ -12,6 +11,11 @@ APP_PLIST = ROOT / "ReVoxMobile" / "Info.plist"
 EXT_PLIST = ROOT / "ReVoxBroadcast" / "Info.plist"
 APP_PRIVACY = ROOT / "ReVoxMobile" / "PrivacyInfo.xcprivacy"
 EXT_PRIVACY = ROOT / "ReVoxBroadcast" / "PrivacyInfo.xcprivacy"
+APP_ENTITLEMENTS = ROOT / "ReVoxMobile" / "ReVoxMobile.entitlements"
+EXT_ENTITLEMENTS = ROOT / "ReVoxBroadcast" / "ReVoxBroadcast.entitlements"
+APP_GROUPS_ENTITLEMENT = "com.apple.security.application-groups"
+MEMORY_ENTITLEMENT = "com.apple.developer.kernel.increased-memory-limit"
+EXPECTED_APP_GROUPS = ["group.$(REVOX_BUNDLE_PREFIX).revox"]
 
 APP_REASONS = {
     "NSPrivacyAccessedAPICategoryUserDefaults": {"CA92.1", "1C8F.1"},
@@ -74,12 +78,26 @@ def check_privacy(path, expected, problems):
             problems.append(f"{path}: {category} must declare {sorted(reasons)}, found {sorted(declared.get(category, set()))}")
 
 
+def check_entitlements(problems):
+    """Design spec §5.6 and §11: the memory entitlement is on the app only; both targets share exactly one App Group."""
+    app = load(APP_ENTITLEMENTS)
+    extension = load(EXT_ENTITLEMENTS)
+    for path, entitlements in ((APP_ENTITLEMENTS, app), (EXT_ENTITLEMENTS, extension)):
+        if entitlements.get(APP_GROUPS_ENTITLEMENT) != EXPECTED_APP_GROUPS:
+            problems.append(f"{path}: {APP_GROUPS_ENTITLEMENT} must be exactly {EXPECTED_APP_GROUPS}")
+    if app.get(MEMORY_ENTITLEMENT) is not True:
+        problems.append(f"{APP_ENTITLEMENTS}: {MEMORY_ENTITLEMENT} must be true (design spec §5.6)")
+    if MEMORY_ENTITLEMENT in extension:
+        problems.append(f"{EXT_ENTITLEMENTS}: {MEMORY_ENTITLEMENT} must never be declared for the extension (design spec §11)")
+
+
 def main():
     problems = []
     check_app_plist(problems)
     check_extension_plist(problems)
     check_privacy(APP_PRIVACY, APP_REASONS, problems)
     check_privacy(EXT_PRIVACY, EXT_REASONS, problems)
+    check_entitlements(problems)
     for problem in problems:
         print(f"::error::{problem}")
     if problems:

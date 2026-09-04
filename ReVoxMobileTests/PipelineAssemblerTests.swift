@@ -14,14 +14,15 @@ final class PipelineAssemblerTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func testSessionMetadataMirrorsSettings() {
+    func testSessionMetadataMirrorsSettingsAndTheEffectiveVoice() {
         var settings = Settings()
         settings.language = "pt"
         settings.model = "base"
         settings.captureMode = "microphone"
         let startedAt = Date(timeIntervalSince1970: 1_756_800_000)
-        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt)
-        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .microphone, pinnedLanguage: "pt", modelID: "base", voice: "system", joinedInProgress: false))
+        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "cosette")
+        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .microphone, pinnedLanguage: "pt", modelID: "base", voice: "cosette", joinedInProgress: false))
+        XCTAssertEqual(PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "system").voice, "system")
     }
 
     func testBuildConfiguresTheSessionThenFailsOnAMissingVADBundle() async throws {
@@ -29,8 +30,14 @@ final class PipelineAssemblerTests: XCTestCase {
         let controller = AudioSessionController(session: seam)
         let container = try TranscriptContainer.make(inMemory: true)
         let layout = ModelLayout(root: root)
+        let speakers = SpeakerBundle(
+            speaker: SystemSpeaker(voiceIdentifier: nil, synthesize: { _ in [] }),
+            playerFactory: { _, onSpeaking in AudioPlayer(controller: controller, onSpeaking: onSpeaking) },
+            voiceName: { "system" }
+        )
         do {
-            _ = try await PipelineAssembler.build(settings: Settings(), layout: layout, sessionController: controller, transcriptContainer: container, progress: { _ in })
+            _ = try await PipelineAssembler.build(settings: Settings(), layout: layout, sessionController: controller,
+                                                  transcriptContainer: container, speakers: speakers, progress: { _ in })
             XCTFail("expected vadLoadFailed")
         } catch let error as PipelineBuildError {
             if case .vadLoadFailed = error {} else { XCTFail("expected vadLoadFailed, got \(error)") }

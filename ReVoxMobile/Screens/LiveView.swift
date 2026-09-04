@@ -64,6 +64,12 @@ struct LiveView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.orange.opacity(0.2), in: Capsule())
                 }
+                if let ducking = model.duckingStatusText {
+                    Text(ducking)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background((model.isDucked ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
+                }
                 if let status = model.sessionStatus {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
@@ -72,7 +78,7 @@ struct LiveView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Model \(model.modelStatusText). \(model.voiceStatusText).\(model.isFallingBehind ? " Falling behind." : "")\(model.sessionStatus.map { " \($0)." } ?? "")")
+        .accessibilityLabel("Model \(model.modelStatusText). \(model.voiceStatusText).\(model.isFallingBehind ? " Falling behind." : "")\(model.duckingStatusText.map { " \($0)." } ?? "")\(model.sessionStatus.map { " \($0)." } ?? "")")
         .accessibilityAddTraits(.updatesFrequently)
     }
 

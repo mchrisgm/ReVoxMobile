@@ -1,3 +1,4 @@
+import FluidAudio
 import Foundation
 import ReVoxCore
 
@@ -23,6 +24,24 @@ struct ModelLayout: Sendable, Equatable {
     static let tokenizerFiles = ["tokenizer.json", "tokenizer_config.json", "config.json"]
     static let compiledMarker = "coremldata.bin"
     static let partialSuffix = ".partial"
+
+    /// The `.ane` / fp16 members of `ModelNames.PocketTTS.requiredModels(precision: .fp16, placement: .ane)` that are
+    /// CoreML bundles; the fifth member, `constants_bin`, is a folder of files checked file by file (§6.9).
+    static let pocketTTSBundles = [
+        ModelNames.PocketTTS.condPrefillAneFile,
+        ModelNames.PocketTTS.flowlmStepAneFile,
+        ModelNames.PocketTTS.flowDecoderFusedFile,
+        ModelNames.PocketTTS.mimiDecoderFile,
+    ]
+    static let pocketTTSConstantsFolder = ModelNames.PocketTTS.constantsBinDir
+    /// Loaded by `PocketTtsConstantsLoader` (`text_embed_table.bin`, `tokenizer.model`, `bos_emb.bin`) plus the runtime
+    /// backfill target `bos_before_voice.bin`, which must exist so that `initialize()` never fetches (§6.5).
+    static let pocketTTSConstantFiles = ["text_embed_table.bin", "tokenizer.model", "bos_emb.bin", "bos_before_voice.bin"]
+
+    /// `constants_bin/<voice>.safetensors` — the file `ensureVoice` would download if it were missing (§6.5).
+    static func pocketTTSVoiceFile(_ voice: String) -> String {
+        "\(voice).safetensors"
+    }
 
     let root: URL
 
@@ -101,6 +120,24 @@ struct ModelLayout: Sendable, Equatable {
     func isVADInstalled(fileManager: FileManager = .default) -> Bool {
         guard fileManager.fileExists(atPath: vadBundle.appendingPathComponent(Self.compiledMarker).path) else { return false }
         return !Self.containsPartialFiles(under: vadBundle, fileManager: fileManager)
+    }
+
+    /// pocket-tts installed check (§6.9): every `.ane` bundle compiled, every constants file, **every** offered voice
+    /// file, and no partial file beneath the language folder. This is the actual no-network guarantee (§6.5).
+    func isPocketTTSInstalled(fileManager: FileManager = .default) -> Bool {
+        let folder = pocketTTSLanguageFolder
+        for bundle in Self.pocketTTSBundles {
+            let marker = folder.appendingPathComponent(bundle).appendingPathComponent(Self.compiledMarker)
+            guard fileManager.fileExists(atPath: marker.path) else { return false }
+        }
+        let constants = folder.appendingPathComponent(Self.pocketTTSConstantsFolder, isDirectory: true)
+        for file in Self.pocketTTSConstantFiles {
+            guard fileManager.fileExists(atPath: constants.appendingPathComponent(file).path) else { return false }
+        }
+        for voice in ModelCatalog.pocketTTS.offeredVoices {
+            guard fileManager.fileExists(atPath: constants.appendingPathComponent(Self.pocketTTSVoiceFile(voice)).path) else { return false }
+        }
+        return !Self.containsPartialFiles(under: folder, fileManager: fileManager)
     }
 
     func installedWhisperModels(fileManager: FileManager = .default) -> [WhisperModelID] {

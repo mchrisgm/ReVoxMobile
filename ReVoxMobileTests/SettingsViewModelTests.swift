@@ -66,4 +66,42 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(SettingsViewModel.presetDescription(.balanced), "Silence 500 ms, max 10 s")
         XCTAssertEqual(SettingsViewModel.presetDescription(.fast), "Silence 300 ms, max 4 s")
     }
+
+    // MARK: ducking toggle, voice volume, help text (§8.5, C1)
+
+    func testDuckingAndVoiceVolumeRoundTripAndReachThePlayersBox() {
+        let store = makeStore()
+        let box = VoiceVolume(1)
+        let model = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: box)
+        XCTAssertTrue(model.ducking, "R11 default")
+        XCTAssertEqual(model.voiceVolume, 1.0)
+
+        model.ducking = false
+        model.voiceVolume = 0.4
+        XCTAssertEqual(box.current, 0.4, accuracy: 0.0001, "the players read the box at enqueue time")
+        let reread = SettingsStore(fileURL: store.fileURL)
+        XCTAssertFalse(reread.settings.ducking)
+        XCTAssertEqual(reread.settings.voiceVolume, 0.4, accuracy: 0.0001)
+
+        model.voiceVolume = 1.7
+        XCTAssertEqual(model.voiceVolume, 1.0, "clamped")
+        XCTAssertEqual(box.current, 1)
+        model.voiceVolume = -0.2
+        XCTAssertEqual(model.voiceVolume, 0)
+    }
+
+    func testSavedVoiceVolumeSeedsTheBoxAtLaunch() {
+        let store = makeStore()
+        store.update { $0.voiceVolume = 0.25 }
+        let box = VoiceVolume(1)
+        _ = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: box)
+        XCTAssertEqual(box.current, 0.25, accuracy: 0.0001)
+    }
+
+    func testDuckingHelpTextNamesTheWindowsSlider() {
+        XCTAssertEqual(SettingsViewModel.duckingHelpText,
+                       "While ReVox speaks, iOS lowers other audio by an amount iOS decides. The Windows ducked-level slider has no iOS equivalent; use Voice volume to balance ReVox's own voice.")
+        XCTAssertEqual(SettingsViewModel.duckingAppliesOnStartText, "A change to the ducking toggle takes effect the next time you tap Start.")
+    }
+
 }

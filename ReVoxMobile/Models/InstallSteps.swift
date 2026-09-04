@@ -26,6 +26,19 @@ struct InstallSteps: Sendable {
     /// `ModelHub.offlineMode = value`.
     var setOfflineMode: @Sendable (Bool) -> Void
 
+    /// `PocketTtsResourceDownloader.ensureModels(language: .english, directory: fluidBase, precision: .fp16, placement: .ane)`;
+    /// the downloader appends `Models` itself, so files land under `root/fluid/Models/pocket-tts/v2.1/english/` (§6.5).
+    /// Progress is byte-weighted over 0-1.
+    var downloadPocketTTS: @Sendable (_ fluidBaseDirectory: URL, _ progress: @escaping FluidProgress) async throws -> Void = { _, _ in
+        throw ModelInstallError.stepUnavailable("downloadPocketTTS")
+    }
+    /// The verified load: `PocketTtsManager(... directory: fluidBase, precision: .fp16, placement: .ane).initialize()`.
+    var verifyPocketTTS: @Sendable (_ fluidBaseDirectory: URL) async throws -> Void = { _ in
+        throw ModelInstallError.stepUnavailable("verifyPocketTTS")
+    }
+    /// `ModelHub.clearCache(for: .pocketTts, directory:)` on `layout.fluidModelsDirectory` (§6.9; never `clearAllCaches()`).
+    var deletePocketTTS: @Sendable (_ fluidModelsDirectory: URL) -> Void = { _ in }
+
     static let tokenizerFiles = ModelLayout.tokenizerFiles
 
     static let production = InstallSteps(
@@ -91,6 +104,35 @@ struct InstallSteps: Sendable {
         },
         setOfflineMode: { offline in
             ModelHub.offlineMode = offline
+        },
+        downloadPocketTTS: { fluidBaseDirectory, progress in
+            _ = try await PocketTtsResourceDownloader.ensureModels(
+                language: .english,
+                directory: fluidBaseDirectory,
+                precision: .fp16,
+                placement: .ane,
+                progressHandler: { report in
+                    progress(report.fractionCompleted, InstallSteps.phase(from: report.phase))
+                }
+            )
+        },
+        verifyPocketTTS: { fluidBaseDirectory in
+            // Same directory / precision / placement as the download and as PocketTTSSpeaker: the cache hits.
+            let manager = PocketTtsManager(
+                defaultVoice: PocketTtsConstants.defaultVoice,
+                language: .english,
+                directory: fluidBaseDirectory,
+                precision: .fp16,
+                placement: .ane
+            )
+            try await manager.initialize()
+            guard await manager.isAvailable else {
+                throw PocketTTSError.modelNotFound("pocket-tts reported unavailable after initialize()")
+            }
+            // The manager is dropped here; whether ARC releases the models is measured on device (§13 Q7).
+        },
+        deletePocketTTS: { fluidModelsDirectory in
+            ModelHub.clearCache(for: Repo.pocketTts, directory: fluidModelsDirectory)
         }
     )
 

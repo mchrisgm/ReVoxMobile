@@ -170,3 +170,11 @@ Before every upload the CI job runs `scripts/ci/check-plists.py`, which verifies
 - **The `Check secrets` job fails in about a second, with no log to read.** This is not a secrets problem: that job's script cannot fail, because every branch exits 0 — missing secrets *skip* the upload with a notice rather than failing. A one-second failure with no retrievable log means the job never ran a step, which in practice means GitHub refused to start it — usually the **Actions spending limit**. Check **Settings** → **Billing and licensing** → **Plans and usage**, and note that macOS runners bill at 10× the minute rate, so a day of debugging on `macos-26` consumes an allowance quickly.
 - **Xcode 26.6 not on the runner image.** `scripts/ci/select-xcode.sh` prints a warning and falls back to the newest Xcode 26.x on the image. Update `XCODE_VERSION` in both workflows once you have verified the build with the newer Xcode.
 - **The run failed but you need the logs.** Every run keeps `test.log`, `archive.log`, `export.log` and `upload.log` (and the `.ipa` and `build/upload/DistributionSummary.plist` when the run got that far) as the artefact `revox-mobile-build-<run number>` for 14 days.
+
+### The archive fails naming `com.apple.developer.kernel.increased-memory-limit`
+
+The app declares the increased-memory-limit entitlement (it lets the Whisper and pocket-tts models
+coexist on 4 GB devices). Automatic signing can only attach it if the capability is enabled on the
+App ID: Certificates, Identifiers & Profiles → Identifiers → the app's App ID → **Additional
+Capabilities** → tick **Increased Memory Limit**, save, then re-run the workflow. The extension must
+never declare it — `scripts/ci/check-plists.py` fails the build if it does.

@@ -70,6 +70,7 @@ capture → Segmenter → segment queue (max 3) → WhisperKitTranslator → tra
 These are iOS rules, not bugs, and they make the iPhone app behave differently from the Windows version:
 
 - **iOS cannot set another app's volume.** Ducking therefore uses the `AVAudioSession` option `.duckOthers`, and iOS itself decides how much to lower the other audio. ReVox adds a slider for the volume of its own spoken voice. The Windows "ducked level" slider has no iOS equivalent and does not exist here.
+- **Ducking is applied and released by changing the audio session's options**, never by deactivating it. Deactivating would require pausing the engine, and a paused engine captures no microphone audio — a gap after every spoken phrase. Because ReVox's session mixes with others rather than interrupting them, dropping the `.duckOthers` option is what ends the duck. The fallback that does deactivate is still in the code, behind one constant, in case a future iOS needs it; see [docs/measurements/m4-pocket-tts-ducking.md](docs/measurements/m4-pocket-tts-ducking.md).
 - **Capturing other apps' audio requires the user to start a system broadcast.** Apps cannot listen to each other on iOS. The user starts a screen broadcast from the broadcast picker inside ReVox or from Control Center's Screen Recording control, selects ReVox as the broadcast destination, and iOS then sends the other apps' audio to the `ReVoxBroadcast` extension.
 - **The broadcast extension has a 50 MB memory cap.** The Whisper and pocket-tts models are far larger than that, so every model lives in the app; the extension only captures audio and forwards it.
 - **Translation continues in the background** thanks to the `audio` background mode. You can lock the phone or switch to another app and ReVox keeps listening, translating and speaking.
@@ -77,7 +78,7 @@ These are iOS rules, not bugs, and they make the iPhone app behave differently f
 ## Delivery
 
 - **CI on every push:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `swift test` for `ReVoxCore` in a Linux container (job `core-linux`) and builds and tests the app and the extension on an iPhone simulator with Xcode 26 (job `ios-simulator`).
-- **TestFlight on every push to `main`:** [`.github/workflows/testflight.yml`](.github/workflows/testflight.yml) runs the tests, archives, exports and uploads the build to App Store Connect (jobs `preflight` and `upload`). Until the Apple secrets are configured the upload is skipped with a notice and the workflow stays green.
+- **TestFlight on demand:** [`.github/workflows/testflight.yml`](.github/workflows/testflight.yml) runs the tests, archives, exports and uploads the build to App Store Connect (jobs `preflight` and `upload`). It is started by hand (`workflow_dispatch`) or by pushing a `v*` tag: a macOS runner bills at ten times the minute rate, so a release is a decision rather than a side effect of every merge. Until the Apple secrets are configured the upload is skipped with a notice and the workflow stays green.
 - [docs/release.md](docs/release.md): one-time Apple setup, GitHub secrets, signing paths and troubleshooting for the repository owner.
 - [docs/testing.md](docs/testing.md): how to install and try the app through TestFlight, for testers.
 
