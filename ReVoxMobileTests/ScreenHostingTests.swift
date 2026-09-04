@@ -46,6 +46,40 @@ final class ScreenHostingTests: XCTestCase {
         XCTAssertNil(installed.sampleUnavailableReason)
     }
 
+    /// The sample row's states the shared support cannot reach: a sample in flight (spinner), a sample failure
+    /// (the inline error), and a pocket-tts fallback (Retry). Built by hand so the relay and the player are ours.
+    func testVoicesViewHostsTheSampleStates() async throws {
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        let steps = FakeInstallSteps()
+        let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
+                                       verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxScreens-\(UUID().uuidString)")!))
+        let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { false },
+                                   availableBytes: { 50_000_000_000 }, host: FakeInstallHost())
+        manager.refreshInstalledStates()
+        let relay = SpeakerStatusRelay()
+        let holding = LockedBox<Bool>(true)
+        let failing = LockedBox<Bool>(false)
+        let player = SamplePlayer(play: { _, _ in
+            while holding.value { try await Task.sleep(nanoseconds: 10_000_000) }
+            if failing.value { throw SpeakerError.synthesisFailed("sample refused") }
+        })
+        let model = VoicesViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: 6 * 1_073_741_824),
+                                    speakerStatus: relay, samplePlayer: player, selection: { .system(identifier: nil) },
+                                    systemVoices: { [] }, isPipelineRunning: { false })
+        let task = Task { await model.playSample() }
+        await waitUntil("playing") { model.isPlayingSample }
+        host(NavigationStack { VoicesView(model: model) })          // spinner beside Play sample, button disabled
+        holding.mutate { $0 = false }
+        await task.value
+        failing.mutate { $0 = true }
+        await model.playSample()
+        XCTAssertNotNil(model.sampleError)
+        host(NavigationStack { VoicesView(model: model) })          // the inline error
+        relay.status = .fallback(.loadFailed("no ANE"))
+        XCTAssertTrue(model.showsRetry)
+        host(NavigationStack { VoicesView(model: model) })          // Retry, and an empty system-voice list
+    }
+
     func host<V: View>(_ view: V) {
         let controller = UIHostingController(rootView: view)
         controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)

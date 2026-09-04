@@ -65,6 +65,26 @@ final class SettingsViewModelTests: XCTestCase {
     func testPresetDescriptionsAreTheWindowsValues() {
         XCTAssertEqual(SettingsViewModel.presetDescription(.balanced), "Silence 500 ms, max 10 s")
         XCTAssertEqual(SettingsViewModel.presetDescription(.fast), "Silence 300 ms, max 4 s")
+        XCTAssertEqual(SettingsViewModel.presetDescription(.veryFast), "Silence 200 ms, max 3 s")
+    }
+
+    /// Every preset and every time mode has a title (07d1eed shipped a switch that did not know Very fast).
+    func testEveryPresetAndTimeModeHasATitle() {
+        XCTAssertEqual(SegmenterPreset.allCases.map(SettingsView.title(for:)), ["Balanced", "Fast", "Very fast"])
+        XCTAssertEqual(Settings.TimeDisplay.allCases.map(SettingsView.title(for:)), ["Time", "How long ago", "Both"])
+        XCTAssertEqual(Settings.TimeDisplay.allCases.map(SettingsViewModel.timeDisplayTitle), ["Time", "How long ago", "Both"])
+        XCTAssertEqual(Set(SegmenterPreset.allCases.map(SettingsView.title(for:))).count, SegmenterPreset.allCases.count, "no two presets share a title")
+    }
+
+    func testLanguageDisplayNameFallsBackToTheCodeAndTheCallersNilWord() {
+        XCTAssertEqual(LanguageCatalog.displayName(nil, whenNil: "Auto-detect"), "Auto-detect")
+        XCTAssertEqual(LanguageCatalog.displayName(nil, whenNil: "None"), "None")
+        XCTAssertNotEqual(LanguageCatalog.displayName("es", whenNil: ""), "es", "a code the locale knows is named")
+        XCTAssertFalse(LanguageCatalog.displayName("es", whenNil: "").isEmpty)
+        XCTAssertEqual(LanguageCatalog.displayName("zz", whenNil: ""), "zz", "a code Whisper does not know is shown as it is")
+        XCTAssertEqual(LanguageCatalog.concrete.count, LanguageCatalog.options.count - 1, "the two-way lists drop only Auto-detect")
+        XCTAssertFalse(LanguageCatalog.concrete.contains { $0.code == nil })
+        XCTAssertEqual(LanguageCatalog.options.first?.displayName, LanguageCatalog.autoDetectTitle)
     }
 
     // MARK: ducking toggle, voice volume, help text (§8.5, C1)
