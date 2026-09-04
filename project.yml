@@ -40,6 +40,7 @@ targets:
     platform: iOS
     sources:
       - path: ReVoxMobile
+      - path: Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox
@@ -51,6 +52,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_OBJC_BRIDGING_HEADER: ReVoxMobile/ReVoxMobile-Bridging-Header.h
     dependencies:
       - target: ReVoxBroadcast
       - package: ReVoxCore
@@ -69,6 +71,7 @@ targets:
     platform: iOS
     sources:
       - path: ReVoxBroadcast
+      - path: Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(REVOX_BUNDLE_PREFIX).revox.broadcast
@@ -78,6 +81,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ReVoxBroadcast/ReVoxBroadcast.entitlements
         PROVISIONING_PROFILE_SPECIFIER: $(REVOX_PROFILE_EXTENSION)
         APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_OBJC_BRIDGING_HEADER: ReVoxBroadcast/ReVoxBroadcast-Bridging-Header.h
     dependencies:
       - package: ReVoxCore
 
