@@ -17,6 +17,7 @@ struct WhisperSegmentSnapshot: Equatable, Sendable {
 /// The R3 decoding options, verbatim (§6.4). Only `language` varies; `firstTokenLogProbThreshold` is nil in
 /// production and set only by the device measurement test (Task 42).
 struct WhisperDecodingSpec: Equatable, Sendable {
+    /// "translate" (English out, R3) or "transcribe" (the words as spoken, M8's second direction).
     var task = "translate"
     var language: String
     var temperature: Float = 0.0
@@ -33,13 +34,15 @@ struct WhisperDecodingSpec: Equatable, Sendable {
     var noSpeechThreshold: Float? = nil
     var chunkingStrategy = "none"
 
-    init(language: String) {
+    init(language: String, task: String = "translate") {
         self.language = language
+        self.task = task
     }
 
+    /// Everything but `task` is R3 verbatim; the transcribe task changes the output language, nothing else.
     var decodingOptions: DecodingOptions {
         DecodingOptions(
-            task: .translate,
+            task: task == "transcribe" ? .transcribe : .translate,
             language: language,
             temperature: temperature,
             temperatureFallbackCount: temperatureFallbackCount,

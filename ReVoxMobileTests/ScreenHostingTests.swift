@@ -131,6 +131,18 @@ final class ScreenHostingTests: XCTestCase {
         await waitUntil { broadcast.rows.count == 1 }
         XCTAssertFalse(broadcast.showsBroadcastPicker)
         host(NavigationStack { LiveView(model: broadcast, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })   // attached, joined row
+        // M8, §8.2: the two-way card expanded, and the button's preparing state with its spinner and progress line.
+        let twoWay = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
+                                   supplier: { _, _ in FakeLivePipeline() })
+        twoWay.ignoredLanguage = "en"
+        twoWay.isTwoWay = true
+        twoWay.twoWayLanguage = "es"
+        host(NavigationStack { LiveView(model: twoWay, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })
+        XCTAssertEqual(twoWay.twoWayPair?.source, "en")
+        twoWay.handle(.transcriptOnly(reason: TranslationStage.noEngineReason))
+        host(NavigationStack { LiveView(model: twoWay, models: makeModelsViewModel(), broadcastExtensionBundleID: extensionID) })
+        XCTAssertEqual(twoWay.transcriptOnlyNote, TranslationStage.noEngineReason)
+
         XCTAssertEqual(LiveView.availableSources, [.microphone, .broadcast])
         XCTAssertEqual(BroadcastPickerButton.size, 50)
         XCTAssertEqual(BroadcastPickerButton.captionText, "Tap to choose ReVox and start the broadcast. You can also start it from Control Center's Screen Recording control.")

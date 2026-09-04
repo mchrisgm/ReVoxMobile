@@ -6,7 +6,7 @@ import WhisperKit
 @MainActor
 @Observable
 final class SettingsViewModel {
-    static let autoDetectTitle = "Auto-detect"
+    static let autoDetectTitle = LanguageCatalog.autoDetectTitle
     static let modelNames: [String] = WhisperModelID.allCases.map(\.displayName)
     static let voiceNames: [String] = ModelCatalog.pocketTTS.offeredVoices + ["system"]
     /// C1: the README and this footer say the Windows ducked-level slider has no iOS equivalent.
@@ -22,7 +22,7 @@ final class SettingsViewModel {
         self.store = store
         self.mute = mute
         self.volume = voiceVolume
-        self.languageOptions = Self.languageOptions(codes: Set(Constants.languages.values), locale: locale)
+        self.languageOptions = LanguageCatalog.languageOptions(codes: Set(Constants.languages.values), locale: locale)
         voiceVolume.current = Float(store.settings.voiceVolume)   // seed the players' box from the saved value
     }
 
@@ -62,16 +62,23 @@ final class SettingsViewModel {
         "Silence \(preset.silenceMs) ms, max \(Int(preset.maxSegmentSeconds)) s"
     }
 
-    /// "Auto-detect" first, then the codes by localized display name (the code when the locale has no name).
+    /// Kept as the screen's own entry point; `LanguageCatalog` is where the list is built (§8.5).
     static func languageOptions(codes: Set<String>, locale: Locale) -> [LanguageOption] {
-        let named = codes.map { code -> LanguageOption in
-            let name = locale.localizedString(forLanguageCode: code) ?? code
-            return LanguageOption(code: code, displayName: name)
-        }
-        .sorted { lhs, rhs in
-            if lhs.displayName == rhs.displayName { return (lhs.code ?? "") < (rhs.code ?? "") }
-            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-        }
-        return [LanguageOption(code: nil, displayName: autoDetectTitle)] + named
+        LanguageCatalog.languageOptions(codes: codes, locale: locale)
     }
+
+    /// §8.2 (M8): the language ReVox leaves alone. "None" is the pre-M8 behaviour — everything is translated.
+    var ignoredLanguage: String? {
+        get { store.settings.ignored }
+        set { store.update { $0.ignoredLanguage = newValue } }
+    }
+
+    /// The concrete languages the ignore picker offers, with "None" as the first row.
+    var ignoredLanguageOptions: [LanguageOption] {
+        [LanguageOption(code: nil, displayName: Self.noIgnoredLanguageTitle)] + LanguageCatalog.concrete
+    }
+
+    static let noIgnoredLanguageTitle = "None"
+    static let ignoredLanguageHelpText = "ReVox neither translates nor transcribes this language. Turn on Two-way on the Live screen to have it spoken back in another language instead."
+    static let ignoredLanguageNeedsAutoDetectText = "Ignoring a language needs Source language set to Auto-detect, because a pinned language is never detected."
 }

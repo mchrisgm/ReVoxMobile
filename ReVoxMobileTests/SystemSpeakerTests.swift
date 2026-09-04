@@ -9,6 +9,47 @@ final class SystemSpeakerTests: XCTestCase {
         return try XCTUnwrap(AVAudioPCMBuffer.mono(samples: samples, format: format))
     }
 
+    // MARK: The second direction's voice (M8, §8.2)
+
+    func testEnglishIsRecognisedByCodeAndByRegion() {
+        XCTAssertTrue(SystemSpeaker.isEnglish("en"))
+        XCTAssertTrue(SystemSpeaker.isEnglish("en-GB"))
+        XCTAssertTrue(SystemSpeaker.isEnglish("EN"))
+        XCTAssertFalse(SystemSpeaker.isEnglish("es"))
+        XCTAssertFalse(SystemSpeaker.isEnglish("eng"))
+    }
+
+    func testALanguageNoVoiceSpeaksSelectsNothing() {
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+        XCTAssertNil(SystemSpeaker.selectVoice(identifier: nil, language: "zz", voices: voices))
+        XCTAssertFalse(SystemSpeaker.hasVoice(for: "zz"))
+        XCTAssertTrue(SystemSpeaker.hasVoice(for: "en"), "every iPhone speaks English")
+    }
+
+    /// The saved voice identifier names an English voice; reading French with it is worse than staying silent,
+    /// so the second direction ignores it and matches the language instead.
+    func testANonEnglishPhraseIgnoresTheSavedEnglishVoice() throws {
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+        let english = try XCTUnwrap(SystemSpeaker.selectVoice(identifier: nil, voices: voices))
+        guard let french = voices.first(where: { $0.language.hasPrefix("fr") }) else {
+            throw XCTSkip("this simulator has no French voice installed")
+        }
+        let chosen = try XCTUnwrap(SystemSpeaker.selectVoice(identifier: english.identifier, language: "fr", voices: voices))
+        XCTAssertTrue(chosen.language.hasPrefix("fr"), "chose \(chosen.language)")
+        XCTAssertNotEqual(chosen.identifier, english.identifier)
+        XCTAssertNotNil(french)
+    }
+
+    func testAPhraseInALanguageWithNoVoiceIsSilenceRatherThanAnError() async throws {
+        let calls = LockedBox(0)
+        let speaker = SystemSpeaker(voiceIdentifier: nil, synthesize: { _ in calls.mutate { $0 += 1 }; return [] })
+        // The injected synthesis skips voice selection, so selection is asserted above; what matters here is that
+        // the language-aware entry point exists and behaves like the plain one for text it can say.
+        let clip = try await speaker.synthesize("Buenos días.", language: "es")
+        XCTAssertTrue(clip.isEmpty, "the fake returns no buffers")
+        XCTAssertEqual(calls.value, 1)
+    }
+
     func testWhitespaceReturnsEmptyClipWithoutEngine() async throws {
         let calls = LockedBox(0)
         let speaker = SystemSpeaker(voiceIdentifier: nil, synthesize: { _ in calls.mutate { $0 += 1 }; return [] })

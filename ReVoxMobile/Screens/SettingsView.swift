@@ -40,6 +40,20 @@ struct SettingsView: View {
                 Text("Auto-detect runs Whisper's language detection on every phrase and drops phrases it is unsure about.")
             }
 
+            Section {
+                Picker("Don't translate", selection: $model.ignoredLanguage) {
+                    ForEach(model.ignoredLanguageOptions) { option in
+                        Text(option.displayName).tag(option.code)
+                    }
+                }
+            } header: {
+                Text("Skip a language")
+            } footer: {
+                Text(model.language == nil
+                     ? SettingsViewModel.ignoredLanguageHelpText
+                     : "\(SettingsViewModel.ignoredLanguageHelpText)\n\(SettingsViewModel.ignoredLanguageNeedsAutoDetectText)")
+            }
+
             Section("Voice") {
                 Toggle("Mute voice", isOn: $model.isMuted)
                     .accessibilityHint("Silences the English voice while the transcript keeps running")

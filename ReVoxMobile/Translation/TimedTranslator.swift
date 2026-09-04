@@ -4,7 +4,7 @@ import ReVoxCore
 
 /// Logs per-call durations, the detection probability and the per-segment log-probabilities for the M3
 /// measurement record (§13 Q2, Q4; `docs/measurements/m3-microphone-mode.md`). Pure pass-through otherwise.
-actor TimedTranslator: Translator, LanguageDetector {
+actor TimedTranslator: Translator, LanguageDetector, Transcriber {
     private static let logger = Logger(subsystem: "revox", category: "measurements")
     private let inner: WhisperKitTranslator
     private let clock = ContinuousClock()
@@ -28,6 +28,16 @@ actor TimedTranslator: Translator, LanguageDetector {
         let minimum = candidate.segments.map(\.averageLogProbability).min() ?? 0
         let characters = candidate.segments.reduce(0) { $0 + $1.text.count }
         Self.logger.info("translate ms=\(milliseconds, privacy: .public) samples=\(audio.count, privacy: .public) segments=\(candidate.segments.count, privacy: .public) minAvgLogProb=\(minimum, privacy: .public) chars=\(characters, privacy: .public)")
+        return candidate
+    }
+
+    /// M8's second direction; logged the same way so the measurement record can compare the two tasks.
+    func transcribe(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+        let start = clock.now
+        let candidate = try await inner.transcribe(audio, language: language)
+        let milliseconds = Self.milliseconds(since: start, clock: clock)
+        let characters = candidate.segments.reduce(0) { $0 + $1.text.count }
+        Self.logger.info("transcribe ms=\(milliseconds, privacy: .public) samples=\(audio.count, privacy: .public) segments=\(candidate.segments.count, privacy: .public) chars=\(characters, privacy: .public)")
         return candidate
     }
 

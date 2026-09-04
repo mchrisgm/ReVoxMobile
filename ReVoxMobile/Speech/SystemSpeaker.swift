@@ -35,15 +35,51 @@ actor SystemSpeaker: Speaker {
         return voices.first { $0.language.hasPrefix("en") }
     }
 
+    /// The voice for one phrase (M8). English keeps the user's chosen voice; any other language ignores it — that
+    /// identifier names an English voice, and an English voice reading French is worse than saying nothing. An
+    /// exact `fr-FR` match wins over a `fr-CA` one, and a better-quality voice wins over a compact one.
+    static func selectVoice(identifier: String?, language: String, voices: [AVSpeechSynthesisVoice]) -> AVSpeechSynthesisVoice? {
+        guard !isEnglish(language) else { return selectVoice(identifier: identifier, voices: voices) }
+        let base = language.lowercased()
+        let matching = voices.filter { $0.language.lowercased() == base || $0.language.lowercased().hasPrefix(base + "-") }
+        guard !matching.isEmpty else { return nil }
+        return matching.max { lhs, rhs in rank(lhs, base: base) < rank(rhs, base: base) }
+    }
+
+    /// Higher is better: exact code first, then voice quality.
+    private static func rank(_ voice: AVSpeechSynthesisVoice, base: String) -> Int {
+        let exact = voice.language.lowercased() == base ? 10 : 0
+        return exact + voice.quality.rawValue
+    }
+
+    static func isEnglish(_ language: String) -> Bool {
+        let lowered = language.lowercased()
+        return lowered == "en" || lowered.hasPrefix("en-") || lowered.hasPrefix("en_")
+    }
+
+    /// Whether this iPhone can say anything at all in `language` — read by the two-way picker so the user learns
+    /// about a missing voice while choosing, not by hearing silence mid-conversation (§8.2).
+    static func hasVoice(for language: String) -> Bool {
+        selectVoice(identifier: nil, language: language, voices: AVSpeechSynthesisVoice.speechVoices()) != nil
+    }
+
     func synthesize(_ text: String) async throws -> AudioClip {
+        try await synthesize(text, language: "en")
+    }
+
+    /// A phrase in `language` (M8). No voice for a non-English language is silence, not an error: the phrase is
+    /// already in the transcript, and a thrown error here would stop the run.
+    func synthesize(_ text: String, language: String) async throws -> AudioClip {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return AudioClip(samples: [], sampleRate: sampleRate)
         }
         let utterance = AVSpeechUtterance(string: text)
         utterance.volume = 1
         if collector != nil {
-            guard let voice = Self.selectVoice(identifier: voiceIdentifier, voices: AVSpeechSynthesisVoice.speechVoices()) else {
-                throw SpeakerError.noVoice
+            guard let voice = Self.selectVoice(identifier: voiceIdentifier, language: language,
+                                               voices: AVSpeechSynthesisVoice.speechVoices()) else {
+                if Self.isEnglish(language) { throw SpeakerError.noVoice }
+                return AudioClip(samples: [], sampleRate: sampleRate)
             }
             utterance.voice = voice
         }

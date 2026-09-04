@@ -27,7 +27,10 @@ def code_only(text: str) -> str:
     text = re.sub(r'"""(?:.|\n)*?"""', " ", text)
     text = re.sub(r'"(?:\\.|[^"\\])*"', " ", text)
     text = re.sub(r"//[^\n]*", " ", text)
-    return re.sub(r"/\*(?:.|\n)*?\*/", " ", text)
+    text = re.sub(r"/\*(?:.|\n)*?\*/", " ", text)
+    # An import names a module, not a type: `import Translation` is Apple's framework, not ReVoxCore's
+    # `Translation` struct. The ReVoxCore import is looked for in the raw text, above, so this cannot hide it.
+    return re.sub(r"^\s*(?:@\w+\s+)*import\s+[\w.]+[^\n]*", " ", text, flags=re.M)
 
 
 ALL_TREES = ("ReVoxMobile", "ReVoxMobileTests", "ReVoxBroadcast", "Shared")
