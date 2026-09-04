@@ -481,6 +481,100 @@ final class TranslationPipelineTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)                           // and nothing was transcribed after the stop
     }
 
+    // MARK: start/stop overlap (actor reentrancy)
+
+    /// An `AudioPlayer` whose `start()` can be held open, so a test can run `stop()` while the pipeline's `start()` is
+    /// suspended inside it. Only the first player a factory builds is gated; later ones start at once.
+    private actor GatedPlayer: AudioPlayer {
+        nonisolated let onSpeaking: SpeakingCallback
+        private let gated: Bool
+        private var released = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private(set) var startEntered = false
+        private(set) var stopped = false
+
+        init(onSpeaking: @escaping SpeakingCallback, gated: Bool) {
+            self.onSpeaking = onSpeaking
+            self.gated = gated
+        }
+
+        func start() async throws {
+            startEntered = true
+            guard gated, !released else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func release() {
+            released = true
+            let pending = waiters
+            waiters.removeAll()
+            for waiter in pending { waiter.resume() }
+        }
+
+        func enqueue(_ clip: AudioClip) async {}
+        func setMuted(_ muted: Bool) async {}
+        func clear() async {}
+        func stop() async { stopped = true }
+        var isSpeaking: Bool { get async { false } }
+    }
+
+    /// `PipelineActor` is re-entrant at every `await` inside `start()`. A `stop()` that lands while `start()` is
+    /// suspended in `player.start()` used to retire the run, finish the wake/text/edge streams and stop the player —
+    /// and then the resumed `start()` set `running = true` and reported `.running` over a run whose streams were
+    /// already finished. `start()` is a no-op while running, so nothing could bring the pipeline back except a
+    /// second `stop()`. The two must be serialised in call order: the start completes, then the stop tears it down.
+    func testStopDuringStartWinsAndTheNextStartWorks() async throws {
+        let source = FakeAudioSource()
+        let translator = FakeTranslator()
+        let players = LockedBox<[GatedPlayer]>([])
+        var dependencies = PipelineDependencies(
+            source: source, vad: EnergyVAD(), detector: FakeLanguageDetector(), translator: translator,
+            speaker: FakeSpeaker(),
+            playerFactory: { _, onSpeaking in
+                let player = players.update { existing -> GatedPlayer in
+                    let player = GatedPlayer(onSpeaking: onSpeaking, gated: existing.isEmpty)
+                    existing.append(player)
+                    return player
+                }
+                return player
+            },
+            ducker: FakeDucker(),
+            transcriptFactory: { FakeTranscriptSink() },
+            clock: FakeClock().now,
+            sleep: FakeSleep().sleep)
+        dependencies.segmenterFactory = { _, _ in FakeSegmenter() }
+        let pipeline = TranslationPipeline(dependencies: dependencies)
+        let events = EventCollector()
+        events.start(pipeline)
+
+        let starting = Task { await pipeline.start(self.configuration()) }
+        let entered = await eventually { await players.value.first?.startEntered == true }
+        XCTAssertTrue(entered)                                   // start() is suspended inside player.start()
+        let stopping = Task { await pipeline.stop() }
+        try await Task.sleep(nanoseconds: 50_000_000)            // give stop() every chance to interleave
+        await players.value[0].release()
+        await starting.value
+        await stopping.value
+
+        let state = await pipeline.state
+        XCTAssertEqual(state, .idle, "the stop that followed the start must win")
+        XCTAssertTrue(source.stopped)
+        let firstPlayerStopped = await players.value[0].stopped
+        XCTAssertTrue(firstPlayerStopped)
+
+        await pipeline.start(configuration())                    // and the pipeline is not stuck: it starts again
+        let restarted = await pipeline.state
+        XCTAssertEqual(restarted, .running)
+        XCTAssertEqual(source.framesCalls, 2)
+        XCTAssertEqual(players.value.count, 2)
+        source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let translated = await eventually { await translator.calls.count == 1 }
+        XCTAssertTrue(translated)
+        await pipeline.stop()
+        let settled = await eventually { events.states == [.running, .idle, .running, .idle] }
+        XCTAssertTrue(settled, "\(events.states)")
+    }
+
     // MARK: Two-way routing through the pipeline (M8, §8.2)
 
     private actor StubTranscriber: Transcriber {
