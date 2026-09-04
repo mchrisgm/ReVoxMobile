@@ -19,6 +19,7 @@ final class AppEnvironment {
     let exporter: TranscriptExporter
     let mute: PlaybackMute
     let signals: DeviceSignals
+    let degradation: DegradationCoordinator
     let assembler: PipelineAssembler
     let voiceVolume: VoiceVolume
     let speakerStatus: SpeakerStatusRelay
@@ -95,6 +96,29 @@ final class AppEnvironment {
         modelManager.onModelFilesChanged = { [weak liveForRelease] in
             Task { @MainActor in await liveForRelease?.releaseCachedPipeline() }
         }
+
+        let liveForDegradation = live
+        let assemblyForDegradation = speakerAssembly
+        let statusForDegradation = speakerStatus
+        let settingsForDegradation = settings
+        self.degradation = DegradationCoordinator(
+            signals: signals.signals,
+            selectedModel: { settingsForDegradation.settings.whisperModel },
+            installedModels: { manager.installedWhisper },
+            usesPocketTTS: { statusForDegradation.status.usesPocketTTS },
+            actions: DegradationActions(
+                unloadPocketTTS: { await assemblyForDegradation.speaker.unloadPocketTTS() },
+                useModel: { [weak liveForDegradation] model, restartRunning in
+                    await liveForDegradation?.degrade(to: model, restartRunning: restartRunning)
+                },
+                pause: { [weak liveForDegradation] in await liveForDegradation?.pauseForHeat() },
+                resume: { [weak liveForDegradation] in await liveForDegradation?.resumeAfterHeat() },
+                showBanner: { [weak liveForDegradation] text in liveForDegradation?.showDegradationBanner(text) }
+            )
+        )
+        degradation.start()
+        // §9 memory row, "or fails next call": the translator reports a spent retry through the assembler's sink.
+        assembler.whisperRecovery.set(degradation.recoveryEventHandler())
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
         // Locals, never `self`: these closures are created before initialisation completes.
         let settingsStore = settings

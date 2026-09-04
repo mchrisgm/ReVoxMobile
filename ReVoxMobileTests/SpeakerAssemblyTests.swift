@@ -65,7 +65,7 @@ final class SpeakerAssemblyTests: XCTestCase {
         // `nil`, not `SpeakerStatusRelay()`: a default argument is evaluated in the caller's nonisolated context
         // and the relay is main-actor isolated — the same rule that broke LiveViewModel's init.
         SpeakerAssembly(layout: layout, settings: store, manager: manager, relay: relay ?? SpeakerStatusRelay(),
-                        voiceVolume: volume, center: NotificationCenter())
+                        voiceVolume: volume)
     }
 
     func testSelectionFollowsInstallStateAndSettings() async throws {

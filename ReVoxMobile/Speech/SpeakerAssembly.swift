@@ -1,6 +1,5 @@
 import Foundation
 import ReVoxCore
-import UIKit
 
 /// What `PipelineAssembler.build` needs from the speaker side, usable off the main actor.
 struct SpeakerBundle: Sendable {
@@ -41,11 +40,8 @@ final class SpeakerAssembly {
     let relay: SpeakerStatusRelay
     private let settings: SettingsStore
     private let manager: ModelManager
-    private let center: NotificationCenter
-    private var memoryWarningToken: NSObjectProtocol?
 
-    init(layout: ModelLayout, settings: SettingsStore, manager: ModelManager, relay: SpeakerStatusRelay, voiceVolume: VoiceVolume,
-         center: NotificationCenter = .default) {
+    init(layout: ModelLayout, settings: SettingsStore, manager: ModelManager, relay: SpeakerStatusRelay, voiceVolume: VoiceVolume) {
         let runtime = Runtime()
         // The same base directory as the download and the verified load, so `initialize()` hits the cache (§6.5).
         let fluidBase = layout.fluidBaseDirectory
@@ -63,16 +59,10 @@ final class SpeakerAssembly {
         self.relay = relay
         self.settings = settings
         self.manager = manager
-        self.center = center
-        memoryWarningToken = center.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
-            Task { await speaker.unloadPocketTTS() }   // §9: drop pocket-tts, speak with the system voice until the next start
-        }
-    }
-
-    deinit {
-        if let memoryWarningToken {
-            center.removeObserver(memoryWarningToken)
-        }
+        // The memory warning has exactly one owner: `DegradationCoordinator`. Two observers on the same
+        // notification would race, and this one — posting `SpeakerStatus.fallback(.memoryPressure)` — would make the
+        // policy read `usesPocketTTS == false` and shrink the Whisper model on the *first* warning, which is the
+        // opposite of §9. `EffectiveSpeaker.unloadPocketTTS()` stays: it is what the coordinator's action calls.
     }
 
     /// R11, evaluated on the main actor before every start: pocket-tts when installed, verified and selected.

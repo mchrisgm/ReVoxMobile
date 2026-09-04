@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import ReVoxCore
 @testable import ReVoxMobile
 
@@ -61,5 +62,44 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertNotNil(environment.modelManager.onModelFilesChanged, "the environment wires the delete hook")
         environment.modelManager.onModelFilesChanged?()
         await waitUntil("released") { environment.live.releasedPipelineCount == 1 }
+    }
+
+    // MARK: Degradation coordinator (M7 Task 94)
+
+    func testEnvironmentOwnsAndStartsTheDegradationCoordinator() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxAppEnv-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let environment = try AppEnvironment.testing(root: root)
+        XCTAssertEqual(environment.degradation.state, DegradationState())
+        XCTAssertTrue(environment.degradation.appliedEffects.isEmpty)
+
+        // A step-down needs something smaller than the user's model (small) on disk; the environment starts empty.
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: environment.layout)
+        try FakeInstallSteps.fabricateWhisper(.base, in: environment.layout)
+        try FakeInstallSteps.fabricateWhisper(.small, in: environment.layout)
+        environment.modelManager.refreshInstalledStates()
+        XCTAssertEqual(environment.modelManager.installedWhisper, [.tiny, .base, .small])
+
+        // `AppEnvironment.testing(root:)` builds `DeviceSignals()` on `NotificationCenter.default`, so the real
+        // signal stream is drivable here: this fails if `degradation.start()` is dropped from the initializer.
+        // The speaker is still `.systemNotDownloaded` (pocket-tts is not installed), so `usesPocketTTS` is false and
+        // the first warning goes straight to the model row: [.useModel(.base, restartRunning: true), .banner(…)].
+        // The banner is the last of the two effects, so waiting for it means both have been applied.
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        await waitUntil("the coordinator drained the signal") {
+            environment.live.banner == .degraded(DegradationPolicy.memoryModelText(.base))
+        }
+        XCTAssertEqual(environment.degradation.state.memoryWarnings, 1)
+        XCTAssertEqual(environment.degradation.state.reducedModel, .base)
+        XCTAssertEqual(environment.live.activeModel, .base, "the useModel action reached the Live view model")
+        XCTAssertEqual(environment.settings.settings.model, "small", "the user's choice is untouched")
+
+        // This fails if `assembler.whisperRecovery.set(degradation.recoveryEventHandler())` is dropped.
+        environment.assembler.whisperRecovery.send(.gaveUp("transcribe failed twice"))
+        await waitUntil("the recovery sink reaches the coordinator") {
+            environment.live.banner == .degraded(DegradationPolicy.memoryModelText(.tiny))
+        }
+        XCTAssertEqual(environment.degradation.state.reducedModel, .tiny)
+        XCTAssertEqual(environment.live.activeModel, .tiny)
     }
 }

@@ -65,6 +65,9 @@ final class LiveViewModel {
 
     private(set) var fallback: ModelFallbackState?
 
+    /// True while a thermal `.critical` pause stopped the run; only such a run is resumed automatically (§9).
+    private(set) var isPausedForHeat = false
+
     /// Every model this start has already handed to the supplier, successfully or not. `recover(from:)` searches only
     /// among the models it has not tried yet, so each recovery pass consumes one installed model and the walk down
     /// the catalog terminates (§9 row 1). Cleared by `start()`.
@@ -280,8 +283,52 @@ final class LiveViewModel {
         banner = nil
     }
 
+    /// §9 memory and thermal rows: use `model` from now on. The user's `Settings.model` is untouched and the cached
+    /// pipeline is dropped, so the next build uses `model` whatever happens. `restartRunning` decides what a session
+    /// that is already going does: the memory rows pass true — the loaded model is the memory the device wants back,
+    /// so it is torn down and rebuilt smaller at once — while the thermal row passes false, because §9 asks for the
+    /// smaller model "for new sessions" and a teardown plus a full WhisperKit load is the most expensive thing to do
+    /// on a hot device, and it would drop the audio in flight.
+    func degrade(to model: WhisperModelID, restartRunning: Bool) async {
+        let requested = settings.settings.whisperModel
+        let target: ModelFallbackState? = model == requested ? nil : ModelFallbackState(requested: requested, used: model)
+        guard target != fallback else { return }
+        fallback = target
+        signature = nil                                  // the cached pipeline was built for the previous model
+        guard restartRunning, state == .running else { return }
+        await stop()
+        setState(.idle)
+        await start()
+    }
+
+    /// Thermal `.critical`: stop the run and remember that heat, not the user, stopped it.
+    func pauseForHeat() async {
+        guard state == .running || state == .preparing else { return }
+        isPausedForHeat = true
+        await stop()
+        setState(.idle)
+    }
+
+    /// The thermal state recovered: resume only a run that `pauseForHeat()` stopped.
+    func resumeAfterHeat() async {
+        guard isPausedForHeat else { return }
+        isPausedForHeat = false
+        await start()
+    }
+
+    /// §9: the memory/thermal banner, dismissible like every other Live banner (§8.8).
+    func showDegradationBanner(_ text: String) {
+        banner = .degraded(text)
+    }
+
     func stop() async {
         await pipeline?.stop()
+    }
+
+    /// The Live screen's Stop button and the toolbar: a user stop also cancels a pending heat resume.
+    func stopByUser() async {
+        isPausedForHeat = false
+        await stop()
     }
 
     /// Returning from Settings after granting microphone access clears the permission banner (§8.8: inline banner
@@ -295,7 +342,7 @@ final class LiveViewModel {
     func toggle() async {
         switch state {
         case .running:
-            await stop()
+            await stopByUser()
         case .idle, .error:
             setState(.idle)
             await start()

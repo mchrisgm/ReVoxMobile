@@ -622,4 +622,103 @@ final class LiveViewModelTests: XCTestCase {
             return XCTFail("expected the generic error banner, got \(String(describing: model.banner))")
         }
     }
+
+    // MARK: Degradation (M7 Task 94)
+
+    func testMemoryDegradeRestartsARunningPipelineOnTheSmallerModelAndRestoresLater() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [])
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+
+        await model.degrade(to: .base, restartRunning: true)
+        await waitUntil("running on base") { model.state == .running && model.supplierCallCount == 2 }
+        XCTAssertEqual(received.value.map(\.model), ["small", "base"])
+        XCTAssertEqual(model.activeModel, .base)
+        XCTAssertEqual(store.settings.model, "small", "degradation never overwrites the user's choice")
+        XCTAssertEqual(pipelines.value[0].stopCount, 2,
+                       "degrade stopped it, then buildIfNeeded tore it down before the rebuild (tearDownPipeline stops too)")
+
+        await model.degrade(to: .small, restartRunning: true)
+        await waitUntil("back on small") { model.activeModel == .small && model.supplierCallCount == 3 }
+        XCTAssertNil(model.fallback)
+        XCTAssertEqual(pipelines.value[1].stopCount, 2)
+    }
+
+    func testThermalDegradeLeavesARunningSessionAloneAndAppliesAtTheNextStart() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [])
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+
+        await model.degrade(to: .base, restartRunning: false)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(model.state, .running, "§9 asks for the smaller model for new sessions, not a rebuild on a hot device")
+        XCTAssertEqual(model.supplierCallCount, 1)
+        XCTAssertEqual(pipelines.value[0].stopCount, 0)
+        XCTAssertEqual(model.activeModel, .base, "the next build already uses the smaller model")
+
+        await model.stopByUser()
+        await waitUntil("idle") { model.state == .idle }
+        await model.start()
+        await waitUntil("running on base") { model.state == .running && model.supplierCallCount == 2 }
+        XCTAssertEqual(received.value.map(\.model), ["small", "base"])
+    }
+
+    func testAStartThatFailsUnderADegradationFallbackFallsBackAgain() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [
+            nil,
+            PipelineBuildError.whisperLoadFailed(model: .base, reason: "compile failed"),
+            nil,
+        ])
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+
+        await model.degrade(to: .base, restartRunning: false)
+        await model.stopByUser()
+        await waitUntil("idle") { model.state == .idle }
+        await model.start()
+        await waitUntil("running on the smaller model") { model.state == .running }
+
+        XCTAssertEqual(received.value.map(\.model), ["small", "base", "tiny"],
+                       "the degraded model failed to load, so §9 row 1 steps down once more instead of giving up")
+        XCTAssertEqual(model.banner, .usingFallbackModel(requested: .base, used: .tiny),
+                       "the banner names the model that failed, which under degradation is the reduced one")
+        XCTAssertEqual(model.activeModel, .tiny)
+        XCTAssertEqual(model.fallback, LiveViewModel.ModelFallbackState(requested: .small, used: .tiny))
+        XCTAssertEqual(store.settings.model, "small", "degradation and recovery both leave the user's choice alone")
+    }
+
+    func testPauseForHeatStopsAndOnlyTheHeatPauseIsResumed() async {
+        let (model, _) = makeRecoveringModel(failures: [])
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+
+        await model.pauseForHeat()
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertTrue(model.isPausedForHeat)
+        XCTAssertEqual(pipelines.value[0].stopCount, 1)
+
+        await model.resumeAfterHeat()
+        await waitUntil("running again") { model.state == .running }
+        XCTAssertFalse(model.isPausedForHeat)
+        XCTAssertEqual(model.supplierCallCount, 1, "the cached pipeline is reused: only heat paused it")
+
+        await model.pauseForHeat()
+        XCTAssertTrue(model.isPausedForHeat)
+        await model.stopByUser()
+        await waitUntil("idle") { model.state == .idle }
+        XCTAssertFalse(model.isPausedForHeat, "a user stop cancels the pending heat resume")
+        await model.resumeAfterHeat()
+        XCTAssertEqual(model.state, .idle, "a run the user stopped is not resumed by a thermal recovery")
+    }
+
+    func testDegradationBannerIsShownAndDismissed() async {
+        let (model, _) = makeRecoveringModel(failures: [])
+        model.showDegradationBanner(DegradationPolicy.heatReducedText)
+        XCTAssertEqual(model.banner, .degraded("iPhone is hot: translation reduced"))
+        model.dismissBanner()
+        XCTAssertNil(model.banner)
+    }
 }
