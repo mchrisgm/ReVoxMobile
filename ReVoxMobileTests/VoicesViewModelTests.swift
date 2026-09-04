@@ -310,4 +310,22 @@ final class VoicesViewModelTests: XCTestCase {
         let fresh = makeModel(availableBytes: 9_000_000_000)
         XCTAssertEqual(fresh.pocketTTSSizeLine, "5 MB")
     }
+
+    // MARK: Delete only while idle (M7 Task 89)
+
+    func testPocketTTSDeleteRefusedWhileRunningUsesItsOwnAlert() throws {
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        let model = makeModel()
+        pipelineRunning = true
+        XCTAssertFalse(model.canDelete)
+        model.deleteConfirmed()
+        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete models")
+        XCTAssertNil(model.lowStorageAlert)
+        XCTAssertTrue(model.isPocketTTSInstalled)
+
+        pipelineRunning = false
+        model.deleteConfirmed()
+        XCTAssertNil(model.deleteFailureAlert)
+        XCTAssertFalse(model.isPocketTTSInstalled)
+    }
 }

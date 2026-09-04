@@ -40,7 +40,7 @@ struct ModelsView: View {
             presenting: pendingDelete
         ) { id in
             Button("Delete", role: .destructive) {
-                do { try model.delete(id) } catch { model.lowStorageAlert = String(describing: error) }
+                model.deleteConfirmed(id)
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -50,6 +50,11 @@ struct ModelsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.lowStorageAlert ?? "")
+        }
+        .alert("Can't delete now", isPresented: Binding(get: { model.deleteFailureAlert != nil }, set: { if !$0 { model.deleteFailureAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.deleteFailureAlert ?? "")
         }
         .onChange(of: model.rows) { _, _ in model.reconcileFailures() }
         .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {

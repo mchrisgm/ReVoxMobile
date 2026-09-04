@@ -17,6 +17,8 @@ final class ModelsViewModel {
     private let recommendation: DeviceRecommendation
     private let isPipelineRunning: @MainActor () -> Bool
     var lowStorageAlert: String?
+    /// A delete the manager refused — the pipeline started while the confirmation dialog was open (§6.9).
+    var deleteFailureAlert: String?
     var lowStorageWarning: String?
     /// Set only when a failure follows the user's own Download / Resume / Retry (§8.8); the row state is the other surface.
     var downloadFailureAlert: String?
@@ -104,6 +106,19 @@ final class ModelsViewModel {
     func delete(_ id: WhisperModelID) throws {
         try manager.delete(.whisper(id), activeModel: selectedModel)
     }
+
+    /// What the confirmation dialog calls. `delete(_:)` keeps throwing for callers that handle the error themselves.
+    func deleteConfirmed(_ id: WhisperModelID) {
+        deleteFailureAlert = nil
+        do {
+            try delete(id)
+        } catch {
+            deleteFailureAlert = Self.deleteFailureText(error)
+        }
+    }
+
+    /// `ModelManagerError` is `CustomStringConvertible` ("Stop translation to delete models"); anything else prints itself.
+    static func deleteFailureText(_ error: Error) -> String { String(describing: error) }
 
     func applicationDidBecomeActive() {
         manager.applicationDidBecomeActive()

@@ -512,4 +512,27 @@ final class ModelManagerTests: XCTestCase {
         let expected = ModelStorage.usage(layout: layout, availableBytes: nil).bytes(for: .vad)
         XCTAssertEqual(manager.storage.bytes(for: .vad), expected)
     }
+
+    // MARK: Delete announces that model files changed (M7 Task 89)
+
+    @MainActor
+    func testDeleteNotifiesModelFilesChangedAndARefusalDoesNot() async throws {
+        let manager = makeManager(host: FakeInstallHost())
+        let notifications = LockedBox<Int>(0)
+        manager.onModelFilesChanged = { notifications.mutate { $0 += 1 } }
+        manager.install(.whisper(.tiny))
+        await waitUntil("tiny installed") { manager.state(for: .whisper(.tiny)).phase == .installed }
+        XCTAssertEqual(notifications.value, 0, "an install never invalidates a loaded model")
+
+        try manager.delete(.whisper(.tiny), activeModel: .small)
+        XCTAssertEqual(notifications.value, 1)
+
+        let running = makeManager(pipelineRunning: true)
+        let refused = LockedBox<Int>(0)
+        running.onModelFilesChanged = { refused.mutate { $0 += 1 } }
+        XCTAssertThrowsError(try running.delete(.vad, activeModel: .small)) { error in
+            XCTAssertEqual(error as? ModelManagerError, .pipelineRunning)
+        }
+        XCTAssertEqual(refused.value, 0, "a refused delete removed nothing, so nothing changed")
+    }
 }

@@ -237,4 +237,26 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(ModelsViewModel.storageFooterText(for: ModelStorageUsage(bytesByKind: [.vad: 900_000], freeBytes: nil)), "ReVox models: under 1 MB")
         XCTAssertEqual(ModelsViewModel.storageFooterText(for: ModelStorageUsage(bytesByKind: [.vad: 900_000], freeBytes: 2_000_000_000)), "ReVox models: under 1 MB · Free: 2.0 GB")
     }
+
+    // MARK: Delete only while idle (M7 Task 89)
+
+    func testDeleteRefusedWhileRunningUsesItsOwnAlertAndKeepsTheFiles() throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let model = makeModel()
+        let folder = layout.whisperFolder(ModelCatalog.whisper(.base))
+        pipelineRunning = true
+        XCTAssertFalse(model.canDelete)
+        XCTAssertEqual(model.footerText, ModelsViewModel.stopToDeleteText)
+
+        model.deleteConfirmed(.base)
+        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete models")
+        XCTAssertNil(model.lowStorageAlert, "a refusal never lands in the Not enough space alert")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+
+        pipelineRunning = false
+        model.deleteConfirmed(.base)
+        XCTAssertNil(model.deleteFailureAlert)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertEqual(model.rows[1].state.phase, .idle)
+    }
 }

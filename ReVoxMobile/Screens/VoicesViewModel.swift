@@ -31,6 +31,8 @@ final class VoicesViewModel {
     private(set) var systemVoices: [SystemVoiceOption]
     var sampleError: String?
     var lowStorageAlert: String?
+    /// A delete the manager refused — the pipeline started while the confirmation dialog was open (§6.9).
+    var deleteFailureAlert: String?
     var lowStorageWarning: String?
     var downloadFailureAlert: String?
     @ObservationIgnored private var awaitingUserResult = false
@@ -122,6 +124,16 @@ final class VoicesViewModel {
             awaitingUserResult = false
         case .listing, .downloading, .compiling, .verifying:
             break
+        }
+    }
+
+    /// What the confirmation dialog calls; a refusal becomes the "Can't delete now" alert instead of a storage alert.
+    func deleteConfirmed() {
+        deleteFailureAlert = nil
+        do {
+            try delete()
+        } catch {
+            deleteFailureAlert = ModelsViewModel.deleteFailureText(error)
         }
     }
 

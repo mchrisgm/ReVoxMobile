@@ -71,7 +71,7 @@ struct VoicesView: View {
         .onAppear { model.refreshSystemVoices() }
         .confirmationDialog(VoicesViewModel.confirmDeleteTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                do { try model.delete() } catch { model.lowStorageAlert = String(describing: error) }
+                model.deleteConfirmed()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -81,6 +81,11 @@ struct VoicesView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.lowStorageAlert ?? "")
+        }
+        .alert("Can't delete now", isPresented: Binding(get: { model.deleteFailureAlert != nil }, set: { if !$0 { model.deleteFailureAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.deleteFailureAlert ?? "")
         }
         .onChange(of: model.pocketTTSState) { _, _ in model.reconcileFailures() }
         .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {

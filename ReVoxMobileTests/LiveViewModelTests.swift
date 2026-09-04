@@ -445,4 +445,34 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertNil(model.banner, "returning from Settings with access granted clears the banner")
         XCTAssertEqual(model.state, .idle, "nothing starts by itself; the user taps Start")
     }
+
+    // MARK: The cached pipeline is released when model files change (M7 Task 89)
+
+    func testReleaseCachedPipelineForcesTheNextStartToRebuild() async {
+        let model = makeModel()
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+        await model.stop()
+        await waitUntil("idle") { model.state == .idle }
+        XCTAssertEqual(model.supplierCallCount, 1)
+
+        await model.releaseCachedPipeline()
+        XCTAssertEqual(model.releasedPipelineCount, 1)
+        XCTAssertEqual(first.stopCount, 2, "releasing stops the cached pipeline as well")
+
+        await model.start()
+        await waitUntil("running again") { model.state == .running }
+        XCTAssertEqual(model.supplierCallCount, 2, "a released pipeline is rebuilt, never reused")
+        XCTAssertEqual(pipelines.value.count, 2)
+    }
+
+    func testReleaseCachedPipelineIsIgnoredWhileRunning() async {
+        let model = makeModel()
+        await model.start()
+        await waitUntil("running") { model.state == .running }
+        await model.releaseCachedPipeline()
+        XCTAssertEqual(model.releasedPipelineCount, 0)
+        XCTAssertEqual(first.stopCount, 0)
+        XCTAssertEqual(model.state, .running)
+    }
 }

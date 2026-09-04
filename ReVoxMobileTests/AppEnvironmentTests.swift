@@ -51,4 +51,15 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.exporter.directory.standardizedFileURL, exports.standardizedFileURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
     }
+
+    // MARK: Model files changed → the cached pipeline is released (M7 Task 89)
+
+    func testModelFilesChangedReleasesTheCachedLivePipeline() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxAppEnv-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let environment = try AppEnvironment.testing(root: root)
+        XCTAssertNotNil(environment.modelManager.onModelFilesChanged, "the environment wires the delete hook")
+        environment.modelManager.onModelFilesChanged?()
+        await waitUntil("released") { environment.live.releasedPipelineCount == 1 }
+    }
 }

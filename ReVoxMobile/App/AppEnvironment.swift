@@ -90,6 +90,10 @@ final class AppEnvironment {
                                   broadcast: broadcast)
         activity.live = live
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
+        let liveForRelease = live
+        modelManager.onModelFilesChanged = { [weak liveForRelease] in
+            Task { @MainActor in await liveForRelease?.releaseCachedPipeline() }
+        }
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
         // Locals, never `self`: these closures are created before initialisation completes.
         let settingsStore = settings

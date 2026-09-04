@@ -43,6 +43,8 @@ final class ModelManager {
     private(set) var pocketTTSInstalled = false
     /// Called after the active Whisper model was deleted with the smallest installed model, or nil.
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
+    /// Fired after a delete removed files that a cached, loaded pipeline may still hold open (§6.9, M7).
+    var onModelFilesChanged: (@MainActor () -> Void)?
 
     @ObservationIgnored private var tasks: [DownloadKind: Task<Void, Never>] = [:]
 
@@ -248,6 +250,7 @@ final class ModelManager {
             installer.deletePocketTTSSync()
             refreshInstalledStates()
         }
+        onModelFilesChanged?()
     }
 
     // MARK: Readiness

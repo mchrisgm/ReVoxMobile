@@ -36,6 +36,8 @@ final class LiveViewModel {
     private(set) var sessionStatus: String?
     private(set) var detectedLanguage: String?
     private(set) var supplierCallCount = 0
+    /// How often a cached pipeline was dropped because model files changed (§6.9, M7); read by the tests.
+    private(set) var releasedPipelineCount = 0
     private(set) var modelReadyForStatus: Bool?
     private(set) var lastEventHandledOnMainThread = false
     /// The status line's voice part; M4's `EffectiveSpeaker` status replaces the constant.
@@ -212,6 +214,14 @@ final class LiveViewModel {
         guard preset != settings.settings.preset else { return }
         settings.update { $0.latencyMode = preset.rawValue }
         signature = nil
+    }
+
+    /// A model or voice was deleted: the cached pipeline still holds the removed files open, so drop it while idle.
+    /// Running or preparing runs are left alone — `ModelManager` refuses a delete then (§6.9).
+    func releaseCachedPipeline() async {
+        guard state == .idle || state == .error else { return }
+        await tearDownPipeline()
+        releasedPipelineCount += 1
     }
 
     private func tearDownPipeline() async {
