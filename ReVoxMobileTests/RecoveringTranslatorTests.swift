@@ -82,7 +82,14 @@ final class RecoveringTranslatorTests: XCTestCase {
         guard case .gaveUp(let reason) = events.value.last else {
             return XCTFail("expected a gaveUp event, got \(events.value)")
         }
-        XCTAssertEqual(reason, String(describing: URLError(.timedOut)))
+        // `String(describing:)` resolves against the *static* type: `RecoveringTranslator.reload(after:)` holds the
+        // failure as an `Error` existential, which stringifies through NSError bridging
+        // ("Error Domain=NSURLErrorDomain Code=-1001"), while a concrete `URLError` stringifies as
+        // "URLError(_nsError: …)". Run 33893492185 failed on exactly that difference. The invariant is that the
+        // event carries a description of the error the pipeline saw, so the expectation is built the same way.
+        let thrown: Error = URLError(.timedOut)
+        XCTAssertEqual(reason, String(describing: thrown))
+        XCTAssertTrue(reason.contains("-1001"), "the reason names the failure that was rethrown, got \(reason)")
     }
 
     func testAFailingReloadReportsItAndRethrowsTheOriginalError() async throws {
