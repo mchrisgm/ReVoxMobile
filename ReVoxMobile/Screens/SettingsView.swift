@@ -57,8 +57,8 @@ struct SettingsView: View {
                     }
                 }
                 SettingExample(symbol: "hand.raised",
-                               text: model.ignoredLanguage.map { SettingExamples.skipLanguage(LanguageCatalog.displayName($0, whenNil: "")) }
-                                     ?? SettingExamples.skipLanguageNone)
+                               text: SettingExamples.skipLanguageText(ignored: model.ignoredLanguage.map { LanguageCatalog.displayName($0, whenNil: "") },
+                                                                      pinned: model.language.map { LanguageCatalog.displayName($0, whenNil: "") }))
             } header: {
                 Text("Skip a language")
             } footer: {
@@ -77,8 +77,9 @@ struct SettingsView: View {
                 Toggle("Romanize", isOn: $model.romanize)
                     .disabled(!model.learning)
                     .accessibilityHint("Adds how the original sounds in Latin letters")
-                SettingExample(symbol: "character.phonetic", text: SettingExamples.romanize(model.romanize)) {
-                    LiveTranscriptRowView(row: SettingExamples.japaneseRow, showsOriginal: true, romanizes: model.romanize)
+                SettingExample(symbol: "character.phonetic", text: SettingExamples.romanizeText(on: model.romanize, learning: model.learning)) {
+                    // The row shows what the Live screen would show: no original at all while Learning is off.
+                    LiveTranscriptRowView(row: SettingExamples.japaneseRow, showsOriginal: model.learning, romanizes: model.romanize)
                 }
             } header: {
                 Text("Learning")

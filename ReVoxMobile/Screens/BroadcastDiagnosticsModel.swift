@@ -120,7 +120,10 @@ final class BroadcastDiagnosticsModel {
         stopPolling()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refresh()
+                // M10: a model released without `stopPolling()` (a screen torn down mid-poll) must end the loop, not
+                // leave a task waking four times a second for the rest of the process.
+                guard let self else { return }
+                await self.refresh()
                 try? await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
             }
         }

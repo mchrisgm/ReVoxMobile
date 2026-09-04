@@ -11,12 +11,27 @@ final class VoicesViewModel {
     static let sampleText = "This is ReVox."
     static let engineFooterText = "ReVox uses the system voice until pocket-tts is downloaded, and falls back to it automatically if pocket-tts fails."
     static let stopToDeleteText = "Stop translation to delete voices"
+    static let stopToPlaySampleText = "Stop translation to play a sample"
     static let confirmDeleteMessage = "ReVox will use the system voice until you download it again."
     static let pocketTTSName = "pocket-tts"
     static let systemVoiceValue = "system"
 
     static var pocketTTSSizeText: String { ModelsViewModel.sizeText(ModelCatalog.pocketTTS.approximateBytes) }
     static var confirmDeleteTitle: String { "Delete \(pocketTTSName) (\(pocketTTSSizeText))?" }
+
+    /// M10: the not-installed row's caption, with the voice list read from the catalog rather than typed in.
+    static var downloadRowDescription: String {
+        "\(voiceListText(ModelCatalog.pocketTTS.offeredVoices)) Downloaded on demand; the system voice is used until then."
+    }
+
+    /// "Voices alba, azelma, cosette and javert." for the catalog's list; degrades sensibly for one or none.
+    static func voiceListText(_ voices: [String]) -> String {
+        switch voices.count {
+        case 0: return "No voices."
+        case 1: return "Voice \(voices[0])."
+        default: return "Voices \(voices.dropLast().joined(separator: ", ")) and \(voices[voices.count - 1])."
+        }
+    }
 
     private let manager: ModelManager
     private let settings: SettingsStore
@@ -90,6 +105,10 @@ final class VoicesViewModel {
     var canDelete: Bool { isPocketTTSInstalled && !isPipelineRunning() }
     var canPlaySample: Bool { !isPipelineRunning() && !isPlayingSample }
 
+    /// M10: why Play sample is disabled, for the caption under it (a disabled control never goes unexplained).
+    /// nil while a sample plays: the spinner beside the button is the reason then.
+    var sampleUnavailableReason: String? { isPipelineRunning() ? Self.stopToPlaySampleText : nil }
+
     var footerText: String? {
         if manager.hasActiveDownload || !manager.pausedKinds.isEmpty { return ModelsViewModel.keepOpenText }
         if isPocketTTSInstalled && isPipelineRunning() { return Self.stopToDeleteText }
@@ -136,8 +155,15 @@ final class VoicesViewModel {
         do {
             try delete()
         } catch {
-            deleteFailureAlert = ModelsViewModel.deleteFailureText(error)
+            deleteFailureAlert = Self.deleteFailureText(error)
         }
+    }
+
+    /// M10: the manager's refusal is worded for the Models screen ("… delete models"); on this screen the footer
+    /// says "… delete voices", and the alert must say the same. Every other error prints itself.
+    static func deleteFailureText(_ error: Error) -> String {
+        if let refusal = error as? ModelManagerError, refusal == .pipelineRunning { return stopToDeleteText }
+        return ModelsViewModel.deleteFailureText(error)
     }
 
     /// Behind the screen's `confirmationDialog`; refused while the pipeline runs (§6.9). The voice setting is kept.

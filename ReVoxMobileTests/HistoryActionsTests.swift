@@ -115,6 +115,17 @@ final class HistoryActionsTests: XCTestCase {
         XCTAssertEqual(end, sessions[2].startedAt.addingTimeInterval(2), "no session recorded an end, so the last entry is it")
     }
 
+    // MARK: History screen copy (M10)
+
+    /// The edit-mode Delete (N) is a bulk destructive action; like Clear All it confirms first, naming the count.
+    func testDeleteSelectedCopy() {
+        XCTAssertEqual(HistoryView.deleteSelectedMessage(count: 1), "The selected session and its transcript will be deleted. You cannot undo this action.")
+        XCTAssertEqual(HistoryView.deleteSelectedMessage(count: 3), "The 3 selected sessions and their transcripts will be deleted. You cannot undo this action.")
+        XCTAssertEqual(HistoryActions.clearAllConfirmationTitle(count: 2), "Delete 2 sessions?", "the bulk delete reuses the Clear All title")
+        XCTAssertEqual(HistoryView.deleteButtonTitle(count: 0), "Delete")
+        XCTAssertEqual(HistoryView.mergeButtonTitle(count: 1), "Merge (1)", "counts even below the two Merge needs; the button is disabled then")
+    }
+
     func testMergeCopy() {
         XCTAssertEqual(HistoryActions.mergeConfirmationTitle(count: 3), "Merge 3 sessions?")
         XCTAssertEqual(HistoryActions.mergeMessage, "They become one session, in time order. The originals are removed. You cannot undo this action.")

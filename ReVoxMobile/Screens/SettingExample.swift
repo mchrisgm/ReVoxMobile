@@ -65,6 +65,20 @@ enum SettingExamples {
     static func skipLanguage(_ name: String) -> String {
         "“\(spanishEnglish)” spoken in \(name) is left alone — not translated, not transcribed. Turn on Two-way on the Live screen to have it spoken back in another language instead."
     }
+    /// M10: a pinned source language is never detected, so a skip only ever matches when it names the pinned
+    /// language itself — and then it matches every phrase.
+    static func skipLanguageWhilePinned(ignored: String, pinned: String) -> String {
+        if ignored == pinned {
+            return "Source language is pinned to \(pinned) and \(ignored) is skipped, so every phrase is left alone and nothing is translated. Change one of the two."
+        }
+        return "Source language is pinned to \(pinned), so nothing is ever detected as \(ignored) and nothing is skipped. Set Source language to Auto-detect to skip \(ignored)."
+    }
+    /// The one the screen shows: `ignored` and `pinned` are display names, nil for None and Auto-detect.
+    static func skipLanguageText(ignored: String?, pinned: String?) -> String {
+        guard let ignored else { return skipLanguageNone }
+        guard let pinned else { return skipLanguage(ignored) }
+        return skipLanguageWhilePinned(ignored: ignored, pinned: pinned)
+    }
 
     static let mute = "The transcript keeps running; nothing is spoken until you unmute."
     static func ducking(_ on: Bool) -> String {
@@ -84,6 +98,11 @@ enum SettingExamples {
     }
     static func romanize(_ on: Bool) -> String {
         on ? "Under a script you cannot read, how it sounds in Latin letters." : "The original is shown in its own script only."
+    }
+    /// M10: with Learning off there is no original to romanize, and the toggle above is disabled; say why.
+    static let romanizeNeedsLearning = "Turn on Learning to show the original; Romanize then adds how it sounds in Latin letters."
+    static func romanizeText(on: Bool, learning: Bool) -> String {
+        learning ? romanize(on) : romanizeNeedsLearning
     }
 
     static func timeDisplay(_ mode: Settings.TimeDisplay) -> String {
