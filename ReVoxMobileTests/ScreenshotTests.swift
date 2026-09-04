@@ -38,30 +38,77 @@ final class ScreenshotTests: XCTestCase {
         return directory
     }
 
-    /// One PNG per call. The view is put in a real key window so materials, the navigation bar and the
-    /// segmented control render as they do on device; `layer.render(in:)` would flatten them.
+    /// One PNG per call, and a real one: the first version of this shipped five byte-identical white images,
+    /// because `drawHierarchy` renders nothing for a window with no scene and a size assertion cannot tell a
+    /// blank page from a busy one. The layer tree is rendered instead, the window is attached to the app's own
+    /// scene so SwiftUI lays out in a real trait environment, and the result is checked for actual content.
     @discardableResult
     func capture<V: View>(_ name: String, _ view: V) throws -> URL {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
-        let window = UIWindow(frame: CGRect(origin: .zero, size: Self.size))
+        let window = Self.makeWindow()
         window.rootViewController = controller
         window.makeKeyAndVisible()
         controller.view.frame = window.bounds
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.25))   // one turn for async image/text work
+        RunLoop.current.run(until: Date().addingTimeInterval(0.25))   // one turn for async text and image work
 
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        let image = renderer.image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 2                                              // @2x: sharp in the README, half the bytes
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
+        var image = renderer.image { context in
+            window.layer.render(in: context.cgContext)
         }
+        if Self.distinctColors(in: image) <= Self.blankThreshold {
+            // A scene-attached window can draw its hierarchy, which catches anything the layer tree misses.
+            image = renderer.image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+        }
+        window.isHidden = true
+
+        let colors = Self.distinctColors(in: image)
+        XCTAssertGreaterThan(colors, Self.blankThreshold, "\(name) rendered blank (\(colors) distinct colours)")
         let data = try XCTUnwrap(image.pngData(), "\(name) produced no PNG")
         let url = directory.appendingPathComponent("\(name).png")
         try data.write(to: url)
-        window.isHidden = true
-        XCTAssertGreaterThan(data.count, 5_000, "\(name) rendered blank")
         return url
+    }
+
+    /// A screen with a navigation bar, a card and text has hundreds; a blank page has one.
+    static let blankThreshold = 8
+
+    static func makeWindow() -> UIWindow {
+        let scenes = UIApplication.shared.connectedScenes
+        let scene = scenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
+            ?? scenes.first as? UIWindowScene
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.frame = CGRect(origin: .zero, size: size)
+        return window
+    }
+
+    /// Distinct colours across a coarse grid — enough to tell a rendered screen from an empty one without
+    /// reading every pixel of a two-megapixel image.
+    static func distinctColors(in image: UIImage, samples: Int = 48) -> Int {
+        guard let cgImage = image.cgImage else { return 0 }
+        let width = cgImage.width, height = cgImage.height
+        guard width > 0, height > 0 else { return 0 }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: bitmapInfo) else { return 0 }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var seen = Set<UInt32>()
+        let stepX = max(1, width / samples), stepY = max(1, height / samples)
+        for y in stride(from: 0, to: height, by: stepY) {
+            for x in stride(from: 0, to: width, by: stepX) {
+                let offset = (y * width + x) * 4
+                seen.insert(UInt32(pixels[offset]) << 16 | UInt32(pixels[offset + 1]) << 8 | UInt32(pixels[offset + 2]))
+            }
+        }
+        return seen.count
     }
 
     // MARK: The screens
