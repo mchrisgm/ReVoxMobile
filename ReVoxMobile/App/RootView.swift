@@ -12,7 +12,7 @@ struct RootView: View {
             .tabItem { Label("Live", systemImage: "waveform") }
 
             NavigationStack {
-                HistoryPlaceholderView()
+                HistoryView(exporter: environment.exporter)
             }
             .tabItem { Label("History", systemImage: "clock") }
 

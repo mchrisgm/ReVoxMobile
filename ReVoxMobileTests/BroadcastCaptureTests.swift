@@ -134,14 +134,31 @@ final class BroadcastCaptureTests: XCTestCase {
         XCTAssertEqual(lastPosition, 1_536)
         // The record is throttled to one write per second of the source's clock, so how many of the reads above
         // wrote it depends on how the 1 536 frames happened to split. Advancing the clock past the throttle and
-        // reading once more makes the assertion about the record independent of that split.
+        // reading on makes the assertion independent of that split.
+        //
+        // It is *not* independent of scheduling, and the earlier version of this block assumed it was. The poll
+        // thread yields the frames and only then writes the record, so the consumer can hold a chunk before the
+        // record for that read exists; and a poll cycle that sampled the clock before the mutation below reads the
+        // new frames under the old `now` and skips the throttled write altogether. Run 33886454844 failed here with
+        // the consumer at 2 048 and the record still at 512. "The record follows the reads" is a statement about
+        // reads continuing, not about the record being synchronised with the frame just received, so the assertion
+        // now drives further reads until the record catches up, within a bounded time.
         now.mutate { $0 = 1_004 }
-        write(writer, [Float](repeating: 0.25, count: 512))
-        var tail = iterator
-        let last = await withTimeout(seconds: 3) { await tail.next() }
-        XCTAssertEqual(last?.endPosition, 2_048)
-        XCTAssertEqual(records.readCaptureReader()?.lastReadCursor, 2_048, "the record follows the reads")
-        XCTAssertEqual(records.readCaptureReader()?.generation, 1)
+        var expected: Int64 = 1_536
+        var record: CaptureReaderRecord?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            record = records.readCaptureReader()
+            if record?.lastReadCursor == UInt64(expected) { break }
+            write(writer, [Float](repeating: 0.25, count: 512))
+            var tail = iterator
+            let chunk = await withTimeout(seconds: 3) { await tail.next() }
+            iterator = tail
+            expected += 512
+            XCTAssertEqual(chunk?.endPosition, expected, "positions stay contiguous while the record catches up")
+        }
+        XCTAssertEqual(record?.lastReadCursor, UInt64(expected), "the record follows the reads")
+        XCTAssertEqual(record?.generation, 1)
         await capture.stop()
     }
 

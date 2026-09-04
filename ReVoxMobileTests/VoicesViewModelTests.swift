@@ -267,4 +267,31 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertEqual(VoicesViewModel.pocketTTSName, "pocket-tts")
         XCTAssertEqual(VoicesViewModel.systemVoiceValue, "system")
     }
+
+    // MARK: Error surfaces (§8.8, M6)
+
+    func testUserInitiatedPocketTTSFailureRaisesTheAlertOnce() async {
+        let model = makeModel()
+        steps.failPocketTTSOnce = true
+        model.download()
+        await waitUntil("failed state") { if case .failed = model.pocketTTSState.phase { return true } else { return false } }
+        guard case .failed(let message) = model.pocketTTSState.phase else { return XCTFail("expected a failed state") }
+        model.reconcileFailures()
+        XCTAssertEqual(model.downloadFailureAlert, ModelsViewModel.downloadFailureText(name: VoicesViewModel.pocketTTSName, message: message))
+        model.downloadFailureAlert = nil
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert)
+    }
+
+    func testCancelledDownloadNeverAlerts() async {
+        let model = makeModel()
+        steps.holdDownloads = true
+        model.download()
+        await waitUntil { model.pocketTTSState.phase.isActive }
+        model.cancel()
+        steps.holdDownloads = false
+        await waitUntil("not active") { !model.pocketTTSState.phase.isActive }
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert)
+    }
 }

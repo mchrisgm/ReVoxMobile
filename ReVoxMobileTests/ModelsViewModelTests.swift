@@ -160,4 +160,50 @@ final class ModelsViewModelTests: XCTestCase {
         model.applicationDidBecomeActive()
         await waitUntil("resumed") { model.rows[0].state.phase == .installed }
     }
+
+    // MARK: Error surfaces (§8.8, M6)
+
+    func testUserInitiatedFailureRaisesTheAlertOnce() async {
+        let model = makeModel()
+        steps.failVariantOnce = true
+        model.download(.base)
+        await waitUntil("failed row") { if case .failed = model.rows[1].state.phase { return true } else { return false } }
+        guard case .failed(let message) = model.rows[1].state.phase else { return XCTFail("expected a failed row") }
+        model.reconcileFailures()
+        XCTAssertEqual(model.downloadFailureAlert, ModelsViewModel.downloadFailureText(name: "base", message: message))
+        XCTAssertEqual(model.downloadFailureAlert, "Couldn't download base: \(message)")
+        model.downloadFailureAlert = nil
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert, "the same failure never alerts twice; the row keeps Failed + Retry")
+    }
+
+    func testAutoResumeFailureStaysOnTheRowWithoutAnAlert() async {
+        let model = makeModel()
+        steps.holdDownloads = true
+        model.download(.tiny)
+        await waitUntil { model.rows[0].state.phase.isActive }
+        host.expireAll()
+        await waitUntil("paused row") { model.rows[0].state.phase == .paused }
+        model.reconcileFailures()
+        steps.failVariantOnce = true
+        steps.holdDownloads = false
+        model.applicationDidBecomeActive()   // the §6.9 auto-resume, not a user action
+        await waitUntil("failed row") { if case .failed = model.rows[0].state.phase { return true } else { return false } }
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert)
+        model.download(.tiny)                // Retry is a user action again
+        await waitUntil { model.rows[0].state.phase == .installed }
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert, "a success clears the awaiting flag without an alert")
+    }
+
+    func testLowStorageRefusalAlertsBeforeAnythingStarts() {
+        let model = makeModel(availableBytes: 100_000_000)
+        model.download(.medium)
+        XCTAssertEqual(model.lowStorageAlert, "Not enough space: needs about 2.1 GB, 0.1 GB free")
+        XCTAssertEqual(model.rows[3].state.phase, .idle, "nothing was installed")
+        XCTAssertEqual(steps.variantDownloads, [])
+        model.reconcileFailures()
+        XCTAssertNil(model.downloadFailureAlert, "a refusal is not a download failure")
+    }
 }

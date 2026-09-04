@@ -69,6 +69,7 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Models") { ModelsView(model: models) }
                 NavigationLink("Voices") { VoicesView(model: voices) }
+                NavigationLink("About") { AboutView(info: AboutInfo.current()) }
             }
 
             if let diagnostics {

@@ -38,4 +38,17 @@ final class AppEnvironmentTests: XCTestCase {
         environment.applicationDidBecomeActive()   // no paused downloads: a no-op that must not trap
         XCTAssertEqual(environment.modelManager.pausedKinds, [])
     }
+
+    func testLaunchPrunesExportsOlderThanADay() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxAppEnv-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let exports = root.appendingPathComponent("Exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
+        let old = exports.appendingPathComponent("2023-11-13_10-00-00.txt")
+        try Data("old".utf8).write(to: old)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-2 * TranscriptExporter.maxAge)], ofItemAtPath: old.path)
+        let environment = try AppEnvironment.testing(root: root)
+        XCTAssertEqual(environment.exporter.directory.standardizedFileURL, exports.standardizedFileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+    }
 }

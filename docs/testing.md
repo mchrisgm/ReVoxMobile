@@ -55,7 +55,7 @@ When ReVox is stopped it does not listen, and the red indicator disappears.
 
 ## 7. Transcripts
 
-Everything ReVox translated is kept on the phone. In the app, open **History** (the clock symbol) to see past sessions: each shows the time, the English text and, where available, the original words. From there you can share or delete a transcript. Transcripts are stored only on your iPhone and are never uploaded anywhere.
+Everything ReVox translated is kept on the phone. Open **History** (the clock symbol) to see past sessions: each row shows the time, the source (Microphone or Other apps), how long it ran, how many lines were translated and the first English line. Type in the search field to find sessions by an English word; the matching line is shown under each session. Tap a session to read the whole transcript; the **Share** button (the square with the arrow) sends it as a text file to Files, Mail, AirDrop or any other app; the **Delete** button removes it after a confirmation. Swipe a row in History to delete just that session, or use **Clear All**. Transcripts contain the English text only, are stored only on your iPhone and are never uploaded anywhere.
 
 ## 8. Send feedback
 
@@ -79,6 +79,18 @@ Helpful details to include: what you were listening to (the microphone or which 
 6. **Lock the phone** with music playing and keep speaking for a few minutes: translation and ducking should continue until you tap Stop.
 
 Please report the iPhone model and iOS version with every observation from this section.
+
+## 10. History, export and About checks
+
+1. Translate a few phrases from the microphone, tap **Stop**, open **History**. Expected: one row with the time, "Microphone", the duration, the number of lines and the first English line.
+2. Tap the row. Expected: the header (started, source, duration, model, voice, source language) and the same lines you saw on the Live screen, in order.
+3. Tap **Share** and choose **Save to Files**. Open the file in Files. Expected: the name looks like `2026-09-14_10-32-05.txt`; the first line starts with `# ReVox session`; each translated line appears after a `→` arrow.
+4. Back in History, type one English word from the transcript in the search field, then a word in a different case (for example the same word in capitals). Expected: the session appears with the matching line under it; report whether the capitalised search also finds it.
+5. Search for a word that was never translated. Expected: a "No Results" screen, no crash.
+6. Swipe a row to the left and tap Delete. Expected: the row disappears with no question. Tap **Clear All**. Expected: a confirmation naming the number of sessions; after Delete, the "No Transcripts" screen.
+7. Open **Settings → About**. Expected: the app version, the privacy paragraph, five licence links (WhisperKit, FluidAudio, pocket-tts Core ML weights with the Kyutai attribution, Silero VAD, Whisper weights) that open in Safari, and the two project links.
+8. With the microphone permission switched off in iOS Settings, tap **Start**. Expected: a yellow banner with **Open Settings**, no pop-up; after allowing access and coming back, the banner disappears and nothing starts until you tap **Start** again.
+9. With VoiceOver on, swipe through the Live screen while translating. Expected: the status line reads as sentences ("Model small ready. Using system voice…") and does not repeat itself every second; a download's progress reads a percentage.
 
 ## Tips and known limits
 

@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import SwiftData
 import ReVoxCore
 @testable import ReVoxMobile
 
@@ -138,7 +139,7 @@ final class ScreenHostingTests: XCTestCase {
 
     func testRootViewHostsAllThreeTabs() throws {
         let environment = try AppEnvironment.testing(root: root.appendingPathComponent("env", isDirectory: true))
-        host(RootView(environment: environment))
+        host(RootView(environment: environment).modelContainer(environment.transcriptContainer))
     }
 
     func testBroadcastDiagnosticsViewHostsWithAndWithoutARing() async throws {
@@ -154,5 +155,74 @@ final class ScreenHostingTests: XCTestCase {
         let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
         let voices = try makeVoicesViewModel()
         host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices, diagnostics: model) })
+    }
+
+    func testSessionRowViewHosts() throws {
+        let context = ModelContext(try TranscriptContainer.make(inMemory: true))
+        let session = Session(startedAt: Date(), endedAt: Date().addingTimeInterval(90), captureMode: "broadcast", pinnedLanguage: "es", modelID: "small", voice: "alba", joinedInProgress: true)
+        context.insert(session)
+        let entry = Entry(timestamp: Date(), language: "es", original: "", english: "hola", isDropMarker: false)
+        entry.session = session
+        context.insert(entry)
+        try context.save()
+        host(List { SessionRowView(summary: SessionSummary(session: session)) })
+        let empty = Session(startedAt: Date(), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+        context.insert(empty)
+        try context.save()
+        host(List { SessionRowView(summary: SessionSummary(session: empty)) })
+    }
+
+    func testSessionDetailViewHostsWithEntriesAndEmpty() throws {
+        let container = try TranscriptContainer.make(inMemory: true)
+        let context = ModelContext(container)
+        let session = Session(startedAt: Date(), endedAt: Date().addingTimeInterval(30), captureMode: "microphone", pinnedLanguage: "es", modelID: "small", voice: "alba", joinedInProgress: false)
+        context.insert(session)
+        for (offset, english) in [(1.0, "hola"), (2.0, "adi\u{00F3}s")] {
+            let entry = Entry(timestamp: Date().addingTimeInterval(offset), language: "es", original: "", english: english, isDropMarker: false)
+            entry.session = session
+            context.insert(entry)
+        }
+        let marker = Entry(timestamp: Date().addingTimeInterval(1.5), language: "", original: "", english: "", isDropMarker: true)
+        marker.session = session
+        context.insert(marker)
+        try context.save()
+        let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
+        host(NavigationStack { SessionDetailView(session: session, exporter: exporter) }.modelContainer(container))
+        let empty = Session(startedAt: Date(), captureMode: "broadcast", pinnedLanguage: nil, modelID: "base", voice: "system", joinedInProgress: true)
+        context.insert(empty)
+        try context.save()
+        host(NavigationStack { SessionDetailView(session: empty, exporter: exporter) }.modelContainer(container))
+    }
+
+
+    func testHistoryViewHostsEmptyPopulatedAndSearching() throws {
+        let container = try TranscriptContainer.make(inMemory: true)
+        // The per-test export directory: nothing this test pushes may write into the shared temporary folder.
+        let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
+        host(NavigationStack { HistoryView(exporter: exporter) }.modelContainer(container))     // "No Transcripts"
+        let context = ModelContext(container)
+        let session = Session(startedAt: Date(), endedAt: Date().addingTimeInterval(10), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+        context.insert(session)
+        let entry = Entry(timestamp: Date(), language: "es", original: "", english: "hola", isDropMarker: false)
+        entry.session = session
+        context.insert(entry)
+        try context.save()
+        host(NavigationStack { HistoryView(exporter: exporter) }.modelContainer(container))                       // one row
+        host(NavigationStack { HistoryView(initialQuery: "hola", exporter: exporter) }.modelContainer(container)) // one hit
+        host(NavigationStack { HistoryView(initialQuery: "zzz", exporter: exporter) }.modelContainer(container))  // ContentUnavailableView.search
+        XCTAssertEqual(HistoryView.emptyTitle, "No Transcripts")
+        XCTAssertEqual(HistoryView.emptyDescription, "Sessions you translate appear here.")
+        XCTAssertEqual(HistoryView(exporter: exporter).exporter.directory.standardizedFileURL,
+                       root.appendingPathComponent("exports", isDirectory: true).standardizedFileURL,
+                       "the screen carries the injected exporter, not the defaulted temporary-folder one")
+    }
+
+    func testAboutViewHosts() {
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
+    }
+
+    func testBroadcastPickerButtonHosts() {
+        host(BroadcastPickerButton(preferredExtension: "com.example.revox.Broadcast")
+            .frame(width: BroadcastPickerButton.size, height: BroadcastPickerButton.size))
     }
 }

@@ -7,16 +7,24 @@ struct BroadcastPickerButton: UIViewRepresentable {
     static let size: CGFloat = 50
     static let captionText = "Tap to choose ReVox and start the broadcast. You can also start it from Control Center's Screen Recording control."
     static let footnoteText = "Locking the iPhone with the side button ends the broadcast."
+    static let accessibilityLabelText = "Choose ReVox and start the broadcast"
+    static let accessibilityHintText = "Opens the system broadcast sheet"
 
     let preferredExtension: String
 
-    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
-        let view = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: Self.size, height: Self.size))
+    /// The single source of the picker's VoiceOver identity (§8.8). `makeUIView` calls it; the test calls it on a
+    /// view it builds itself, because `UIViewRepresentableContext` has no public initializer.
+    static func configure(_ view: RPSystemBroadcastPickerView, preferredExtension: String) {
         view.preferredExtension = preferredExtension
         view.showsMicrophoneButton = false
         view.isAccessibilityElement = true
-        view.accessibilityLabel = "Start broadcast"
-        view.accessibilityHint = "Opens the system sheet to start sending other apps' audio to ReVox"
+        view.accessibilityLabel = accessibilityLabelText
+        view.accessibilityHint = accessibilityHintText
+    }
+
+    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+        let view = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: Self.size, height: Self.size))
+        Self.configure(view, preferredExtension: preferredExtension)
         return view
     }
 

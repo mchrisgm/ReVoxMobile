@@ -44,18 +44,23 @@ struct ModelRowView: View {
         case .listing, .downloading, .compiling, .verifying:
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: row.state.fraction ?? 0)
+                    .accessibilityValue(LiveStatusAccessibility.percentText(row.state.fraction))
                 HStack {
                     Text(ModelsViewModel.phaseText(row.state.phase)).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Cancel", role: .cancel, action: onCancel).font(.caption)
+                    Button("Cancel", role: .cancel, action: onCancel)
+                        .font(.caption)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
             }
+            .accessibilityAddTraits(.updatesFrequently)
         case .paused:
             HStack {
                 Text("Paused").font(.caption).foregroundStyle(.secondary)
                 Text(ModelsViewModel.keepOpenText).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Button("Resume", action: onDownload).buttonStyle(.bordered)
+                Button("Resume", action: onDownload).buttonStyle(.bordered).frame(minHeight: 44)
             }
         case .installed:
             HStack {

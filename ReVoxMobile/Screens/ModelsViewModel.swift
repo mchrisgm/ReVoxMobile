@@ -17,6 +17,9 @@ final class ModelsViewModel {
     private let isPipelineRunning: @MainActor () -> Bool
     var lowStorageAlert: String?
     var lowStorageWarning: String?
+    /// Set only when a failure follows the user's own Download / Resume / Retry (§8.8); the row state is the other surface.
+    var downloadFailureAlert: String?
+    @ObservationIgnored private var awaitingUserResult: Set<WhisperModelID> = []
 
     init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, isPipelineRunning: @escaping @MainActor () -> Bool) {
         self.manager = manager
@@ -74,10 +77,12 @@ final class ModelsViewModel {
         case .ok:
             break
         }
+        awaitingUserResult.insert(id)
         manager.install(.whisper(id))
     }
 
     func cancel(_ id: WhisperModelID) {
+        awaitingUserResult.remove(id)
         manager.cancel(.whisper(id))
     }
 
@@ -93,6 +98,27 @@ final class ModelsViewModel {
 
     func applicationDidBecomeActive() {
         manager.applicationDidBecomeActive()
+    }
+
+    /// Called by the screen whenever the rows change. A `.failed` state that a user action was awaiting raises the
+    /// alert once; `.installed`/`.idle` clear the flag; `.paused` clears it because the §6.9 auto-resume that follows
+    /// is not user-initiated, so its failure stays on the row.
+    func reconcileFailures() {
+        for id in awaitingUserResult {
+            switch manager.state(for: .whisper(id)).phase {
+            case .failed(let message):
+                awaitingUserResult.remove(id)
+                downloadFailureAlert = Self.downloadFailureText(name: id.displayName, message: message)
+            case .installed, .idle, .paused:
+                awaitingUserResult.remove(id)
+            case .listing, .downloading, .compiling, .verifying:
+                break
+            }
+        }
+    }
+
+    static func downloadFailureText(name: String, message: String) -> String {
+        "Couldn't download \(name): \(message)"
     }
 
     // MARK: Text

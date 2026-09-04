@@ -50,5 +50,11 @@ struct ModelsView: View {
         } message: {
             Text(model.lowStorageAlert ?? "")
         }
+        .onChange(of: model.rows) { _, _ in model.reconcileFailures() }
+        .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.downloadFailureAlert ?? "")
+        }
     }
 }
