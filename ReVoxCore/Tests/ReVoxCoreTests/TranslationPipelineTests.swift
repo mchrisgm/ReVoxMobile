@@ -53,7 +53,8 @@ final class TranslationPipelineTests: XCTestCase {
                        "the tap must be installed before the engine is started")
     }
 
-    private func makeHarness(translator: FakeTranslator = FakeTranslator(), realSegmenter: Bool = false) -> Harness {
+    private func makeHarness(translator: FakeTranslator = FakeTranslator(), realSegmenter: Bool = false,
+                             transcriber: (any Transcriber)? = nil, secondary: (any SecondaryTranslator)? = nil) -> Harness {
         let source = FakeAudioSource()
         let vad = EnergyVAD()
         let speaker = FakeSpeaker()
@@ -63,6 +64,8 @@ final class TranslationPipelineTests: XCTestCase {
         let players = LockedBox<[FakePlayer]>([])
         var dependencies = PipelineDependencies(
             source: source, vad: vad, detector: FakeLanguageDetector(), translator: translator, speaker: speaker,
+            transcriber: transcriber,
+            secondaryTranslator: secondary,
             playerFactory: { _, onSpeaking in
                 let player = FakePlayer(onSpeaking: onSpeaking)
                 players.update { $0.append(player) }
@@ -476,5 +479,75 @@ final class TranslationPipelineTests: XCTestCase {
         XCTAssertTrue(settled, "\(h.events.states)")             // the session still ended cleanly
         let entries = await h.sinks.value[0].entries
         XCTAssertTrue(entries.isEmpty)                           // and nothing was transcribed after the stop
+    }
+
+    // MARK: Two-way routing through the pipeline (M8, §8.2)
+
+    private actor StubTranscriber: Transcriber {
+        func transcribe(_ audio: [Float], language: String) async throws -> TranslationCandidate {
+            TranslationCandidate(language: language, languageProbability: nil,
+                                 segments: [TranslationSegment(text: " Good morning.", noSpeechProbability: 0,
+                                                               averageLogProbability: -0.1)])
+        }
+    }
+
+    private actor StubSecondary: SecondaryTranslator {
+        private let result: String?
+        init(result: String?) { self.result = result }
+        func translate(_ text: String, from source: String, to target: String) async throws -> String? { result }
+    }
+
+    /// `FakeLanguageDetector` reports "es", so ignoring "es" with two-way off must drop the phrase entirely:
+    /// nothing transcribed, nothing spoken.
+    func testAnIgnoredPhraseReachesNeitherTheTranscriptNorTheVoice() async throws {
+        let h = makeHarness()
+        var config = configuration()
+        config.ignoredLanguage = "es"
+        await h.pipeline.start(config)
+        h.source.feed(segment())
+        _ = await eventually(timeout: 0.5) { await h.speaker.texts.isEmpty == false }
+        let entries = await h.transcript.entries
+        XCTAssertTrue(entries.isEmpty, "an ignored phrase is not transcribed")
+        let spoken = await h.speaker.texts
+        XCTAssertTrue(spoken.isEmpty, "an ignored phrase is not spoken")
+        await h.pipeline.stop()
+    }
+
+    func testATwoWayPhraseIsTranscribedAndSpokenInTheTargetLanguage() async throws {
+        let h = makeHarness(transcriber: StubTranscriber(), secondary: StubSecondary(result: "Buenos días."))
+        var config = configuration()
+        config.ignoredLanguage = "es"
+        config.twoWay = true
+        config.twoWayLanguage = "fr"
+        await h.pipeline.start(config)
+        h.source.feed(segment())
+        let spoke = await eventually { await h.speaker.texts.isEmpty == false }
+        XCTAssertTrue(spoke)
+        let spoken = await h.speaker.texts
+        XCTAssertEqual(spoken.first, "Buenos días.")
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.first?.english, "Buenos días.")
+        await h.pipeline.stop()
+    }
+
+    /// The half of §8.2 that only shows up without an engine: the phrase is kept in the transcript so both sides
+    /// of the conversation are readable, and the voice stays silent rather than saying it in the wrong language.
+    func testAPhraseWithNoEngineForTheTargetIsTranscribedButNotSpoken() async throws {
+        let h = makeHarness(transcriber: StubTranscriber(), secondary: StubSecondary(result: nil))
+        var config = configuration()
+        config.ignoredLanguage = "es"
+        config.twoWay = true
+        config.twoWayLanguage = "cy"
+        await h.pipeline.start(config)
+        h.source.feed(segment())
+        let transcribed = await eventually { await h.transcript.entries.isEmpty == false }
+        XCTAssertTrue(transcribed)
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.first?.english, "Good morning.")
+        XCTAssertEqual(entries.first?.language, "es")
+        _ = await eventually(timeout: 0.5) { await h.speaker.texts.isEmpty == false }
+        let spoken = await h.speaker.texts
+        XCTAssertTrue(spoken.isEmpty, "nothing is spoken when no engine can reach the target language")
+        await h.pipeline.stop()
     }
 }

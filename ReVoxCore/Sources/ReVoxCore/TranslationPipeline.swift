@@ -91,7 +91,11 @@ actor PipelineActor {
         let transcript = deps.transcriptFactory()
         self.transcript = transcript
         let stage = TranslationStage(detector: deps.detector, translator: deps.translator,
-                                     pinnedLanguage: configuration.pinnedLanguage)
+                                     pinnedLanguage: configuration.pinnedLanguage,
+                                     transcriber: deps.transcriber, secondary: deps.secondaryTranslator,
+                                     ignoredLanguage: configuration.ignoredLanguage,
+                                     twoWay: configuration.twoWay,
+                                     targetLanguage: configuration.twoWayLanguage)
 
         let (wakeStream, wakeContinuation) = AsyncStream.makeStream(of: Void.self)
         let (textStream, textContinuation) = AsyncStream.makeStream(of: String.self)
@@ -215,11 +219,22 @@ actor PipelineActor {
     }
 
     func recordTranslation(_ result: Translation, run: Int) async {
+        await record(RoutedTranslation(translation: result, route: .toEnglish, isSpoken: true), run: run)
+    }
+
+    /// M8: a phrase the second direction could transcribe but not translate is kept in the transcript and not
+    /// spoken, so a two-way conversation still shows both sides even where no engine can reach the target.
+    func record(_ routed: RoutedTranslation, run: Int) async {
         guard running, run == runID else { return }
+        let result = routed.translation
         let entry = TranscriptEntry(timestamp: dependencies.clock(), language: result.language,
                                     original: "", english: result.english)
         await transcript?.add(entry)
         events.yield(.entry(entry))
+        if case .transcribedOnly(let reason) = routed.route {
+            events.yield(.transcriptOnly(reason: reason))
+        }
+        guard routed.isSpoken else { return }
         texts?.yield(result.english)
     }
 
@@ -276,10 +291,10 @@ actor PipelineActor {
                 while let segment = await self.popSegment(run: run) {
                     guard await self.isRunning(run) else { return }
                     do {
-                        guard let result = try await stage.translate(segment) else { continue }
+                        guard let routed = try await stage.route(segment) else { continue }
                         // Re-checked after the await: the translator may have outlived this run's `stop()`.
                         guard await self.isRunning(run) else { continue }
-                        await self.recordTranslation(result, run: run)
+                        await self.record(routed, run: run)
                     } catch {
                         if error is CancellationError { return }
                         await self.fail(error, run: run)
