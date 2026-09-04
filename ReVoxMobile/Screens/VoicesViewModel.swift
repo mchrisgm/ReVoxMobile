@@ -32,6 +32,8 @@ final class VoicesViewModel {
     var sampleError: String?
     var lowStorageAlert: String?
     var lowStorageWarning: String?
+    var downloadFailureAlert: String?
+    @ObservationIgnored private var awaitingUserResult = false
 
     init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, speakerStatus: SpeakerStatusRelay,
          samplePlayer: SamplePlayer, selection: @escaping @MainActor () async -> SpeakerSelection,
@@ -90,11 +92,27 @@ final class VoicesViewModel {
         case .ok:
             break
         }
+        awaitingUserResult = true
         manager.install(.pocketTTS)
     }
 
     func cancel() {
+        awaitingUserResult = false
         manager.cancel(.pocketTTS)
+    }
+
+    /// Same policy as `ModelsViewModel.reconcileFailures()` (§8.8) for the single pocket-tts row.
+    func reconcileFailures() {
+        guard awaitingUserResult else { return }
+        switch pocketTTSState.phase {
+        case .failed(let message):
+            awaitingUserResult = false
+            downloadFailureAlert = ModelsViewModel.downloadFailureText(name: Self.pocketTTSName, message: message)
+        case .installed, .idle, .paused:
+            awaitingUserResult = false
+        case .listing, .downloading, .compiling, .verifying:
+            break
+        }
     }
 
     /// Behind the screen's `confirmationDialog`; refused while the pipeline runs (§6.9). The voice setting is kept.

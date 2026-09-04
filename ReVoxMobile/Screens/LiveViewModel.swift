@@ -182,6 +182,14 @@ final class LiveViewModel {
         await pipeline?.stop()
     }
 
+    /// Returning from Settings after granting microphone access clears the permission banner (§8.8: inline banner
+    /// plus the Settings link, never a modal loop). Nothing is started here; the user taps Start.
+    func applicationDidBecomeActive() {
+        if banner == .permissionDenied, permission.status() != .denied {
+            banner = nil
+        }
+    }
+
     func toggle() async {
         switch state {
         case .running:

@@ -81,6 +81,12 @@ struct VoicesView: View {
         } message: {
             Text(model.lowStorageAlert ?? "")
         }
+        .onChange(of: model.pocketTTSState) { _, _ in model.reconcileFailures() }
+        .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.downloadFailureAlert ?? "")
+        }
     }
 
     /// Installed: name, size, the engine status; carries the swipe-to-delete action (hidden while running, §8.4).

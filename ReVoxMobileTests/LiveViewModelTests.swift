@@ -430,4 +430,19 @@ final class LiveViewModelTests: XCTestCase {
         let microphone = LiveViewModel.configuration(settings: Settings(), captureMode: .microphone)
         XCTAssertEqual(microphone.captureLatencyFrames, 0, "mic mode: both gate positions coincide (§5.2)")
     }
+
+    func testPermissionBannerClearsWhenAccessIsGrantedOnReturnAndNeverBecomesModal() async {
+        let status = LockedBox<MicrophonePermissionStatus>(.denied)
+        let permission = MicrophonePermission(status: { status.value }, request: { false })
+        let model = makeModel(permission: permission)
+        await model.start()
+        XCTAssertEqual(model.banner, .permissionDenied)
+        XCTAssertEqual(model.state, .idle)
+        model.applicationDidBecomeActive()
+        XCTAssertEqual(model.banner, .permissionDenied, "still denied: the banner stays; there is no alert to loop on")
+        status.mutate { $0 = .granted }
+        model.applicationDidBecomeActive()
+        XCTAssertNil(model.banner, "returning from Settings with access granted clears the banner")
+        XCTAssertEqual(model.state, .idle, "nothing starts by itself; the user taps Start")
+    }
 }

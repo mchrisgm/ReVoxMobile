@@ -175,6 +175,7 @@ final class AppEnvironment {
 
     func applicationDidBecomeActive() {
         modelManager.applicationDidBecomeActive()
+        live.applicationDidBecomeActive()
         Task { await broadcast.applicationDidBecomeActive() }
     }
 }
