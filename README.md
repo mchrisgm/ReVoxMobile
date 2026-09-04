@@ -71,7 +71,7 @@ flowchart LR
 
 ### For users
 
-ReVox Mobile is delivered through **TestFlight**. You need an iPhone 12 or newer running iOS 17 or later, and Wi-Fi for the first launch to download the Whisper model (and optionally the pocket-tts voice); nothing is downloaded after that. [docs/testing.md](docs/testing.md) walks through installing TestFlight, accepting an invitation, the first launch and how to send feedback. ReVox shows a tutorial on first launch and can show it again from Settings.
+ReVox Mobile is delivered through **TestFlight**. You need an iPhone 12 or newer running iOS 17 or later, and Wi-Fi for the first launch to download the Whisper model (and optionally the pocket-tts voice); nothing is downloaded after that. [docs/testing.md](docs/testing.md) walks through installing TestFlight, accepting an invitation, the first launch and how to send feedback. ReVox shows an interactive tutorial on first launch and can show it again from Settings — see [docs/onboarding.md](docs/onboarding.md).
 
 ### For developers
 
