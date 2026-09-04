@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import SwiftData
 import ReVoxCore
 @testable import ReVoxMobile
 
@@ -154,5 +155,20 @@ final class ScreenHostingTests: XCTestCase {
         let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
         let voices = try makeVoicesViewModel()
         host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices, diagnostics: model) })
+    }
+
+    func testSessionRowViewHosts() throws {
+        let context = ModelContext(try TranscriptContainer.make(inMemory: true))
+        let session = Session(startedAt: Date(), endedAt: Date().addingTimeInterval(90), captureMode: "broadcast", pinnedLanguage: "es", modelID: "small", voice: "alba", joinedInProgress: true)
+        context.insert(session)
+        let entry = Entry(timestamp: Date(), language: "es", original: "", english: "hola", isDropMarker: false)
+        entry.session = session
+        context.insert(entry)
+        try context.save()
+        host(List { SessionRowView(summary: SessionSummary(session: session)) })
+        let empty = Session(startedAt: Date(), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+        context.insert(empty)
+        try context.save()
+        host(List { SessionRowView(summary: SessionSummary(session: empty)) })
     }
 }
