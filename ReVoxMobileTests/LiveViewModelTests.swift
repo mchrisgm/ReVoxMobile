@@ -234,7 +234,7 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertNil(model.sessionStatus, "a route change on its own says nothing")
     }
 
-    func testM3ConfigurationHasDuckingOffAndMirrorsSettings() {
+    func testConfigurationMirrorsSettingsIncludingDucking() {
         var settings = Settings()
         settings.latencyMode = "fast"
         settings.language = "it"
@@ -242,7 +242,33 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(configuration.captureMode, .microphone)
         XCTAssertEqual(configuration.preset, .fast)
         XCTAssertEqual(configuration.pinnedLanguage, "it")
-        XCTAssertFalse(configuration.duckingEnabled, "ducking is delivered in M4")
+        XCTAssertTrue(configuration.duckingEnabled, "R11 default ducking = true")
         XCTAssertEqual(configuration.maxPending, 3)
+        settings.ducking = false
+        XCTAssertFalse(LiveViewModel.configuration(settings: settings, captureMode: .microphone).duckingEnabled)
+    }
+
+    func testDuckingEventsDriveThePillAndTheOffText() {
+        let model = makeModel()
+        XCTAssertNil(model.duckingStatusText)
+        model.handle(SessionEvent.duckingChanged(true))
+        XCTAssertTrue(model.isDucked)
+        XCTAssertEqual(model.duckingStatusText, "Ducking")
+        model.handle(SessionEvent.duckingChanged(false))
+        XCTAssertFalse(model.isDucked)
+        XCTAssertNil(model.duckingStatusText)
+        store.update { $0.ducking = false }
+        XCTAssertEqual(model.duckingStatusText, "Ducking off")
+    }
+
+    func testVoiceStatusComesFromTheRelay() {
+        let relay = SpeakerStatusRelay()
+        let model = LiveViewModel(settings: store, mute: PlaybackMute(), permission: .fixed(.granted), modelReady: { _ in true },
+                                  supplier: { _, _ in FakeLivePipeline() }, speakerStatus: relay)
+        XCTAssertEqual(model.voiceStatusText, "System voice — pocket-tts not downloaded")
+        relay.status = .pocketTTS(voice: "alba")
+        XCTAssertEqual(model.voiceStatusText, "alba (pocket-tts)")
+        relay.status = .fallback(.loadFailed("x"))
+        XCTAssertEqual(model.voiceStatusText, "System voice — pocket-tts failed to load")
     }
 }

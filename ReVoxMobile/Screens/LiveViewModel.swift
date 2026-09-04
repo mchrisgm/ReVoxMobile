@@ -20,13 +20,17 @@ final class LiveViewModel {
     static let pausedByIOSText = "Translation paused by iOS"
     static let tapStartText = "Tap Start to resume"
     static let audioRestartedText = "Audio restarted"
-    static let systemVoiceText = "System voice — pocket-tts not downloaded"
+    static let systemVoiceText = SpeakerStatus.notDownloadedText
+    static let duckingText = "Ducking"
+    static let duckingOffText = "Ducking off"
 
     private(set) var state: LiveState = .idle
     private(set) var stateHistory: [LiveState] = []
     private(set) var rows: [LiveTranscriptRow] = []
     private(set) var isFallingBehind = false
     private(set) var isSpeaking = false
+    /// From `SessionEvent.duckingChanged` (§6.8): true while the controller's applied mask carries `.duckOthers`.
+    private(set) var isDucked = false
     private(set) var banner: LiveBanner?
     private(set) var preparingMessage: String?
     private(set) var sessionStatus: String?
@@ -35,13 +39,13 @@ final class LiveViewModel {
     private(set) var modelReadyForStatus: Bool?
     private(set) var lastEventHandledOnMainThread = false
     /// The status line's voice part; M4's `EffectiveSpeaker` status replaces the constant.
-    var voiceStatusText = LiveViewModel.systemVoiceText
 
     private let settings: SettingsStore
     private let mute: PlaybackMute
     private let permission: MicrophonePermission
     private let modelReady: @MainActor (WhisperModelID) async -> Bool
     private let supplier: PipelineSupplier
+    private let speakerStatus: SpeakerStatusRelay
     @ObservationIgnored private var pipeline: (any LivePipeline)?
     @ObservationIgnored private var signature: PipelineSignature?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -49,12 +53,14 @@ final class LiveViewModel {
     @ObservationIgnored private var sessionTask: Task<Void, Never>?
 
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
-         modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier) {
+         modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
+         speakerStatus: SpeakerStatusRelay = SpeakerStatusRelay()) {
         self.settings = settings
         self.mute = mute
         self.permission = permission
         self.modelReady = modelReady
         self.supplier = supplier
+        self.speakerStatus = speakerStatus
     }
 
     // MARK: Inputs
@@ -75,9 +81,18 @@ final class LiveViewModel {
         }
     }
 
+    /// The voice part of the status line (§8.2): "alba (pocket-tts)", "System voice — pocket-tts not downloaded", …
+    var voiceStatusText: String { speakerStatus.text }
+
+    /// "Ducking" pill while ducked, "Ducking off" when the toggle is off, nothing otherwise (§8.2).
+    var duckingStatusText: String? {
+        if isDucked { return Self.duckingText }
+        return settings.settings.ducking ? nil : Self.duckingOffText
+    }
+
     static func configuration(settings: Settings, captureMode: CaptureMode) -> PipelineConfiguration {
         var configuration = PipelineConfiguration(captureMode: captureMode, preset: settings.preset, pinnedLanguage: settings.language)
-        configuration.duckingEnabled = false   // M4 wires `settings.ducking`; the M3 controller only records requests
+        configuration.duckingEnabled = settings.ducking   // R11; the controller applies the cycles of §6.8
         return configuration
     }
 
@@ -228,6 +243,7 @@ final class LiveViewModel {
         case .resumed: sessionStatus = nil
         case .resumeFailed: sessionStatus = Self.tapStartText
         case .audioRestarted: sessionStatus = Self.audioRestartedText
+        case .duckingChanged(let ducked): isDucked = ducked
         case .routeChanged: break   // §9: no user-visible surface; the tap rebuild happens in MicrophoneCapture (Task 30)
         case .captureStatus(let text): sessionStatus = text   // §6.1 "No microphone input"; nil clears the line
         }

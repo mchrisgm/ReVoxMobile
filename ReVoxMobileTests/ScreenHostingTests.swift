@@ -48,10 +48,12 @@ final class ScreenHostingTests: XCTestCase {
     }
 
     func testSettingsViewHosts() {
-        let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), locale: Locale(identifier: "en_US"))
+        let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
         host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel()) })
         settingsModel.latencyMode = .fast
         settingsModel.language = "es"
+        settingsModel.ducking = false
+        settingsModel.voiceVolume = 0.3
         host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel()) })
     }
 

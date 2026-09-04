@@ -19,6 +19,10 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.live.modelStatusText, "small · ready", "status before the readiness check ran")
         XCTAssertFalse(environment.mute.isMuted)
         XCTAssertEqual(environment.settingsModel.latencyMode, .balanced)
+        XCTAssertEqual(environment.speakerStatus.text, SpeakerStatus.notDownloadedText)
+        XCTAssertEqual(environment.voiceVolume.current, 1)
+        XCTAssertEqual(environment.live.voiceStatusText, SpeakerStatus.notDownloadedText)
+        XCTAssertTrue(environment.speakerAssembly.voiceVolume === environment.voiceVolume)
     }
 
     func testDidBecomeActiveForwardsToTheModelManager() throws {

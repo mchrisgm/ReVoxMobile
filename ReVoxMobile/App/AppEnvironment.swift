@@ -18,6 +18,9 @@ final class AppEnvironment {
     let mute: PlaybackMute
     let signals: DeviceSignals
     let assembler: PipelineAssembler
+    let voiceVolume: VoiceVolume
+    let speakerStatus: SpeakerStatusRelay
+    let speakerAssembly: SpeakerAssembly
     let live: LiveViewModel
     let models: ModelsViewModel
     let settingsModel: SettingsViewModel
@@ -51,14 +54,19 @@ final class AppEnvironment {
         self.signals = DeviceSignals()
         let activity = LiveActivity()
         self.modelManager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { activity.isBusy }, availableBytes: nil, host: installHost)
-        self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer)
+        self.voiceVolume = VoiceVolume(Float(settings.settings.voiceVolume))
+        self.speakerStatus = SpeakerStatusRelay()
+        self.speakerAssembly = SpeakerAssembly(layout: layout, settings: settings, manager: modelManager, relay: speakerStatus, voiceVolume: voiceVolume)
+        self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer,
+                                           speakerAssembly: speakerAssembly)
         let manager = modelManager
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,
                                   modelReady: { id in await manager.isWhisperReady(id) },
-                                  supplier: assembler.supplier())
+                                  supplier: assembler.supplier(),
+                                  speakerStatus: speakerStatus)
         activity.live = live
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
-        self.settingsModel = SettingsViewModel(store: settings, mute: mute)
+        self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
         live.observe(sessionEvents: sessionController.events)
         let controller = sessionController
         let events = interruptions.events
