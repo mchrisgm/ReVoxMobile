@@ -475,4 +475,151 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(first.stopCount, 0)
         XCTAssertEqual(model.state, .running)
     }
+
+    // MARK: Load-failure recovery (M7 Task 91)
+
+    /// A supplier that throws the given errors in order and records the settings every build attempt received.
+    /// One element per build attempt, consumed front to back: an error fails that build, `nil` lets it succeed, and
+    /// once the list is empty every further build succeeds.
+    private func makeRecoveringModel(failures: [Error?],
+                                     installed: [WhisperModelID] = [.tiny, .base, .small]) -> (LiveViewModel, LockedBox<[Settings]>) {
+        let pipelines = self.pipelines!
+        let received = LockedBox<[Settings]>([])
+        let remaining = LockedBox<[Error?]>(failures)
+        let model = LiveViewModel(
+            settings: store, mute: PlaybackMute(), permission: .fixed(.granted),
+            modelReady: { _ in true },
+            supplier: { settings, _ in
+                received.mutate { $0.append(settings) }
+                var next: Error?
+                remaining.mutate { if !$0.isEmpty { next = $0.removeFirst() } }
+                if let next { throw next }
+                let pipeline = FakeLivePipeline()
+                pipelines.mutate { $0.append(pipeline) }
+                return pipeline
+            },
+            installedModels: { installed }
+        )
+        return (model, received)
+    }
+
+    func testWhisperLoadFailureFallsBackToTheLargestSmallerInstalledModel() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [PipelineBuildError.whisperLoadFailed(model: .small, reason: "compile failed")])
+        await model.start()
+        await waitUntil("running on the fallback") { model.state == .running }
+        XCTAssertEqual(received.value.map(\.model), ["small", "base"])
+        XCTAssertEqual(model.banner, .usingFallbackModel(requested: .small, used: .base))
+        XCTAssertEqual(LiveBanner.fallbackText(requested: .small, used: .base), "Couldn't load small. Using base instead.")
+        XCTAssertEqual(model.activeModel, .base)
+        XCTAssertTrue(model.modelStatusText.hasPrefix("base"), "the status line names the model that actually loaded")
+        XCTAssertEqual(store.settings.model, "small", "a fallback never overwrites the user's choice")
+        XCTAssertEqual(model.supplierCallCount, 2)
+        model.dismissBanner()
+        XCTAssertNil(model.banner)
+    }
+
+    func testWhisperLoadFailureWithoutASmallerInstalledModelAsksForARedownload() async {
+        store.update { $0.model = "tiny" }
+        let (model, received) = makeRecoveringModel(failures: [PipelineBuildError.whisperLoadFailed(model: .tiny, reason: "missing files")],
+                                                    installed: [.tiny])
+        await model.start()
+        await waitUntil("idle again") { model.state == .idle }
+        XCTAssertEqual(received.value.count, 1, "no second build is attempted")
+        XCTAssertEqual(model.banner, .modelLoadFailed(.tiny))
+        XCTAssertEqual(LiveBanner.loadFailedText(.tiny), "Couldn't load tiny. Re-download tiny in Models.")
+        XCTAssertNil(model.preparingMessage)
+    }
+
+    func testTheSearchWalksDownTheInstalledModelsAndGivesUpNamingTheLastFailure() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [
+            PipelineBuildError.whisperLoadFailed(model: .small, reason: "compile failed"),
+            PipelineBuildError.whisperLoadFailed(model: .base, reason: "compile failed"),
+            PipelineBuildError.whisperLoadFailed(model: .tiny, reason: "compile failed"),
+        ])
+        await model.start()
+        await waitUntil("idle again") { model.state == .idle }
+        XCTAssertEqual(received.value.map(\.model), ["small", "base", "tiny"],
+                       "each pass consumes one installed model, so the walk down §9 row 1 terminates")
+        XCTAssertEqual(model.banner, .modelLoadFailed(.tiny),
+                       "the give-up banner names the model whose load actually threw last")
+        XCTAssertNil(model.fallback, "the failed fallback is dropped")
+        XCTAssertEqual(model.activeModel, .small, "with no fallback the run is back on the user's own model")
+        XCTAssertEqual(store.settings.model, "small")
+    }
+
+    func testASecondStartWithTheFallbackStillActiveFallsBackAgain() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [
+            PipelineBuildError.whisperLoadFailed(model: .small, reason: "compile failed"),
+            nil,
+            PipelineBuildError.whisperLoadFailed(model: .base, reason: "compile failed"),
+            nil,
+        ])
+        await model.start()
+        await waitUntil("running on the fallback") { model.state == .running }
+        XCTAssertEqual(model.activeModel, .base)
+
+        await model.stop()
+        await waitUntil("idle") { model.state == .idle }
+        await model.releaseCachedPipeline()          // a delete dropped the cached pipeline (Task 89)
+        await model.start()
+        await waitUntil("running on the second fallback") { model.state == .running }
+
+        XCTAssertEqual(received.value.map(\.model), ["small", "base", "base", "tiny"],
+                       "an active fallback does not suppress the search: base failed, so tiny is tried")
+        XCTAssertEqual(model.banner, .usingFallbackModel(requested: .base, used: .tiny),
+                       "the banner names the model that failed this start, not the one the user selected")
+        XCTAssertEqual(model.activeModel, .tiny)
+        XCTAssertEqual(model.fallback, LiveViewModel.ModelFallbackState(requested: .small, used: .tiny),
+                       "the fallback is still keyed on the user's model, so a later model change drops it")
+        XCTAssertEqual(store.settings.model, "small", "a fallback never overwrites the user's choice")
+    }
+
+    func testChangingTheModelDropsAStaleFallbackAndTheSpecFallbackRunsAgain() async {
+        store.update { $0.model = "small" }
+        let (model, received) = makeRecoveringModel(failures: [
+            PipelineBuildError.whisperLoadFailed(model: .small, reason: "x"),
+            nil,
+            PipelineBuildError.whisperLoadFailed(model: .medium, reason: "x"),
+        ], installed: [.tiny, .base, .small, .medium])
+        await model.start()
+        await waitUntil("running on the fallback") { model.state == .running }
+        XCTAssertEqual(model.fallback, LiveViewModel.ModelFallbackState(requested: .small, used: .base))
+
+        store.update { $0.model = "medium" }        // the Models screen, or onActiveModelDeleted after a delete
+        XCTAssertEqual(model.activeModel, .medium, "a fallback for a model the user has left is ignored at once")
+
+        await model.stop()
+        await waitUntil("idle") { model.state == .idle }
+        await model.releaseCachedPipeline()          // both are guarded on idle (Tasks 89 and 91)
+        await model.start()
+        await waitUntil("running on the new model's own fallback") { model.state == .running }
+
+        XCTAssertEqual(received.value.map(\.model), ["small", "base", "medium", "small"],
+                       "the stale fallback is gone, so §9 row 1 searches again from the model the user now wants")
+        XCTAssertEqual(model.banner, .usingFallbackModel(requested: .medium, used: .small),
+                       "not .modelLoadFailed(.small): the banner names the model that actually failed")
+        XCTAssertEqual(model.activeModel, .small)
+        XCTAssertEqual(store.settings.model, "medium", "a fallback still never overwrites the user's choice")
+    }
+
+    func testVADLoadFailureShowsItsOwnBannerAndNeverRetries() async {
+        let (model, received) = makeRecoveringModel(failures: [PipelineBuildError.vadLoadFailed("MLModel compile failed")])
+        await model.start()
+        await waitUntil("idle again") { model.state == .idle }
+        XCTAssertEqual(received.value.count, 1)
+        XCTAssertEqual(model.banner, .vadLoadFailed)
+        XCTAssertEqual(LiveBanner.vadLoadFailedText, "Voice detector failed to load. Re-download it in Models.")
+    }
+
+    func testANonBuildErrorKeepsTheGenericBanner() async {
+        let (model, _) = makeRecoveringModel(failures: [ModelInstallError.filesMissingAfterDownload("no models")])
+        await model.start()
+        await waitUntil("idle again") { model.state == .idle }
+        guard case .error = model.banner else {
+            return XCTFail("expected the generic error banner, got \(String(describing: model.banner))")
+        }
+    }
 }

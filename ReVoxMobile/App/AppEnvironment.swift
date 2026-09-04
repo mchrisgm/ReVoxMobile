@@ -87,7 +87,8 @@ final class AppEnvironment {
                                   modelReady: { id in await manager.isWhisperReady(id) },
                                   supplier: assembler.supplier(),
                                   speakerStatus: speakerStatus,
-                                  broadcast: broadcast)
+                                  broadcast: broadcast,
+                                  installedModels: { manager.installedWhisper })
         activity.live = live
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
         let liveForRelease = live

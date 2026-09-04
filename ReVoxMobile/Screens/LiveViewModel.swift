@@ -10,6 +10,24 @@ enum LiveBanner: Equatable, Sendable {
     case permissionDenied
     case error(String)
     case modelMissing(WhisperModelID)
+    /// §9 row 1: the selected model would not load and a smaller installed one is being used instead.
+    case usingFallbackModel(requested: WhisperModelID, used: WhisperModelID)
+    /// §9 row 1 with nothing smaller installed.
+    case modelLoadFailed(WhisperModelID)
+    /// §9 VAD row (§6.3).
+    case vadLoadFailed
+    /// §9 memory and thermal rows.
+    case degraded(String)
+
+    static func fallbackText(requested: WhisperModelID, used: WhisperModelID) -> String {
+        "Couldn't load \(requested.displayName). Using \(used.displayName) instead."
+    }
+
+    static func loadFailedText(_ id: WhisperModelID) -> String {
+        "Couldn't load \(id.displayName). Re-download \(id.displayName) in Models."
+    }
+
+    static let vadLoadFailedText = "Voice detector failed to load. Re-download it in Models."
 }
 
 /// The Live screen state machine (§8.2), the port of the Windows `AppController`.
@@ -38,6 +56,19 @@ final class LiveViewModel {
     private(set) var supplierCallCount = 0
     /// How often a cached pipeline was dropped because model files changed (§6.9, M7); read by the tests.
     private(set) var releasedPipelineCount = 0
+
+    /// §9 row 1: the run is using `used` because `requested` would not load. Never written to `Settings`.
+    struct ModelFallbackState: Equatable, Sendable {
+        let requested: WhisperModelID
+        let used: WhisperModelID
+    }
+
+    private(set) var fallback: ModelFallbackState?
+
+    /// Every model this start has already handed to the supplier, successfully or not. `recover(from:)` searches only
+    /// among the models it has not tried yet, so each recovery pass consumes one installed model and the walk down
+    /// the catalog terminates (§9 row 1). Cleared by `start()`.
+    @ObservationIgnored private var attemptedModels: Set<WhisperModelID> = []
     private(set) var modelReadyForStatus: Bool?
     private(set) var lastEventHandledOnMainThread = false
     /// The status line's voice part; M4's `EffectiveSpeaker` status replaces the constant.
@@ -55,6 +86,7 @@ final class LiveViewModel {
     @ObservationIgnored private var broadcast: BroadcastCoordinator?
     @ObservationIgnored private var broadcastTask: Task<Void, Never>?
     @ObservationIgnored private var pipeline: (any LivePipeline)?
+    @ObservationIgnored private let installedModels: @MainActor () -> [WhisperModelID]
     @ObservationIgnored private var signature: PipelineSignature?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var lagTask: Task<Void, Never>?
@@ -63,12 +95,14 @@ final class LiveViewModel {
 
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
          modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
-         speakerStatus: SpeakerStatusRelay? = nil, broadcast: BroadcastCoordinator? = nil) {
+         speakerStatus: SpeakerStatusRelay? = nil, broadcast: BroadcastCoordinator? = nil,
+         installedModels: @escaping @MainActor () -> [WhisperModelID] = { [] }) {
         self.settings = settings
         self.mute = mute
         self.permission = permission
         self.modelReady = modelReady
         self.supplier = supplier
+        self.installedModels = installedModels
         // `nil`, not `SpeakerStatusRelay()`: a default argument is evaluated in the caller's context, which
         // may be nonisolated, and the relay is main-actor isolated. Building it here — inside the isolated
         // init — keeps the convenience without the isolation violation.
@@ -88,8 +122,23 @@ final class LiveViewModel {
 
     var isMuted: Bool { mute.isMuted }
 
+    /// The settings the pipeline is built from: the user's, with the model replaced while a fallback is active.
+    /// A fallback whose `requested` model is no longer the user's choice is ignored here on the spot — so the status
+    /// line names the newly chosen model at once — and `start()` clears it outright before the next build, so a run
+    /// never inherits a fallback for a model the user has left (§9 row 1).
+    var effectiveSettings: Settings {
+        var value = settings.settings
+        if let fallback, fallback.requested == value.whisperModel {
+            value.model = fallback.used.rawValue
+        }
+        return value
+    }
+
+    /// The model this run actually uses.
+    var activeModel: WhisperModelID { effectiveSettings.whisperModel }
+
     var modelStatusText: String {
-        let name = settings.settings.whisperModel.displayName
+        let name = activeModel.displayName
         switch state {
         case .preparing: return preparingMessage ?? "Preparing…"
         default: return modelReadyForStatus == false ? "No model" : "\(name) · ready"
@@ -149,6 +198,13 @@ final class LiveViewModel {
             }
         }
         let model = settings.settings.whisperModel
+        // §9 row 1: a fallback belongs to the model it was installed for. The moment the user picks another one
+        // (Models screen, or `onActiveModelDeleted` after a delete) the fallback is stale: `effectiveSettings`
+        // already ignores it, and dropping it here keeps the published `fallback` honest — for the status line and
+        // for the next failure's search.
+        if let fallback, fallback.requested != model { self.fallback = nil }
+        // Each start searches the installed models from scratch (§9 row 1).
+        attemptedModels = []
         let ready = await modelReady(model)
         modelReadyForStatus = ready
         guard ready else {
@@ -156,28 +212,72 @@ final class LiveViewModel {
             return
         }
         setState(.preparing)
-        let currentSignature = PipelineSignature(settings: settings.settings)
-        if pipeline == nil || signature != currentSignature {
-            await tearDownPipeline()
-            supplierCallCount += 1
-            do {
-                let built = try await supplier(settings.settings) { [weak self] message in
-                    Task { @MainActor in self?.preparingMessage = message }
-                }
-                pipeline = built
-                signature = currentSignature
-                observe(built)
-            } catch {
-                preparingMessage = nil
-                setState(.idle)
-                banner = .error(String(describing: error))
-                return
-            }
-        }
+        guard await buildIfNeeded() else { return }
         preparingMessage = nil
         guard let pipeline else { return }
         await pipeline.setMuted(mute.isMuted)
-        await pipeline.start(Self.configuration(settings: settings.settings, captureMode: captureMode))
+        await pipeline.start(Self.configuration(settings: effectiveSettings, captureMode: captureMode))
+    }
+
+    /// Reuses the cached pipeline when its signature still matches, otherwise builds one; a load failure goes to
+    /// `recover(from:)` (§9 rows 1 and 4). Returns false when the run must not start.
+    private func buildIfNeeded() async -> Bool {
+        if pipeline != nil, signature == PipelineSignature(settings: effectiveSettings) { return true }
+        await tearDownPipeline()
+        do {
+            try await build(with: effectiveSettings)
+            return true
+        } catch {
+            return await recover(from: error)
+        }
+    }
+
+    private func build(with builtSettings: Settings) async throws {
+        attemptedModels.insert(builtSettings.whisperModel)
+        supplierCallCount += 1
+        let built = try await supplier(builtSettings) { [weak self] message in
+            Task { @MainActor in self?.preparingMessage = message }
+        }
+        pipeline = built
+        signature = PipelineSignature(settings: builtSettings)
+        observe(built)
+    }
+
+    /// A Whisper load failure falls back to the largest smaller installed model the run has not tried yet and
+    /// rebuilds, repeating until one loads or nothing smaller is left; everything else is reported (§9 rows 1 and 4).
+    /// The pipeline itself never enters `.error` from here.
+    private func recover(from error: Error) async -> Bool {
+        preparingMessage = nil
+        setState(.idle)
+        switch error as? PipelineBuildError {
+        case .vadLoadFailed:
+            banner = .vadLoadFailed
+            return false
+        case .whisperLoadFailed(let failed, _):
+            let untried = installedModels().filter { !attemptedModels.contains($0) }
+            guard let smaller = ModelFallback.smallerInstalledModel(than: failed, installed: untried) else {
+                fallback = nil
+                banner = .modelLoadFailed(failed)
+                return false
+            }
+            fallback = ModelFallbackState(requested: settings.settings.whisperModel, used: smaller)
+            setState(.preparing)
+            do {
+                try await build(with: effectiveSettings)
+                banner = .usingFallbackModel(requested: failed, used: smaller)
+                return true
+            } catch {
+                return await recover(from: error)
+            }
+        case nil:
+            banner = .error(String(describing: error))
+            return false
+        }
+    }
+
+    /// The banner's Dismiss button (§8.8: a banner is never a modal loop).
+    func dismissBanner() {
+        banner = nil
     }
 
     func stop() async {

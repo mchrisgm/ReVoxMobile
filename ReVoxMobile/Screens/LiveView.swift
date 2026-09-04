@@ -120,6 +120,22 @@ struct LiveView: View {
             banner(text: message, buttonTitle: "Try again") {
                 Task { await model.start() }
             }
+        case .usingFallbackModel(let requested, let used):
+            banner(text: LiveBanner.fallbackText(requested: requested, used: used), buttonTitle: "Dismiss") {
+                model.dismissBanner()
+            }
+        case .modelLoadFailed(let failed):
+            banner(text: LiveBanner.loadFailedText(failed), buttonTitle: "Try again") {
+                Task { await model.start() }
+            }
+        case .vadLoadFailed:
+            banner(text: LiveBanner.vadLoadFailedText, buttonTitle: "Try again") {
+                Task { await model.start() }
+            }
+        case .degraded(let message):
+            banner(text: message, buttonTitle: "Dismiss") {
+                model.dismissBanner()
+            }
         case .modelMissing, nil:
             EmptyView()
         }
