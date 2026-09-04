@@ -14,6 +14,10 @@ struct BuiltPipeline: Sendable {
 /// settings.ducking` (F12); the keep-alive monitor of §6.8 wraps every run; the capture source follows `settings.capture`.
 @MainActor
 final class PipelineAssembler {
+    /// Where the recovery events of every built `RecoveringTranslator` go (§9 rows 2 and "Memory warning").
+    /// `AppEnvironment` points it at the degradation coordinator.
+    let whisperRecovery = WhisperRecoverySink()
+
     private let layout: ModelLayout
     private let sessionController: AudioSessionController
     private let transcriptContainer: ModelContainer
@@ -38,10 +42,12 @@ final class PipelineAssembler {
         let assembly = self.speakerAssembly
         let monitor = self.keepAlive
         let sources = self.sources
+        let recovery = self.whisperRecovery
         let speakers = assembly.bundle(controller: controller)
         return { settings, progress in
             let built = try await PipelineAssembler.build(settings: settings, layout: layout, sessionController: controller,
-                                                          transcriptContainer: container, speakers: speakers, sources: sources, progress: progress)
+                                                          transcriptContainer: container, speakers: speakers, sources: sources,
+                                                          progress: progress, onWhisperRecovery: { event in recovery.send(event) })
             guard let pipeline = built.pipeline else { throw PipelineBuildError.vadLoadFailed("no pipeline was built") }
             let source = built.source
             let isBroadcast = settings.capture == .broadcast
@@ -78,7 +84,8 @@ final class PipelineAssembler {
 
     nonisolated static func build(settings: Settings, layout: ModelLayout, sessionController: AudioSessionController,
                                   transcriptContainer: ModelContainer, speakers: SpeakerBundle, sources: CaptureSources,
-                                  progress: @escaping @Sendable (String) -> Void) async throws -> BuiltPipeline {
+                                  progress: @escaping @Sendable (String) -> Void,
+                                  onWhisperRecovery: @escaping @Sendable (RecoveringTranslator.RecoveryEvent) -> Void = { _ in }) async throws -> BuiltPipeline {
         // 1. Session first, in the foreground (§6.8): the resident mask of the selected mode.
         try await sessionController.configure(for: settings.capture)
 
@@ -95,7 +102,10 @@ final class PipelineAssembler {
         } catch {
             throw PipelineBuildError.whisperLoadFailed(model: settings.whisperModel, reason: String(describing: error))
         }
-        let translator = TimedTranslator(whisper)
+        // §9 row 2: one unload/reload retry before a mid-run Whisper failure reaches the pipeline (M7). A spent
+        // retry is also the "Whisper … fails next call" signal of the §9 memory row, so it is reported out.
+        let translator = RecoveringTranslator(TimedTranslator(whisper), reloading: whisper, model: settings.whisperModel,
+                                              onEvent: onWhisperRecovery)
 
         // 3. Adapters. The source follows the capture mode (§4.2); the speaker side comes from the assembly (R11, §6.5, §6.7).
         let isBroadcast = settings.capture == .broadcast
