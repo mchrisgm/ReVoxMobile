@@ -42,6 +42,8 @@ final class ScreenHostingTests: XCTestCase {
         host(NavigationStack { VoicesView(model: running) })
         XCTAssertEqual(running.footerText, VoicesViewModel.stopToDeleteText)
         XCTAssertFalse(running.canPlaySample)
+        XCTAssertEqual(running.sampleUnavailableReason, VoicesViewModel.stopToPlaySampleText, "M10: the disabled button says why")
+        XCTAssertNil(installed.sampleUnavailableReason)
     }
 
     func host<V: View>(_ view: V) {

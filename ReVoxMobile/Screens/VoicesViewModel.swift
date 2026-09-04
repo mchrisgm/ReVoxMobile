@@ -11,6 +11,7 @@ final class VoicesViewModel {
     static let sampleText = "This is ReVox."
     static let engineFooterText = "ReVox uses the system voice until pocket-tts is downloaded, and falls back to it automatically if pocket-tts fails."
     static let stopToDeleteText = "Stop translation to delete voices"
+    static let stopToPlaySampleText = "Stop translation to play a sample"
     static let confirmDeleteMessage = "ReVox will use the system voice until you download it again."
     static let pocketTTSName = "pocket-tts"
     static let systemVoiceValue = "system"
@@ -89,6 +90,10 @@ final class VoicesViewModel {
 
     var canDelete: Bool { isPocketTTSInstalled && !isPipelineRunning() }
     var canPlaySample: Bool { !isPipelineRunning() && !isPlayingSample }
+
+    /// M10: why Play sample is disabled, for the caption under it (a disabled control never goes unexplained).
+    /// nil while a sample plays: the spinner beside the button is the reason then.
+    var sampleUnavailableReason: String? { isPipelineRunning() ? Self.stopToPlaySampleText : nil }
 
     var footerText: String? {
         if manager.hasActiveDownload || !manager.pausedKinds.isEmpty { return ModelsViewModel.keepOpenText }

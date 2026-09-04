@@ -213,6 +213,25 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertEqual(sample.texts.count, 2, "idle only")
     }
 
+    /// M10: a disabled Play sample says why. While translation runs the caption names it; while a sample plays the
+    /// spinner is the reason, so there is no caption to double it.
+    func testSampleUnavailableReasonNamesTheRunningTranslation() async {
+        let model = makeModel()
+        XCTAssertNil(model.sampleUnavailableReason)
+        pipelineRunning = true
+        XCTAssertFalse(model.canPlaySample)
+        XCTAssertEqual(model.sampleUnavailableReason, VoicesViewModel.stopToPlaySampleText)
+        XCTAssertEqual(VoicesViewModel.stopToPlaySampleText, "Stop translation to play a sample")
+        pipelineRunning = false
+        sample.hold = true
+        let task = Task { await model.playSample() }
+        await waitUntil("playing") { model.isPlayingSample }
+        XCTAssertFalse(model.canPlaySample)
+        XCTAssertNil(model.sampleUnavailableReason, "the spinner is the reason while a sample plays")
+        sample.hold = false
+        await task.value
+    }
+
     func testSampleFailureIsReportedAndClearsOnTheNextSample() async {
         let model = makeModel()
         sample.fail = true

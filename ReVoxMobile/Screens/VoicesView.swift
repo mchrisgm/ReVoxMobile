@@ -136,6 +136,9 @@ struct VoicesView: View {
                         .accessibilityHint("Tries pocket-tts again")
                 }
             }
+            if let reason = model.sampleUnavailableReason {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+            }
             if let error = model.sampleError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
             }
