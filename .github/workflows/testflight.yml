@@ -95,6 +95,9 @@ jobs:
       - name: Package pins unchanged
         run: python3 scripts/ci/check-package-resolved.py
 
+      - name: No host-time API in ReVox sources or the package checkouts
+        run: bash scripts/ci/check-no-host-time.sh --require-checkouts
+
       - name: Pick simulator
         id: sim
         run: scripts/ci/pick-simulator.sh >> "$GITHUB_OUTPUT"

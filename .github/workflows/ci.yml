@@ -32,6 +32,9 @@ jobs:
         run: swift test
       - name: Every ported constant is asserted
         run: bash scripts/ci/check-constant-coverage.sh
+      - name: No host-time API in ReVox sources
+        run: bash scripts/ci/check-no-host-time.sh
+
       - name: Extension surface (design spec §7.5, §11)
         run: bash scripts/ci/check-extension-surface.sh
 
@@ -94,6 +97,9 @@ jobs:
 
       - name: Package pins unchanged
         run: python3 scripts/ci/check-package-resolved.py
+
+      - name: No host-time API in ReVox sources or the package checkouts
+        run: bash scripts/ci/check-no-host-time.sh --require-checkouts
 
       - name: Show resolved package versions
         run: cat ReVoxMobile.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
