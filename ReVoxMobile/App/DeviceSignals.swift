@@ -14,10 +14,19 @@ final class DeviceSignals {
     private let continuation: AsyncStream<DeviceSignal>.Continuation
     private var observers: [NSObjectProtocol] = []
 
-    init(center: NotificationCenter = .default, processInfo: ProcessInfo = .processInfo) {
+    /// `initialThermalState` stands in for `processInfo.thermalState` at construction (tests); nil reads the real one.
+    init(center: NotificationCenter = .default, processInfo: ProcessInfo = .processInfo,
+         initialThermalState: ProcessInfo.ThermalState? = nil) {
         let (stream, continuation) = AsyncStream<DeviceSignal>.makeStream(bufferingPolicy: .bufferingNewest(8))
         self.signals = stream
         self.continuation = continuation
+        // `thermalStateDidChangeNotification` fires on a change. Launched on a phone that is already hot, the §9
+        // policy would otherwise sit at `.nominal` — the full-size model on a `.serious` device, no pause at
+        // `.critical` — until the next transition. Only the two states with effects are replayed; `.fair` has none.
+        let launchState = initialThermalState ?? processInfo.thermalState
+        if launchState == .serious || launchState == .critical {
+            continuation.yield(.thermalState(launchState))
+        }
         observers.append(center.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [continuation] _ in
             continuation.yield(.thermalState(processInfo.thermalState))
         })
