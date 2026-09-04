@@ -13,10 +13,13 @@ final class AudioSessionMaskTests: XCTestCase {
         let plays: Counter
     }
 
-    func makeRig(onEdge: DuckingOnEdge = .optionsOnly) async throws -> Rig {
+    /// `offEdge` defaults to the deactivation cycle rather than to the shipped default, so every case written
+    /// against that cycle keeps exercising it as the fallback it now is. The shipped default has its own case.
+    func makeRig(onEdge: DuckingOnEdge = .optionsOnly, offEdge: DuckingOffEdge = .deactivationCycle) async throws -> Rig {
         let seam = RecordingAudioSessionSeam()
         let controller = AudioSessionController(session: seam)
         await controller.setDuckingOnEdge(onEdge)
+        await controller.setDuckingOffEdge(offEdge)
         let plays = Counter()
         await controller.setPlayHook { plays.increment() }
         try await controller.configure(for: .microphone)
@@ -328,9 +331,8 @@ final class AudioSessionMaskTests: XCTestCase {
 
     func testOptionsOnlyOffEdgeIsOneSetCategoryWithTheResidentMask() async throws {
         XCTAssertEqual(AudioSessionController.defaultOnEdge, .optionsOnly, "R8's prescribed on-edge")
-        XCTAssertEqual(AudioSessionController.defaultOffEdge, .deactivationCycle, "the documented off-edge until A-off is measured")
-        let rig = try await makeRig()
-        await rig.controller.setDuckingOffEdge(.optionsOnly)
+        XCTAssertEqual(AudioSessionController.defaultOffEdge, .optionsOnly, "no engine pause on the off-edge: it costs captured speech")
+        let rig = try await makeRig(offEdge: .optionsOnly)
         await rig.controller.duck()
         rig.seam.clearCalls()
         await rig.controller.restore()
@@ -381,5 +383,42 @@ final class AudioSessionMaskTests: XCTestCase {
         XCTAssertFalse(rig.engine.isRunning)
         let ducked = await rig.controller.isDucked
         XCTAssertFalse(ducked, "the duck is genuinely released")
+    }
+
+    /// The shipped defaults, end to end: a whole duck-and-restore with neither edge touching the engine. This is
+    /// the case that keeps the microphone alive — a paused engine's input tap delivers nothing, so an off-edge
+    /// that pauses costs captured speech after every phrase.
+    func testShippedDefaultsNeverPauseTheEngineOnEitherEdge() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let plays = Counter()
+        await controller.setPlayHook { plays.increment() }
+        try await controller.configure(for: .microphone)
+        try await controller.startEngine()
+        let engine = try XCTUnwrap(seam.lastEngine)
+        seam.clearCalls()
+
+        let onEdge = await controller.onEdge
+        let offEdge = await controller.offEdge
+        XCTAssertEqual(onEdge, .optionsOnly, "the controller starts on the shipped defaults")
+        XCTAssertEqual(offEdge, .optionsOnly)
+
+        await controller.duck()
+        XCTAssertEqual(seam.calls, ["setCategory"])
+        XCTAssertEqual(seam.masks.last, duckedResident)
+        var ducked = await controller.isDucked
+        XCTAssertTrue(ducked)
+
+        seam.clearCalls()
+        await controller.restore()
+        XCTAssertEqual(seam.calls, ["setCategory"], "the duck ends by dropping the option, not by deactivating")
+        XCTAssertEqual(seam.masks.last, resident)
+        ducked = await controller.isDucked
+        XCTAssertFalse(ducked)
+
+        XCTAssertEqual(engine.pauseCount, 0, "the microphone tap never stops")
+        XCTAssertEqual(engine.startCount, 1, "and the engine is never restarted")
+        XCTAssertTrue(engine.isRunning)
+        XCTAssertEqual(plays.value, 1, "the single guarded play from startEngine, none from a cycle")
     }
 }

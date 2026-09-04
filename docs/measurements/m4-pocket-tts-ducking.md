@@ -30,7 +30,22 @@ Setup for the ducking rows: Music (or any player) at a fixed volume on the same 
 | A-off un-ducks without a configuration change (row 3 passes) | A on both edges, B the fallback | `defaultOffEdge = .optionsOnly` (and `defaultOnEdge` per row 1/2) | R8 stands as written for the on-edge; note that the deactivation with `.notifyOthersOnDeactivation` is now the fallback only |
 | neither A-on nor B-on ducks | stop; F12 has no working mechanism on this iOS version | none | request a re-ruling of R8 with the log excerpts |
 
-Decision taken: `pending`.
+Decision taken: **A on both edges** (`defaultOnEdge = .optionsOnly`, `defaultOffEdge = .optionsOnly`), on device
+evidence rather than on rows 1–4, which are still `pending`.
+
+The owner reported on build 13 that microphone audio was sometimes not picked up, having reported the microphone
+working on build 10 — the last build with ducking off. The deactivation off-edge pauses the engine after every
+phrase and a paused engine's input tap delivers nothing, so every phrase was followed by a guaranteed capture gap
+on top of `CaptureGate`'s 300 ms self-capture hold. That gap is not a price worth paying: the resident mask
+carries `.mixWithOthers`, so other apps are never interrupted, only ducked, and `notifyOthersOnDeactivation`
+exists to release apps that *were* interrupted. Dropping `.duckOthers` is what ends the duck.
+
+Row 3 is therefore no longer a candidate check but a **confirmation of the shipped behaviour**: if Music does not
+return to full within 500 ms after ReVox stops speaking, flip `defaultOffEdge` back to `.deactivationCycle` (it is
+still implemented and covered by `AudioSessionMaskTests`) and record the mic gap of row 4 as the accepted cost.
+
+Row 19 is answered: TestFlight run 33856483961 archived, exported and uploaded build 13 with the
+increased-memory-limit entitlement attached by cloud signing, with no ITMS warning naming it.
 
 ## pocket-tts and memory (§5.6, §6.5, §6.7, §11, §13 Q6–Q7)
 
@@ -44,6 +59,7 @@ Decision taken: `pending`.
 | 16 | Gain calibration: `PlayerNodeSink.pocketTTSEngineGain = 0.7` | Voices → select alba → Play sample; select a system voice → Play sample; Voice volume 1.0 both times. | `playback clip rms_dbfs=… gain=0.7` vs `… gain=1.0` | the two RMS values within ±2 dB; otherwise change the constant so they are, re-measure, record the value | pending |
 | 17 | ARC releases the models when the manager is dropped (§13 Q7) | On the 4 GB device: Play sample with alba (note `memory pocket-tts loaded`), then run a session with the largest installed Whisper model plus alba until iOS posts a memory warning — the `memory low` fallback of §9 drops the manager (rows 11–13 usually produce the warning; if it never fires in 15 minutes the row stays pending with that reason). | `memory pocket-tts dropped for memory pressure resident_mb=` and the `5 s later` line | resident memory 5 s after the drop is lower by at least the increment `loaded` added over the pre-load reading; otherwise §13 Q7 is answered "no" and M7's degradation policy must not rely on unloading | pending |
 | 18 | Airplane mode: `initialize()` plus one synthesis per offered voice issues no request (§6.5, §11) | Airplane mode on; run `DeviceMeasurementTests.testPocketTTSSynthesisesEveryOfferedVoiceOffline`; then Play sample for each voice from the Voices screen; Settings → Cellular → ReVox shows no new data. | test result; Console: no `AssetDownloader` / `FileDownloader` / `URLSession` lines from the app | test passes for all four voices; no request | pending |
+| 20 | **The start-of-phrase artifact the owner reported on build 13** — heard before every pocket-tts phrase, not reported for the system voice | Install build 14, select alba, Play sample five times, then translate five phrases. Listen for the artifact. | `measurements`: `playback head first=… peak10ms=… dc10ms=…`, logged per clip *before* the 5 ms ramp | The artifact is gone. If it is gone, the head numbers say what it was: a large `first` or `dc` means the clip arrived with a step or a DC offset and the ramp removed it. If the artifact remains, the head is quiet and the cause is downstream of the buffer — record the numbers and re-open the investigation there | pending |
 | 19 | The increased-memory-limit entitlement is accepted by signing and App Store Connect | The TestFlight run of this milestone. | archive log; processing e-mail | archive and upload succeed; no ITMS warning naming the entitlement | pending |
 
 ## How to fill a row

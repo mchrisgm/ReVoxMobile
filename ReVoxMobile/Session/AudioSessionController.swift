@@ -41,10 +41,17 @@ actor AudioSessionController: Ducker {
 
     // MARK: Ducking state (§6.8)
 
-    /// The mechanisms in force (§6.8). The on-device measurement flips these two constants in a Debug build to test
-    /// the alternatives; the outcome is recorded in docs/measurements/m4-pocket-tts-ducking.md and they follow it.
+    /// The mechanisms in force (§6.8), recorded in docs/measurements/m4-pocket-tts-ducking.md.
+    ///
+    /// Both edges are options-only: the off-edge does NOT deactivate the session. The deactivation cycle costs a
+    /// microphone-dead window after every phrase — the tap stops with the paused engine — and the owner heard that
+    /// as speech going missing on build 13, where ducking is on for the first time. The cycle is not needed to
+    /// un-duck: the resident mask carries `.mixWithOthers`, so other apps are never interrupted, only ducked by
+    /// `.duckOthers`. `notifyOthersOnDeactivation` tells apps that were *interrupted* that they may resume, and
+    /// nothing here interrupts anything; removing the option is what ends the duck. `.deactivationCycle` remains
+    /// implemented and tested as the fallback if measurement row 3 shows the other app does not come back up.
     static let defaultOnEdge: DuckingOnEdge = .optionsOnly
-    static let defaultOffEdge: DuckingOffEdge = .deactivationCycle
+    static let defaultOffEdge: DuckingOffEdge = .optionsOnly
     private(set) var onEdge: DuckingOnEdge = AudioSessionController.defaultOnEdge
     private(set) var offEdge: DuckingOffEdge = AudioSessionController.defaultOffEdge
     /// The requested state: the latest thing the coordinator asked for, at any time.

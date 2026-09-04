@@ -207,4 +207,29 @@ final class AudioPlayerTests: XCTestCase {
         await player.stop()
     }
 
+
+    /// A clip is scheduled into a node that is already running, so a non-zero first sample is a step, and a step
+    /// is a click. pocket-tts is the voice that exposes it: at 24 kHz its clips are scheduled verbatim, while the
+    /// system voice's 22 050 Hz clips are resampled and the converter's low-pass smooths the step away.
+    func testClipsAreRampedInAndOutSoTheyNeverStartOnAStep() throws {
+        let sink = PlayerNodeSink(onStopped: {})
+        XCTAssertEqual(PlayerNodeSink.edgeFadeFrames, 120, "5 ms at 24 kHz")
+
+        let dc = [Float](repeating: 1.0, count: 2_400)          // the worst case: full-scale from the first sample
+        let buffer = try XCTUnwrap(sink.makeBuffer(for: AudioClip(samples: dc, sampleRate: 24_000)))
+        let out = buffer.monoFloatSamples
+        XCTAssertEqual(out.count, 2_400, "the fade shapes the clip, it does not shorten it")
+        XCTAssertEqual(out[0], 0, "starts at silence")
+        XCTAssertEqual(out[out.count - 1], 0, "and ends there")
+        XCTAssertEqual(out[60], 0.5, accuracy: 0.01, "linear through the ramp")
+        XCTAssertEqual(out[120], 1.0, accuracy: 0.0001, "full amplitude once the ramp is done")
+        for sample in out[120..<(out.count - 120)] {
+            XCTAssertEqual(sample, 1.0, accuracy: 0.0001, "the body of the clip is untouched")
+        }
+
+        // Too short to ramp without swallowing: left alone, which is what the gain cases rely on.
+        let tiny = PlayerNodeSink.withEdgeFades([1.0, -1.0])
+        XCTAssertEqual(tiny, [1.0, -1.0])
+        XCTAssertEqual(PlayerNodeSink.withEdgeFades(dc, frames: 0), dc)
+    }
 }
