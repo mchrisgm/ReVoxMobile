@@ -33,6 +33,13 @@ final class AudioPlayerTests: XCTestCase {
         let count = await controller.playCount
         XCTAssertEqual(count, 0)
         await player.stop()
+        // Real `AVAudioEngine`s hold CoreAudio resources for the life of the test process. Three tests build one,
+        // and until this teardown none of them gave it back: the two that own a player node deadlocked the
+        // simulator's audio subsystem in cleanup once the suite grew past two hundred tests (TestFlight run
+        // 33854924802, "Cleanup: RPC timeout. Apparently deadlocked"), while the same commit passed on CI. The
+        // engine is stopped and its node detached here for the same reason `SamplePlayer` detaches after a sample.
+        engine.detach(player.sink.playerNode)
+        engine.stop()
     }
 
     func testPlayOnlyAfterEngineStart() async throws {
@@ -71,6 +78,13 @@ final class AudioPlayerTests: XCTestCase {
         // real `AVAudioEngine` behind it is not, so the node was left alone and no Objective-C exception was raised.
         XCTAssertFalse(player.sink.playerNode.isPlaying)
         await player.stop()
+        // Real `AVAudioEngine`s hold CoreAudio resources for the life of the test process. Three tests build one,
+        // and until this teardown none of them gave it back: the two that own a player node deadlocked the
+        // simulator's audio subsystem in cleanup once the suite grew past two hundred tests (TestFlight run
+        // 33854924802, "Cleanup: RPC timeout. Apparently deadlocked"), while the same commit passed on CI. The
+        // engine is stopped and its node detached here for the same reason `SamplePlayer` detaches after a sample.
+        liveEngine.detach(player.sink.playerNode)
+        liveEngine.stop()
     }
 
     func testClipsAtOtherRatesAreConvertedToTheNodeRate() throws {
