@@ -64,6 +64,7 @@ struct SessionDetailView: View {
                     Label("Delete", systemImage: "trash")
                 }
                 .accessibilityLabel("Delete session")
+                .accessibilityHint("Deletes this session after a confirmation")
             }
         }
         .task(id: session.entries.count) {

@@ -39,6 +39,16 @@ struct SessionSummary: Equatable, Sendable {
 
     var sourceTitle: String { LiveView.title(for: captureMode) }
 
+    /// The source's symbol for the History row.
+    var sourceSymbolName: String { captureMode == .microphone ? "mic" : "iphone.radiowaves.left.and.right" }
+
+    /// "Microphone · 12 entries", with " · joined in progress" when it was: the History row's second line (M10).
+    var metaLineText: String {
+        var parts = [sourceTitle, entryCountText]
+        if joinedInProgress { parts.append("joined in progress") }
+        return parts.joined(separator: " · ")
+    }
+
     var durationText: String { Self.durationText(duration ?? 0) }
 
     var entryCountText: String { entryCount == 1 ? "1 entry" : "\(entryCount) entries" }

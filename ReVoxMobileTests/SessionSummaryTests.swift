@@ -74,6 +74,20 @@ final class SessionSummaryTests: XCTestCase {
         XCTAssertEqual(summary.entryCountText, "1 entry", "skips never count as entries")
     }
 
+    /// M10: the History row's second line is one wrapping sentence built here, with the source's symbol beside it.
+    func testMetaLineAndSymbolFollowTheSource() throws {
+        let microphone = SessionSummary(session: try session(entries: [(1, "hi", false), (2, "there", false)]))
+        XCTAssertEqual(microphone.metaLineText, "Microphone · 2 entries")
+        XCTAssertEqual(microphone.sourceSymbolName, "mic")
+
+        let joined = Session(startedAt: start, captureMode: "broadcast", pinnedLanguage: nil, modelID: "small", voice: "alba", joinedInProgress: true)
+        context.insert(joined)
+        try context.save()
+        let broadcast = SessionSummary(session: joined)
+        XCTAssertEqual(broadcast.metaLineText, "Other apps · 0 entries · joined in progress")
+        XCTAssertEqual(broadcast.sourceSymbolName, "iphone.radiowaves.left.and.right")
+    }
+
     func testInvalidCaptureModeFallsBackToMicrophone() throws {
         let summary = SessionSummary(session: try session(captureMode: "loopback", entries: []))
         XCTAssertEqual(summary.captureMode, .microphone)

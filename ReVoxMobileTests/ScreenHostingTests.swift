@@ -61,6 +61,48 @@ final class ScreenHostingTests: XCTestCase {
                                state: ModelDownloadState(phase: phase, fraction: 0.4, bytesExpected: 1), isSelected: false)
             host(List { ModelRowView(row: row, onDownload: {}, onCancel: {}, onSelect: {}) })
         }
+        // M9 whole-row selection: the tinted, checkmarked row; and the unsuitable row with its heat warning and note.
+        let selected = ModelRow(id: .small, name: "small", sizeText: "480 MB", isRecommended: true, isSuitable: true, warning: nil, note: nil,
+                                state: ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: 1), isSelected: true)
+        host(List { ModelRowView(row: selected, onDownload: {}, onCancel: {}, onSelect: {}) })
+        let warned = ModelRow(id: .largeV3, name: "large-v3", sizeText: "≈ 948 MB", isRecommended: false, isSuitable: false,
+                              warning: DeviceRecommendation.heatWarning, note: "Compressed weights Argmax ships for iPhone",
+                              state: .idle(bytesExpected: 1), isSelected: false)
+        host(List { ModelRowView(row: warned, onDownload: {}, onCancel: {}, onSelect: {}) })
+    }
+
+    /// M10 HIG audit: every row lays out at the largest accessibility text size, where the transcript row switches
+    /// to its stacked layout and the History row's second line wraps as one paragraph.
+    func testRowsHostAtTheLargestAccessibilitySize() throws {
+        let said = Date(timeIntervalSince1970: 1_700_000_000)
+        let rows = [
+            LiveTranscriptRow(time: said, kind: .entry(language: "ja", original: "おはよう", english: "Good morning.")),
+            LiveTranscriptRow(time: said.addingTimeInterval(1), kind: .entry(language: "es", english: "Where is the station?")),
+            LiveTranscriptRow(time: said.addingTimeInterval(2), kind: .dropMarker),
+            LiveTranscriptRow(time: said.addingTimeInterval(3), kind: .joinedInProgress),
+        ]
+        for display in Settings.TimeDisplay.allCases {
+            host(List {
+                ForEach(rows) { row in
+                    LiveTranscriptRowView(row: row, now: said.addingTimeInterval(12), timeDisplay: display, showsOriginal: true, romanizes: true)
+                }
+            }
+            .environment(\.dynamicTypeSize, .accessibility5))
+        }
+        host(List { ForEach(rows) { LiveTranscriptRowView(row: $0) } }.environment(\.dynamicTypeSize, .large))
+
+        let context = ModelContext(try TranscriptContainer.make(inMemory: true))
+        let session = Session(startedAt: said, endedAt: said.addingTimeInterval(90), captureMode: "broadcast", pinnedLanguage: nil, modelID: "small", voice: "alba", joinedInProgress: true)
+        context.insert(session)
+        let entry = Entry(timestamp: said, language: "es", original: "", english: "Where is the station?", isDropMarker: false)
+        entry.session = session
+        context.insert(entry)
+        try context.save()
+        host(List { SessionRowView(summary: SessionSummary(session: session)) }.environment(\.dynamicTypeSize, .accessibility5))
+
+        let model = ModelRow(id: .small, name: "small", sizeText: "≈ 487 MB", isRecommended: true, isSuitable: true, warning: nil, note: nil,
+                             state: ModelDownloadState(phase: .downloading(completedFiles: 1, totalFiles: 6), fraction: 0.4, bytesExpected: 1), isSelected: false)
+        host(List { ModelRowView(row: model, onDownload: {}, onCancel: {}, onSelect: {}) }.environment(\.dynamicTypeSize, .accessibility5))
     }
 
     func testSettingsViewHosts() throws {

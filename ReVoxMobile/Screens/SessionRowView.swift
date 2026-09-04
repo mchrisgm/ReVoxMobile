@@ -15,17 +15,11 @@ struct SessionRowView: View {
                 Spacer()
                 Text(summary.durationText).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
             }
-            HStack(spacing: 6) {
-                Label(summary.sourceTitle, systemImage: summary.captureMode == .microphone ? "mic" : "iphone.radiowaves.left.and.right")
-                Text("·")
-                Text(summary.entryCountText)
-                if summary.joinedInProgress {
-                    Text("·")
-                    Text("joined in progress")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            // One Text, not an HStack of five (M10 audit): at the accessibility sizes a paragraph wraps where a
+            // row of fixed pieces stacks its words one under another.
+            (Text(Image(systemName: summary.sourceSymbolName)) + Text(" \(summary.metaLineText)"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text(summary.previewText)
                 .font(.body)
                 .lineLimit(2)
