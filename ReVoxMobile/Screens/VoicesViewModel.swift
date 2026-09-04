@@ -58,6 +58,16 @@ final class VoicesViewModel {
     var isPocketTTSInstalled: Bool { manager.pocketTTSInstalled }
     var offeredVoices: [String] { ModelCatalog.pocketTTS.offeredVoices }
 
+    /// The catalog estimate before the download, the measured size once installed (§8.4; §6.9 storage accounting, M7).
+    var pocketTTSSizeLine: String {
+        if isPocketTTSInstalled, let bytes = manager.storage.bytes(for: .pocketTTS) {
+            return ModelsViewModel.measuredSizeText(bytes)
+        }
+        return Self.pocketTTSSizeText
+    }
+
+    var storageFooterText: String { ModelsViewModel.storageFooterText(for: manager.storage) }
+
     /// The checkmarked pocket-tts voice, nil when the system voice is selected.
     var selectedPocketVoice: String? {
         settings.settings.usesPocketTTSVoice ? settings.settings.voice : nil

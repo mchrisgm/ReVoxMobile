@@ -34,6 +34,7 @@ struct VoicesView: View {
                 Text("pocket-tts (Kyutai)")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text(model.storageFooterText)
                     if let advisory = model.advisoryText { Text(advisory) }
                     if let footer = model.footerText { Text(footer) }
                     if let warning = model.lowStorageWarning { Text(warning) }
@@ -97,10 +98,10 @@ struct VoicesView: View {
                 Text(model.statusText).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(VoicesViewModel.pocketTTSSizeText).font(.subheadline).foregroundStyle(.secondary)
+            Text(model.pocketTTSSizeLine).font(.subheadline).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("pocket-tts installed, \(VoicesViewModel.pocketTTSSizeText). \(model.statusText).")
+        .accessibilityLabel("pocket-tts installed, \(model.pocketTTSSizeLine). \(model.statusText).")
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if model.canDelete {
                 Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }

@@ -23,6 +23,7 @@ struct ModelsView: View {
                 Text("Whisper models")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text(model.storageFooterText)
                     if let footer = model.footerText { Text(footer) }
                     if let warning = model.lowStorageWarning { Text(warning) }
                 }

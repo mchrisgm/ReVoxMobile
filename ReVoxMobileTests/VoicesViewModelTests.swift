@@ -294,4 +294,20 @@ final class VoicesViewModelTests: XCTestCase {
         model.reconcileFailures()
         XCTAssertNil(model.downloadFailureAlert)
     }
+
+    // MARK: Storage accounting (M7 Task 88)
+
+    func testInstalledPocketTTSShowsTheMeasuredSizeAndTheStorageFooter() throws {
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        let big = layout.pocketTTSLanguageFolder.appendingPathComponent(ModelLayout.pocketTTSBundles[0]).appendingPathComponent("weights/weight.bin")
+        try FileManager.default.createDirectory(at: big.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(count: 5_000_000).write(to: big)
+        let model = makeModel(availableBytes: 9_000_000_000)
+        XCTAssertTrue(model.isPocketTTSInstalled)
+        XCTAssertEqual(model.pocketTTSSizeLine, "5 MB")
+        XCTAssertTrue(model.storageFooterText.hasSuffix(" · Free: 9.0 GB"))
+        XCTAssertEqual(VoicesViewModel.pocketTTSSizeText, "≈ 527 MB", "the catalog estimate is still used before the download")
+        let fresh = makeModel(availableBytes: 9_000_000_000)
+        XCTAssertEqual(fresh.pocketTTSSizeLine, "5 MB")
+    }
 }

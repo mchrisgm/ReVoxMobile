@@ -10,6 +10,7 @@ final class ModelsViewModel {
     static let notRecommendedText = "Not recommended for this iPhone"
     static let confirmDeleteMessage = "You can download it again later."
     static let vadName = "Voice detector"
+    static let noModelsText = "No models on this iPhone"
 
     private let manager: ModelManager
     private let settings: SettingsStore
@@ -38,22 +39,27 @@ final class ModelsViewModel {
 
     var rows: [ModelRow] {
         ModelCatalog.whisperModels.map { descriptor in
-            ModelRow(
+            let kind = DownloadKind.whisper(descriptor.id)
+            let state = manager.state(for: kind)
+            return ModelRow(
                 id: descriptor.id,
                 name: descriptor.id.displayName,
-                sizeText: Self.sizeText(descriptor.approximateBytes),
+                sizeText: Self.rowSizeText(catalogBytes: descriptor.approximateBytes, state: state, measuredBytes: manager.storage.bytes(for: kind)),
                 isRecommended: recommendation.recommended == descriptor.id,
                 isSuitable: recommendation.suitable.contains(descriptor.id),
                 warning: recommendation.warnings[descriptor.id],
                 note: descriptor.note,
-                state: manager.state(for: .whisper(descriptor.id)),
+                state: state,
                 isSelected: descriptor.id == selectedModel
             )
         }
     }
 
     var vadRow: VADRow {
-        VADRow(name: Self.vadName, sizeText: Self.sizeText(ModelCatalog.vad.approximateBytes), state: manager.state(for: .vad))
+        let state = manager.state(for: .vad)
+        return VADRow(name: Self.vadName,
+                      sizeText: Self.rowSizeText(catalogBytes: ModelCatalog.vad.approximateBytes, state: state, measuredBytes: manager.storage.bytes(for: .vad)),
+                      state: state)
     }
 
     var canDelete: Bool { !isPipelineRunning() }
@@ -63,6 +69,9 @@ final class ModelsViewModel {
         if !canDelete { return Self.stopToDeleteText }
         return nil
     }
+
+    /// §8.3 footer (M7): the total ReVox's models occupy and the free space of the volume (DiskSpace reason 85F4.1).
+    var storageFooterText: String { Self.storageFooterText(for: manager.storage) }
 
     // MARK: Actions
 
@@ -129,6 +138,24 @@ final class ModelsViewModel {
         }
         let megabytes = max(1, Int((Double(bytes) / 1_000_000).rounded()))
         return "≈ \(megabytes) MB"
+    }
+
+    /// Installed rows show what is on disk; every other row shows the catalog estimate ("≈ N MB").
+    static func rowSizeText(catalogBytes: Int64, state: ModelDownloadState, measuredBytes: Int64?) -> String {
+        if state.phase == .installed, let measuredBytes { return measuredSizeText(measuredBytes) }
+        return sizeText(catalogBytes)
+    }
+
+    static func measuredSizeText(_ bytes: Int64) -> String {
+        if bytes >= 1_000_000_000 { return String(format: "%.1f GB", Double(bytes) / 1_000_000_000) }
+        if bytes >= 1_000_000 { return "\(Int((Double(bytes) / 1_000_000).rounded())) MB" }
+        return "under 1 MB"
+    }
+
+    static func storageFooterText(for usage: ModelStorageUsage) -> String {
+        let used = usage.totalBytes > 0 ? "ReVox models: \(measuredSizeText(usage.totalBytes))" : noModelsText
+        guard let free = usage.freeBytes else { return used }
+        return "\(used) · Free: \(ModelManager.gigabytesText(free))"
     }
 
     static func confirmDeleteTitle(_ id: WhisperModelID) -> String {

@@ -206,4 +206,35 @@ final class ModelsViewModelTests: XCTestCase {
         model.reconcileFailures()
         XCTAssertNil(model.downloadFailureAlert, "a refusal is not a download failure")
     }
+
+    // MARK: Storage accounting (M7 Task 88)
+
+    func testInstalledRowsShowMeasuredSizesAndTheFooterShowsTotalAndFree() throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let weights = layout.whisperFolder(ModelCatalog.whisper(.base)).appendingPathComponent("AudioEncoder.mlmodelc/weights/weight.bin")
+        try FileManager.default.createDirectory(at: weights.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(count: 3_000_000).write(to: weights)
+        let model = makeModel(availableBytes: 12_300_000_000)
+        XCTAssertEqual(model.rows[1].state.phase, .installed)
+        XCTAssertFalse(model.rows[1].sizeText.hasPrefix("≈"), "installed rows show the measured size, not the catalog estimate")
+        XCTAssertTrue(model.rows[1].sizeText.hasSuffix(" MB"))
+        XCTAssertEqual(model.rows[2].sizeText, "≈ 487 MB", "rows that are not installed keep the catalog estimate")
+        XCTAssertEqual(model.vadRow.sizeText, "≈ 1 MB", "the VAD is not installed in this layout")
+        XCTAssertTrue(model.storageFooterText.hasPrefix("ReVox models: "))
+        XCTAssertTrue(model.storageFooterText.hasSuffix(" · Free: 12.3 GB"))
+        XCTAssertEqual(ModelsViewModel.measuredSizeText(3_000_000), "3 MB")
+        XCTAssertEqual(ModelsViewModel.measuredSizeText(1_528_000_000), "1.5 GB")
+        XCTAssertEqual(ModelsViewModel.measuredSizeText(512), "under 1 MB")
+        XCTAssertEqual(ModelsViewModel.rowSizeText(catalogBytes: 486_500_000, state: .idle(bytesExpected: 486_500_000), measuredBytes: 10), "≈ 487 MB")
+        let installed = ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: 486_500_000)
+        XCTAssertEqual(ModelsViewModel.rowSizeText(catalogBytes: 486_500_000, state: installed, measuredBytes: 480_000_000), "480 MB")
+    }
+
+    func testFooterWithoutModelsOrFreeSpaceQuery() {
+        let model = makeModel(availableBytes: nil)
+        XCTAssertEqual(model.storageFooterText, ModelsViewModel.noModelsText)
+        XCTAssertEqual(ModelsViewModel.noModelsText, "No models on this iPhone")
+        XCTAssertEqual(ModelsViewModel.storageFooterText(for: ModelStorageUsage(bytesByKind: [.vad: 900_000], freeBytes: nil)), "ReVox models: under 1 MB")
+        XCTAssertEqual(ModelsViewModel.storageFooterText(for: ModelStorageUsage(bytesByKind: [.vad: 900_000], freeBytes: 2_000_000_000)), "ReVox models: under 1 MB · Free: 2.0 GB")
+    }
 }
