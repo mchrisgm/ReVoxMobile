@@ -23,6 +23,8 @@ final class AppEnvironment {
     let speakerAssembly: SpeakerAssembly
     let keepAlive: KeepAliveMonitor
     let diagnostics: BroadcastDiagnosticsModel
+    let broadcastCapture: BroadcastCapture
+    let broadcast: BroadcastCoordinator
     let voices: VoicesViewModel
     let live: LiveViewModel
     let models: ModelsViewModel
@@ -61,11 +63,16 @@ final class AppEnvironment {
         self.speakerStatus = SpeakerStatusRelay()
         self.speakerAssembly = SpeakerAssembly(layout: layout, settings: settings, manager: modelManager, relay: speakerStatus, voiceVolume: voiceVolume)
         self.keepAlive = KeepAliveMonitor(logURL: settingsURL.deletingLastPathComponent().appendingPathComponent("keepalive.log"))
+        let appGroupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: configuration.appGroup)
+        let broadcastRecords = BroadcastRecordStore(appGroup: configuration.appGroup)
+        self.broadcastCapture = BroadcastCapture(appGroup: configuration.appGroup, containerURL: appGroupContainer, records: broadcastRecords)
+        self.broadcast = BroadcastCoordinator(capture: broadcastCapture, records: broadcastRecords, containerURL: appGroupContainer,
+                                              names: BroadcastNotificationNames(appGroup: configuration.appGroup))
         self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer,
-                                           speakerAssembly: speakerAssembly, keepAlive: keepAlive)
+                                           speakerAssembly: speakerAssembly, keepAlive: keepAlive, sources: .live(broadcast: broadcastCapture))
         self.diagnostics = BroadcastDiagnosticsModel(
-            containerURL: FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: configuration.appGroup),
-            records: BroadcastRecordStore(appGroup: configuration.appGroup),
+            containerURL: appGroupContainer,
+            records: broadcastRecords,
             keepAlive: keepAlive,
             sessionController: sessionController
         )
@@ -73,7 +80,8 @@ final class AppEnvironment {
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,
                                   modelReady: { id in await manager.isWhisperReady(id) },
                                   supplier: assembler.supplier(),
-                                  speakerStatus: speakerStatus)
+                                  speakerStatus: speakerStatus,
+                                  broadcast: broadcast)
         activity.live = live
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
@@ -92,6 +100,12 @@ final class AppEnvironment {
         )
         live.observe(sessionEvents: sessionController.events)
         live.observe(keepAlive: keepAlive.events)
+        let liveModel = live
+        broadcast.onBroadcastLive = { [weak liveModel] in
+            guard let liveModel, liveModel.captureMode == .broadcast, liveModel.state == .idle else { return }
+            await liveModel.start()                                   // §6.2: a live broadcast starts the pipeline from the foreground
+        }
+        broadcast.start()
         let controller = sessionController
         let events = interruptions.events
         interruptionTask = Task {
@@ -150,6 +164,7 @@ final class AppEnvironment {
 
     func applicationDidBecomeActive() {
         modelManager.applicationDidBecomeActive()
+        Task { await broadcast.applicationDidBecomeActive() }
     }
 }
 

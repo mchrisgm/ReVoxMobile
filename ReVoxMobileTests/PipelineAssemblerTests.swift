@@ -14,15 +14,25 @@ final class PipelineAssemblerTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func testSessionMetadataMirrorsSettingsAndTheEffectiveVoice() {
+    /// Records what the assembler installs as the ring-overrun handler, so a build that installed one (the pre-fix
+    /// behaviour: installed once per build, cleared on the first stop, never re-armed) is visible to the assertions.
+    private let installedGapHandler = LockedBox<(@Sendable (Int) async -> Void)?>(nil)
+
+    private var stubSources: CaptureSources {
+        CaptureSources(makeMicrophone: { MicrophoneCapture(controller: $0) }, makeBroadcast: { StubAudioSource() },
+                       broadcastJoinedInProgress: { true },
+                       setBroadcastGapHandler: { [installedGapHandler] handler in installedGapHandler.mutate { $0 = handler } })
+    }
+
+    func testSessionMetadataMirrorsSettingsTheEffectiveVoiceAndJoinedInProgress() {
         var settings = Settings()
         settings.language = "pt"
         settings.model = "base"
-        settings.captureMode = "microphone"
+        settings.captureMode = "broadcast"
         let startedAt = Date(timeIntervalSince1970: 1_756_800_000)
-        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "cosette")
-        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .microphone, pinnedLanguage: "pt", modelID: "base", voice: "cosette", joinedInProgress: false))
-        XCTAssertEqual(PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "system").voice, "system")
+        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "cosette", joinedInProgress: true)
+        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .broadcast, pinnedLanguage: "pt", modelID: "base", voice: "cosette", joinedInProgress: true))
+        XCTAssertFalse(PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "system").joinedInProgress, "default false")
     }
 
     func testBuildConfiguresTheSessionThenFailsOnAMissingVADBundle() async throws {
@@ -37,7 +47,7 @@ final class PipelineAssemblerTests: XCTestCase {
         )
         do {
             _ = try await PipelineAssembler.build(settings: Settings(), layout: layout, sessionController: controller,
-                                                  transcriptContainer: container, speakers: speakers, progress: { _ in })
+                                                  transcriptContainer: container, speakers: speakers, sources: stubSources, progress: { _ in })
             XCTFail("expected vadLoadFailed")
         } catch let error as PipelineBuildError {
             if case .vadLoadFailed = error {} else { XCTFail("expected vadLoadFailed, got \(error)") }
@@ -45,6 +55,29 @@ final class PipelineAssemblerTests: XCTestCase {
         }
         XCTAssertEqual(seam.calls, ["makeEngine", "setCategory", "setActive(true)"], "the session is configured in the foreground before any model load")
         XCTAssertEqual(seam.masks.first, AudioSessionController.microphoneMask)
+    }
+
+    func testBuildInBroadcastModeConfiguresThePlaybackSession() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let container = try TranscriptContainer.make(inMemory: true)
+        var settings = Settings()
+        settings.captureMode = "broadcast"
+        let speakers = SpeakerBundle(
+            speaker: SystemSpeaker(voiceIdentifier: nil, synthesize: { _ in [] }),
+            playerFactory: { _, onSpeaking in AudioPlayer(controller: controller, onSpeaking: onSpeaking) },
+            voiceName: { "system" }
+        )
+        do {
+            _ = try await PipelineAssembler.build(settings: settings, layout: ModelLayout(root: root), sessionController: controller,
+                                                  transcriptContainer: container, speakers: speakers, sources: stubSources, progress: { _ in })
+            XCTFail("expected vadLoadFailed")
+        } catch let error as PipelineBuildError {
+            if case .vadLoadFailed = error {} else { XCTFail("expected vadLoadFailed, got \(error)") }
+        }
+        XCTAssertEqual(seam.masks.first, AudioSessionController.broadcastMask, "broadcast mode: .playback / [.mixWithOthers] (R8)")
+        XCTAssertEqual(seam.masks.first?.category, .playback)
+        XCTAssertNil(installedGapHandler.value, "build never installs the ring gap handler; MonitoredPipeline.start does, once per run")
     }
 
     func testWhisperLoadFailureIsReportedWithTheModelName() {

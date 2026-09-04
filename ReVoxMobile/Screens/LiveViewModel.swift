@@ -46,6 +46,12 @@ final class LiveViewModel {
     private let modelReady: @MainActor (WhisperModelID) async -> Bool
     private let supplier: PipelineSupplier
     private let speakerStatus: SpeakerStatusRelay
+    /// Set by `observe(broadcast:)` — both from the initializer and from `AppEnvironment`/tests that wire the
+    /// coordinator after construction; `broadcastStatusText` and `showsBroadcastPicker` read it. `@ObservationIgnored`
+    /// because the reference itself never changes meaningfully: the coordinator is `@Observable`, so reading
+    /// `broadcast?.statusText` inside a computed property still tracks the coordinator's own changes.
+    @ObservationIgnored private var broadcast: BroadcastCoordinator?
+    @ObservationIgnored private var broadcastTask: Task<Void, Never>?
     @ObservationIgnored private var pipeline: (any LivePipeline)?
     @ObservationIgnored private var signature: PipelineSignature?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -55,7 +61,7 @@ final class LiveViewModel {
 
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
          modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
-         speakerStatus: SpeakerStatusRelay? = nil) {
+         speakerStatus: SpeakerStatusRelay? = nil, broadcast: BroadcastCoordinator? = nil) {
         self.settings = settings
         self.mute = mute
         self.permission = permission
@@ -65,6 +71,9 @@ final class LiveViewModel {
         // may be nonisolated, and the relay is main-actor isolated. Building it here — inside the isolated
         // init — keeps the convenience without the isolation violation.
         self.speakerStatus = speakerStatus ?? SpeakerStatusRelay()
+        if let broadcast {
+            observe(broadcast: broadcast)      // stores it and starts draining its events
+        }
     }
 
     // MARK: Inputs
@@ -92,6 +101,18 @@ final class LiveViewModel {
     var duckingStatusText: String? {
         if isDucked { return Self.duckingText }
         return settings.settings.ducking ? nil : Self.duckingOffText
+    }
+
+    /// The broadcast attach state for the status line, only while the source is Other apps (§6.2, §8.2).
+    var broadcastStatusText: String? {
+        guard captureMode == .broadcast else { return nil }
+        return broadcast?.statusText
+    }
+
+    /// The `RPSystemBroadcastPickerView` is shown while no broadcast is attached or known to be live (§8.2).
+    var showsBroadcastPicker: Bool {
+        guard captureMode == .broadcast else { return false }
+        return broadcast?.needsBroadcast ?? true
     }
 
     static func configuration(settings: Settings, captureMode: CaptureMode) -> PipelineConfiguration {
@@ -272,6 +293,33 @@ final class LiveViewModel {
                 guard let self else { return }
                 if case .gap = event {
                     self.sessionStatus = Self.pausedByIOSText
+                }
+            }
+        }
+    }
+
+    /// §6.2 / §9 broadcast rows: joined header, ended/failed/stale stop the pipeline cleanly, silence is a hint.
+    /// Storing the coordinator is what makes `broadcastStatusText` and `showsBroadcastPicker` report anything, so a
+    /// model built without one and wired afterwards (`model.observe(broadcast:)`) behaves exactly like an injected one.
+    func observe(broadcast coordinator: BroadcastCoordinator) {
+        self.broadcast = coordinator
+        broadcastTask?.cancel()
+        broadcastTask = Task { [weak self] in
+            for await event in coordinator.events {
+                guard let self else { return }
+                switch event {
+                case .attached(let joinedInProgress):
+                    if joinedInProgress, self.rows.last?.kind != .joinedInProgress {
+                        self.rows.append(LiveTranscriptRow(time: Date(), kind: .joinedInProgress))
+                    }
+                case .ended(let reason):
+                    self.sessionStatus = reason.map(BroadcastCoordinator.failedText) ?? BroadcastCoordinator.endedText
+                    await self.stop()
+                case .stale:
+                    self.sessionStatus = BroadcastCoordinator.staleText
+                    await self.stop()
+                case .silent:
+                    break                                       // shown through `broadcastStatusText`
                 }
             }
         }

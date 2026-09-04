@@ -27,6 +27,12 @@ struct LiveTranscriptRowView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 2)
+        case .joinedInProgress:
+            Text(BroadcastCoordinator.joinedText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
         }
     }
 }

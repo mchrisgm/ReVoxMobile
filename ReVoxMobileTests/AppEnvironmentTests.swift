@@ -25,6 +25,10 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertTrue(environment.speakerAssembly.voiceVolume === environment.voiceVolume)
         XCTAssertEqual(environment.voices.offeredVoices, ["alba", "azelma", "cosette", "javert"])
         XCTAssertFalse(environment.voices.isPocketTTSInstalled)
+        XCTAssertEqual(environment.broadcast.attachState, .noRing)
+        XCTAssertFalse(environment.broadcastCapture.isRunning)
+        XCTAssertNotNil(environment.broadcast.onBroadcastLive, "the foreground auto-start is wired")
+        XCTAssertEqual(environment.live.broadcastStatusText, nil, "default source is the microphone")
     }
 
     func testDidBecomeActiveForwardsToTheModelManager() throws {
