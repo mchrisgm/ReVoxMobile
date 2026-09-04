@@ -198,6 +198,41 @@ final class EffectiveSpeakerTests: XCTestCase {
         XCTAssertEqual(pocket.createdVoices, [], "pocket-tts is never built for a system selection")
     }
 
+    /// `.systemNotDownloaded` means the pocket-tts files are gone or no longer verified — the user deleted the voice
+    /// on the Voices screen, or a library bump invalidated the verified load. The loaded manager kept those models
+    /// resident (hundreds of MB) for the rest of the app's life, with nothing left to release them but a memory
+    /// warning. A selection that says "not installed" drops the loaded speaker; the next pocket-tts selection
+    /// rebuilds it from the files that are actually there.
+    func testNotDownloadedSelectionDropsTheLoadedPocketTTS() async throws {
+        let (speaker, pocket, _, statuses) = makeSpeaker()
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        XCTAssertEqual(pocket.initializes, 1)
+
+        await speaker.prepare(.systemNotDownloaded(identifier: nil))
+        var status = await speaker.status
+        XCTAssertEqual(status, .systemNotDownloaded)
+        let clip = try await speaker.synthesize("Hi")
+        XCTAssertEqual(clip.sampleRate, 22_050, "the system voice speaks")
+
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        status = await speaker.status
+        XCTAssertEqual(status, .pocketTTS(voice: "alba"))
+        XCTAssertEqual(pocket.createdVoices, ["alba", "alba"], "the dropped speaker is rebuilt, not the stale one reused")
+        XCTAssertEqual(pocket.initializes, 2)
+        XCTAssertEqual(statuses.value, [.pocketTTS(voice: "alba"), .systemNotDownloaded, .pocketTTS(voice: "alba")])
+    }
+
+    /// The deliberate opposite: choosing the system voice while pocket-tts stays installed keeps the loaded manager,
+    /// so switching back costs no reload (the existing "kept across sessions" rule).
+    func testSystemSelectionWithPocketTTSInstalledKeepsTheLoadedManager() async throws {
+        let (speaker, pocket, _, _) = makeSpeaker()
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        await speaker.prepare(.system(identifier: nil))
+        await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))
+        XCTAssertEqual(pocket.createdVoices, ["alba"])
+        XCTAssertEqual(pocket.initializes, 1)
+    }
+
     func testWhitespaceTouchesNeitherEngine() async throws {
         let (speaker, pocket, system, _) = makeSpeaker()
         await speaker.prepare(.pocketTTS(voice: "alba", fallbackIdentifier: nil))

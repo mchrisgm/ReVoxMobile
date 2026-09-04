@@ -100,13 +100,13 @@ final class PipelineAssembler {
         do {
             try await vad.load()
         } catch {
-            throw PipelineBuildError.vadLoadFailed(String(describing: error))
+            throw PipelineBuildError.vadLoadFailed(UserFacingErrorText.describe(error))
         }
         let whisper = WhisperKitTranslator(layout: layout, model: settings.whisperModel)
         do {
             try await whisper.load(progress: progress)
         } catch {
-            throw PipelineBuildError.whisperLoadFailed(model: settings.whisperModel, reason: String(describing: error))
+            throw PipelineBuildError.whisperLoadFailed(model: settings.whisperModel, reason: UserFacingErrorText.describe(error))
         }
         // §9 row 2: one unload/reload retry before a mid-run Whisper failure reaches the pipeline (M7). A spent
         // retry is also the "Whisper … fails next call" signal of the §9 memory row, so it is reported out.
