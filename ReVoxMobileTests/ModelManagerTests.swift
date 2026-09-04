@@ -487,4 +487,21 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(fakeSteps.pocketTTSDownloads, 0)
     }
 
+
+    /// The row must never invite a Retry it would refuse: the moment the phase reads `.failed`, `install(_:)`
+    /// has to accept the next call. Asserting the slot is free at that instant is what the timing-dependent
+    /// retry cases were implicitly relying on.
+    @MainActor
+    func testTheRetryIsAcceptedTheInstantTheRowSaysFailed() async {
+        let manager = makeManager()
+        fakeSteps.failVariantOnce = true
+        manager.install(.whisper(.base))
+        await waitUntil("failed") { if case .failed = manager.state(for: .whisper(.base)).phase { return true } else { return false } }
+        XCTAssertFalse(manager.hasActiveDownload, "the task slot is already free when the failure becomes visible")
+
+        manager.install(.whisper(.base))
+        XCTAssertTrue(manager.hasActiveDownload, "the retry started immediately, not on a later turn")
+        await waitUntil("installed") { manager.state(for: .whisper(.base)).phase == .installed }
+        XCTAssertEqual(fakeSteps.variantDownloads, ["openai_whisper-base", "openai_whisper-base"])
+    }
 }

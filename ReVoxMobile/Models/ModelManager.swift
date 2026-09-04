@@ -150,18 +150,30 @@ final class ModelManager {
         let installer = self.installer
         let (reports, continuation) = AsyncStream<ModelDownloadState>.makeStream(bufferingPolicy: .unbounded)
         let report: @Sendable (ModelDownloadState) -> Void = { state in continuation.yield(state) }
-        let pump = Task { @MainActor [weak self] in
+        // A failure phase is withheld here and published by the caller only after the task slot is freed. A row
+        // that reads Failed while `tasks[kind]` is still set refuses the Retry it is inviting — `install(_:)`
+        // returns early when a task exists — so the tap would do nothing. The window is small but real: the pump
+        // applies the phase, and the slot is cleared only after `await pump.value` resumes, leaving the main actor
+        // free in between. Run 33868423907 caught it from a test; a fast finger would have caught it from a user.
+        let pump = Task { @MainActor [weak self] () -> ModelDownloadState? in
+            var withheldFailure: ModelDownloadState?
             for await state in reports {
+                if case .failed = state.phase {
+                    withheldFailure = state
+                    continue
+                }
                 self?.states[kind] = state
                 if state.phase == .installed {
                     self?.refreshInstalledFlags()   // the row and the flags become true together
                 }
             }
+            return withheldFailure
         }
 
-        func drainReports() async {
+        @discardableResult
+        func drainReports() async -> ModelDownloadState? {
             continuation.finish()
-            await pump.value
+            return await pump.value
         }
 
         do {
@@ -182,10 +194,13 @@ final class ModelManager {
             await drainReports()
             finishTask(for: kind, cancelled: true)
         } catch {
-            // `.failed` was already reported by the installer; keep it on screen (Retry re-installs).
-            await drainReports()
+            let failure = await drainReports()
             tasks[kind] = nil
             didEndTask(for: kind)
+            // Only now, with the slot free, does the row say Failed — so the Retry it offers is always accepted.
+            if let failure {
+                states[kind] = failure
+            }
         }
     }
 
