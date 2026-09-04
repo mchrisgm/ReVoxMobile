@@ -136,8 +136,15 @@ final class VoicesViewModel {
         do {
             try delete()
         } catch {
-            deleteFailureAlert = ModelsViewModel.deleteFailureText(error)
+            deleteFailureAlert = Self.deleteFailureText(error)
         }
+    }
+
+    /// M10: the manager's refusal is worded for the Models screen ("… delete models"); on this screen the footer
+    /// says "… delete voices", and the alert must say the same. Every other error prints itself.
+    static func deleteFailureText(_ error: Error) -> String {
+        if let refusal = error as? ModelManagerError, refusal == .pipelineRunning { return stopToDeleteText }
+        return ModelsViewModel.deleteFailureText(error)
     }
 
     /// Behind the screen's `confirmationDialog`; refused while the pipeline runs (§6.9). The voice setting is kept.

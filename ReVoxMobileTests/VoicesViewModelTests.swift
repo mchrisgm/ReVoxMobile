@@ -320,7 +320,9 @@ final class VoicesViewModelTests: XCTestCase {
         pipelineRunning = true
         XCTAssertFalse(model.canDelete)
         model.deleteConfirmed()
-        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete models")
+        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete voices",
+                       "M10: the alert says what the footer of the same screen says, not the manager's Models wording")
+        XCTAssertEqual(model.deleteFailureAlert, VoicesViewModel.stopToDeleteText)
         XCTAssertNil(model.lowStorageAlert)
         XCTAssertTrue(model.isPocketTTSInstalled)
 
@@ -328,6 +330,13 @@ final class VoicesViewModelTests: XCTestCase {
         model.deleteConfirmed()
         XCTAssertNil(model.deleteFailureAlert)
         XCTAssertFalse(model.isPocketTTSInstalled)
+    }
+
+    /// Only the running-pipeline refusal is reworded for this screen; any other error still prints itself.
+    func testDeleteFailureTextRewordsOnlyTheRunningRefusal() {
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(ModelManagerError.pipelineRunning), "Stop translation to delete voices")
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(ModelManagerError.notEnoughSpace("no room")), "no room")
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(SpeakerError.noVoice), String(describing: SpeakerError.noVoice))
     }
 
     // MARK: Upstream-change caption (M7 Task 90)
