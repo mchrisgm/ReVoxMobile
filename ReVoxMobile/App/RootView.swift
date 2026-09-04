@@ -17,7 +17,7 @@ struct RootView: View {
             .tabItem { Label("History", systemImage: "clock") }
 
             NavigationStack {
-                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices)
+                SettingsView(model: environment.settingsModel, models: environment.models, voices: environment.voices, diagnostics: environment.diagnostics)
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }
         }

@@ -119,4 +119,19 @@ final class ScreenHostingTests: XCTestCase {
         let environment = try AppEnvironment.testing(root: root.appendingPathComponent("env", isDirectory: true))
         host(RootView(environment: environment))
     }
+
+    func testBroadcastDiagnosticsViewHostsWithAndWithoutARing() async throws {
+        let model = BroadcastDiagnosticsModel(containerURL: root, records: nil, keepAlive: KeepAliveMonitor(),
+                                              sessionController: AudioSessionController(session: RecordingAudioSessionSeam()))
+        await model.refresh()
+        host(NavigationStack { BroadcastDiagnosticsView(model: model) })
+        let mapping = try RingFileMapping.openCreating(at: RingFileMapping.ringURL(in: root))
+        let writer = try RingWriter(storage: MappedRingStorage(mapping: mapping))
+        writer.begin(generation: 1, startedAt: 0, asbd: RingHeader.ASBD(), pid: 1)
+        await model.refresh()
+        host(NavigationStack { BroadcastDiagnosticsView(model: model) })
+        let settingsModel = SettingsViewModel(store: store, mute: PlaybackMute(), voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
+        let voices = try makeVoicesViewModel()
+        host(NavigationStack { SettingsView(model: settingsModel, models: makeModelsViewModel(), voices: voices, diagnostics: model) })
+    }
 }

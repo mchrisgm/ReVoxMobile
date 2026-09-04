@@ -22,6 +22,7 @@ final class AppEnvironment {
     let speakerStatus: SpeakerStatusRelay
     let speakerAssembly: SpeakerAssembly
     let keepAlive: KeepAliveMonitor
+    let diagnostics: BroadcastDiagnosticsModel
     let voices: VoicesViewModel
     let live: LiveViewModel
     let models: ModelsViewModel
@@ -62,6 +63,12 @@ final class AppEnvironment {
         self.keepAlive = KeepAliveMonitor(logURL: settingsURL.deletingLastPathComponent().appendingPathComponent("keepalive.log"))
         self.assembler = PipelineAssembler(layout: layout, sessionController: sessionController, transcriptContainer: transcriptContainer,
                                            speakerAssembly: speakerAssembly, keepAlive: keepAlive)
+        self.diagnostics = BroadcastDiagnosticsModel(
+            containerURL: FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: configuration.appGroup),
+            records: BroadcastRecordStore(appGroup: configuration.appGroup),
+            keepAlive: keepAlive,
+            sessionController: sessionController
+        )
         let manager = modelManager
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,
                                   modelReady: { id in await manager.isWhisperReady(id) },
