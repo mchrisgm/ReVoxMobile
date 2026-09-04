@@ -132,33 +132,42 @@ final class BroadcastCaptureTests: XCTestCase {
         }
         XCTAssertEqual(received, written)
         XCTAssertEqual(lastPosition, 1_536)
-        // The record is throttled to one write per second of the source's clock, so how many of the reads above
-        // wrote it depends on how the 1 536 frames happened to split. Advancing the clock past the throttle and
-        // reading on makes the assertion independent of that split.
+        // The record is a throttled hint, and two separate things gate it: it is written at most once per second
+        // of the *source* clock, and it is written after the frames are yielded, on the poll thread, only on a
+        // read. So "the record follows the reads" means it converges as reads continue **and the clock advances**
+        // — never that it matches the frame the consumer has just taken.
         //
-        // It is *not* independent of scheduling, and the earlier version of this block assumed it was. The poll
-        // thread yields the frames and only then writes the record, so the consumer can hold a chunk before the
-        // record for that read exists; and a poll cycle that sampled the clock before the mutation below reads the
-        // new frames under the old `now` and skips the throttled write altogether. Run 33886454844 failed here with
-        // the consumer at 2 048 and the record still at 512. "The record follows the reads" is a statement about
-        // reads continuing, not about the record being synchronised with the frame just received, so the assertion
-        // now drives further reads until the record catches up, within a bounded time.
-        now.mutate { $0 = 1_004 }
+        // Both halves cost a run here. Run 33886454844 failed the original, which read the record on the line
+        // after receiving a chunk: the consumer's continuation can resume before the poll thread reaches
+        // writeReaderRecord. Run 33898492633 then failed the first repair, which drove 229 further reads but left
+        // the clock frozen at 1 004 — every one of them fell inside the same throttle window, so the record never
+        // moved off 2 048 while the expectation ran away to 118 784. This drives time as well as reads, and waits
+        // briefly for the asynchronous write after each.
+        var clock = 1_004.0
         var expected: Int64 = 1_536
-        var record: CaptureReaderRecord?
-        let deadline = Date().addingTimeInterval(5)
-        while Date() < deadline {
-            record = records.readCaptureReader()
-            if record?.lastReadCursor == UInt64(expected) { break }
+        var caughtUp = false
+        var attempts = 0
+        while !caughtUp && attempts < 8 {
+            attempts += 1
+            clock += 2                                  // past the one-per-second record throttle
+            now.mutate { $0 = clock }
             write(writer, [Float](repeating: 0.25, count: 512))
             var tail = iterator
             let chunk = await withTimeout(seconds: 3) { await tail.next() }
             iterator = tail
             expected += 512
             XCTAssertEqual(chunk?.endPosition, expected, "positions stay contiguous while the record catches up")
+            let deadline = Date().addingTimeInterval(1)
+            while Date() < deadline {
+                if records.readCaptureReader()?.lastReadCursor == UInt64(expected) {
+                    caughtUp = true
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
         }
-        XCTAssertEqual(record?.lastReadCursor, UInt64(expected), "the record follows the reads")
-        XCTAssertEqual(record?.generation, 1)
+        XCTAssertTrue(caughtUp, "the record never reached \(expected); last \(String(describing: records.readCaptureReader()?.lastReadCursor))")
+        XCTAssertEqual(records.readCaptureReader()?.generation, 1)
         await capture.stop()
     }
 
