@@ -56,6 +56,11 @@ Two things to know about the reply direction:
 
 ### Afterwards
 
+|  |  |
+|---|---|
+| ![History in edit mode with the Merge and Delete bar](docs/screenshots/history-selecting.png) | ![The Live screen with Learning on, showing the original above the translation and how long ago each phrase was said](docs/screenshots/live-running.png) |
+| History, selecting sessions to merge | Live with Learning on and ages |
+
 The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Tap **Edit** to select several sessions and **Merge** them into one, in time order (the originals are removed), or **Delete** them together. Sessions older than 30 days are pruned automatically.
 
 ## Status
