@@ -94,7 +94,8 @@ enum SettingExamples {
     }
 
     static func learning(_ on: Bool) -> String {
-        on ? "The words as spoken appear above the translation." : "Only the translation is shown."
+        on ? "The words as spoken appear above the translation. Tap a word to hear it and see what it means."
+           : "Only the translation is shown."
     }
     static func romanize(_ on: Bool) -> String {
         on ? "Under a script you cannot read, how it sounds in Latin letters." : "The original is shown in its own script only."

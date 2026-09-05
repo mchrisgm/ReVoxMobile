@@ -50,6 +50,9 @@ struct SettingsView: View {
                 Text(SettingsViewModel.sourceLanguageHelpText)
             }
 
+            // M11 §3: directly under Source language, whose footer has just said what an unsure phrase is.
+            GuessesSettingsSection(model: model)
+
             Section {
                 Picker("You speak", selection: $model.ignoredLanguage) {
                     ForEach(model.ignoredLanguageOptions) { option in
