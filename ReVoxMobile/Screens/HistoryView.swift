@@ -61,19 +61,6 @@ struct HistoryView: View {
                     .disabled(sessions.isEmpty)
                     .accessibilityHint("Deletes every session after a confirmation")
             }
-            ToolbarItemGroup(placement: .bottomBar) {
-                // Hidden while searching: the results list has no selection, so the bar would act on rows the
-                // reader cannot see.
-                if editMode.isEditing && !isSearching {
-                    Button(Self.mergeButtonTitle(count: selection.count)) { confirmingMerge = true }
-                        .disabled(selection.count < 2)
-                        .accessibilityHint("Combines the selected sessions into one, in time order")
-                    Spacer()
-                    Button(Self.deleteButtonTitle(count: selection.count), role: .destructive) { confirmingDeleteSelected = true }
-                        .disabled(selection.isEmpty)
-                        .accessibilityHint("Deletes the selected sessions after a confirmation")
-                }
-            }
         }
         .confirmationDialog(HistoryActions.mergeConfirmationTitle(count: selection.count), isPresented: $confirmingMerge, titleVisibility: .visible) {
             Button(HistoryActions.mergeTitle) { mergeSelected() }
@@ -116,6 +103,39 @@ struct HistoryView: View {
             }
             .onDelete(perform: deleteRows)   // unconfirmed: a common single-row action (§8.6)
         }
+        // M11 (§4): the Merge / Delete bar is content in the safe area, not a `.bottomBar` toolbar item. Inside
+        // RootView's TabView a bottom bar whose items appear only in edit mode was drawn under the tab bar on the
+        // owner's iPhone; an inset is laid out above whatever the tab bar controller has already reserved.
+        .safeAreaInset(edge: .bottom) {
+            // Hidden while searching: the results list has no selection, so the bar would act on rows the
+            // reader cannot see.
+            if editMode.isEditing && !isSearching {
+                editBar
+            }
+        }
+    }
+
+    /// The M9 bar — same titles, hints and disabled rules — as 44 pt plain buttons over a bar material with a hairline.
+    private var editBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Button { confirmingMerge = true } label: {
+                    Text(Self.mergeButtonTitle(count: selection.count)).frame(minHeight: 44)
+                }
+                .disabled(selection.count < 2)
+                .accessibilityHint("Combines the selected sessions into one, in time order")
+                Spacer()
+                Button(role: .destructive) { confirmingDeleteSelected = true } label: {
+                    Text(Self.deleteButtonTitle(count: selection.count)).frame(minHeight: 44)
+                }
+                .disabled(selection.isEmpty)
+                .accessibilityHint("Deletes the selected sessions after a confirmation")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+        }
+        .background(.bar)
     }
 
     static func mergeButtonTitle(count: Int) -> String { count > 0 ? "Merge (\(count))" : "Merge" }

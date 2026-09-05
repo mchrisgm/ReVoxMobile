@@ -92,4 +92,26 @@ final class GuessHostingTests: XCTestCase {
         XCTAssertEqual(SettingExamples.guessRow.kind, .entry(language: "es", original: "", english: SettingExamples.spanishEnglish))
         XCTAssertNotEqual(SettingExamples.guessRow.id, SettingExamples.sampleRow().id, "its own identity in a Form")
     }
+
+    /// §4: the edit bar is laid out in the real shape — a NavigationStack inside a TabView — and on its own.
+    func testHistoryInEditModeHostsInsideATabView() throws {
+        let container = try TranscriptContainer.make(inMemory: true)
+        let context = ModelContext(container)
+        for offset in [0.0, 120.0] {
+            let session = Session(startedAt: said.addingTimeInterval(offset), endedAt: said.addingTimeInterval(offset + 10), captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
+            context.insert(session)
+            let entry = Entry(timestamp: said.addingTimeInterval(offset + 1), language: "es", original: "", english: "hola", isDropMarker: false)
+            entry.session = session
+            context.insert(entry)
+        }
+        try context.save()
+        host(TabView {
+            NavigationStack { HistoryView(exporter: exporter, editing: true) }
+                .tabItem { Label("History", systemImage: "clock") }
+        }.modelContainer(container))
+        host(NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
+        host(NavigationStack { HistoryView(initialQuery: "hola", exporter: exporter, editing: true) }.modelContainer(container))   // bar hidden while searching
+        XCTAssertEqual(HistoryView.mergeButtonTitle(count: 2), "Merge (2)")
+        XCTAssertEqual(HistoryView.deleteButtonTitle(count: 2), "Delete (2)")
+    }
 }
