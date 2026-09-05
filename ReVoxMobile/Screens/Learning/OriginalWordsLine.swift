@@ -24,7 +24,7 @@ struct OriginalWordsLine: View {
     static let chipCornerRadius: CGFloat = 6
     /// Accent (#12788C) at 22 % over white ≈ #CBE1E6 — `learning-word-selected` in checks.json.
     static let selectedFillOpacity = 0.22
-    static let chipHorizontalPadding: CGFloat = 4
+    static let chipHorizontalPadding: CGFloat = 3   // 6 pt between words: a space, not a gap (CI run 123)
     static let chipVerticalPadding: CGFloat = 2
     /// VoiceOver custom actions per row: a long row would otherwise put thirty actions before the row's own.
     static let customActionLimit = 12

@@ -74,9 +74,9 @@ final class ModelBenchmarkTests: XCTestCase {
 
     func testAccuracyWording() {
         XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 0), "every word right")
-        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 0.125), "88 % of words right")
-        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 1.0 / 7.0), "86 % of words right")
-        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 1.2), "0 % of words right")
+        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 0.125), "88% of words right")
+        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 1.0 / 7.0), "86% of words right")
+        XCTAssertEqual(BenchmarkVerdict.accuracyText(wordErrorRate: 1.2), "0% of words right")
     }
 
     func testMemoryWording() {
@@ -86,7 +86,7 @@ final class ModelBenchmarkTests: XCTestCase {
 
     func testLineIsTheFourPartsJoinedByMiddleDots() {
         XCTAssertEqual(BenchmarkVerdict.line(result(.small, load: 3, steady: 0.9, audio: 3.8, wer: 0.125, delta: 240)),
-                       "4.2× faster than real time · loads in 3 s · 88 % of words right · uses 240 MB")
+                       "4.2× faster than real time · loads in 3 s · 88% of words right · uses 240 MB")
         XCTAssertEqual(BenchmarkVerdict.line(.skipped(.medium, reason: BenchmarkSkipReason.tooHot, thermalState: "serious")),
                        "Skipped: iPhone too hot")
     }
@@ -110,7 +110,7 @@ final class ModelBenchmarkTests: XCTestCase {
 
     func testSpokenTextSaysTheUnitsInFull() {
         XCTAssertEqual(BenchmarkVerdict.spokenText(result(.small, load: 3, steady: 0.9, audio: 3.8, wer: 0.125, delta: 240)),
-                       "small. Keeps up. 4.2 times faster than real time. loads in 3 seconds. 88 % of words right. uses 240 megabytes")
+                       "small. Keeps up. 4.2 times faster than real time. loads in 3 seconds. 88% of words right. uses 240 megabytes")
         XCTAssertEqual(BenchmarkVerdict.spokenText(.skipped(.medium, reason: BenchmarkSkipReason.tooHot, thermalState: "serious")),
                        "medium. Skipped: iPhone too hot")
     }

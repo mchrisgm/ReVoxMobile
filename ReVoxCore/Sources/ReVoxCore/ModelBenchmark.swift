@@ -151,16 +151,16 @@ public enum BenchmarkVerdict {
         seconds < 0.95 ? "loads in under a second" : "loads in \(Int(seconds.rounded())) s"
     }
 
-    /// "every word right" / "88 % of words right" (accuracy clamps at 0).
+    /// "every word right" / "88% of words right" (accuracy clamps at 0).
     public static func accuracyText(wordErrorRate: Double) -> String {
         guard wordErrorRate > 0 else { return "every word right" }
-        return "\(Int((max(0, 1 - wordErrorRate) * 100).rounded())) % of words right"
+        return "\(Int((max(0, 1 - wordErrorRate) * 100).rounded()))% of words right"
     }
 
     /// "uses 240 MB" (the peak resident delta of the run).
     public static func memoryText(megabytes: Int) -> String { "uses \(megabytes) MB" }
 
-    /// "4.2× faster than real time · loads in 3 s · 88 % of words right · uses 240 MB"; a skipped result reads
+    /// "4.2× faster than real time · loads in 3 s · 88% of words right · uses 240 MB"; a skipped result reads
     /// "Skipped: <reason>".
     public static func line(_ result: ModelBenchmarkResult) -> String {
         if let reason = result.skippedReason { return "Skipped: \(reason)" }
@@ -201,7 +201,7 @@ public enum BenchmarkVerdict {
     public static func spokenMemoryText(megabytes: Int) -> String { "uses \(megabytes) megabytes" }
 
     /// The VoiceOver sentence of a result row: "small. Keeps up. 4.2 times faster than real time. loads in 3
-    /// seconds. 88 % of words right. uses 240 megabytes" or "medium. Skipped: iPhone too hot".
+    /// seconds. 88% of words right. uses 240 megabytes" or "medium. Skipped: iPhone too hot".
     public static func spokenText(_ result: ModelBenchmarkResult) -> String {
         if let reason = result.skippedReason { return "\(result.model.displayName). Skipped: \(reason)" }
         return [result.model.displayName, summaryText(result), spokenSpeedText(realTimeFactor: result.realTimeFactor),

@@ -27,6 +27,10 @@ final class LearningHostingTests: XCTestCase {
     func testWordFlowLayoutPacksLikeThePillLayoutWithNoGap() {
         func size(_ width: CGFloat, _ height: CGFloat = 44) -> CGSize { CGSize(width: width, height: height) }
         XCTAssertEqual(WordFlowLayout.spacing, 0)
+        XCTAssertEqual(WordFlowLayout.rowSpacing, -12, "44 pt targets, lines 32 pt apart")
+        XCTAssertEqual(WordFlowLayout.height(of: [.init(items: [0], height: 44), .init(items: [1], height: 44)]), 76)
+        XCTAssertEqual(WordFlowLayout.height(of: [.init(items: [0], height: 44)]), 44)
+        XCTAssertEqual(WordFlowLayout.height(of: []), 0)
         let rows = WordFlowLayout.rows(sizes: [size(100), size(100), size(100), size(100)], available: 320)
         XCTAssertEqual(rows.map(\.items), [[0, 1, 2], [3]])
         XCTAssertEqual(rows.map(\.height), [44, 44])

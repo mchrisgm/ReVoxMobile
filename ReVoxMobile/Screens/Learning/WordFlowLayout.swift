@@ -7,13 +7,17 @@ import SwiftUI
 /// and the Live strip's layout stay in their own lanes.
 struct WordFlowLayout: Layout {
     static let spacing: CGFloat = 0
+    /// Rows overlap by this much: every chip keeps its 44 pt target, but the visible lines of text sit 32 pt apart
+    /// instead of 44 — CI run 123's `live-running` showed a wrapped original with a gap wider than a line of text
+    /// between its two lines. The overlap is the part of a chip's target above and below its glyphs; a touch in the
+    /// overlap lands on the lower row, which is placed last.
+    static let rowSpacing: CGFloat = -12
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         let width = Self.width(for: proposal, sizes: sizes)
         let rows = Self.rows(sizes: sizes, available: width)
-        let height = rows.reduce(CGFloat(0)) { $0 + $1.height }
-        return CGSize(width: width, height: height)
+        return CGSize(width: width, height: Self.height(of: rows))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -28,7 +32,7 @@ struct WordFlowLayout: Layout {
                                       proposal: ProposedViewSize(size))
                 x += size.width
             }
-            y += row.height
+            y += row.height + Self.rowSpacing
         }
     }
 
@@ -52,6 +56,12 @@ struct WordFlowLayout: Layout {
     struct Row: Equatable {
         var items: [Int]
         var height: CGFloat
+    }
+
+    /// The rows' heights with the overlap between them; never less than the first row.
+    static func height(of rows: [Row]) -> CGFloat {
+        let stacked = rows.reduce(CGFloat(0)) { $0 + $1.height } + Self.rowSpacing * CGFloat(max(rows.count - 1, 0))
+        return max(stacked, rows.first?.height ?? 0)
     }
 
     /// Greedy and in order: a chip joins the current row while it fits, and a chip wider than the whole row still

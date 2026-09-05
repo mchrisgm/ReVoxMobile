@@ -32,7 +32,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable, Sendable {
         case .welcome:
             return "ReVox hears speech, translates it into English on this iPhone, speaks the translation and keeps a transcript. Nothing you say or hear leaves the phone."
         case .controls:
-            return "Three groups of pills sit above the transcript: \(LiveControlStrip.listenCaption), \(LiveControlStrip.voiceCaption) and \(LiveControlStrip.languagesCaption). A pill says what it is set to — tap it to change it, \(LiveControlStrip.moreAccessibilityLabel) to read what each one does, and Start to see them lock."
+            return "Three groups of pills sit above the transcript: \(LiveControlStrip.listenCaption), \(LiveControlStrip.voiceCaption) and \(LiveControlStrip.languagesCaption). Tap a pill to change it, \(LiveControlStrip.moreAccessibilityLabel) to read what each does, and Start to see them lock."
         case .transcript:
             return "Tap Start and speak. Each finished phrase appears with its language and its English translation, is spoken aloud, and shows how long ago it was said. A phrase ReVox is not sure about arrives greyed and marked Unsure: kept in the transcript, never spoken."
         case .twoWay:
