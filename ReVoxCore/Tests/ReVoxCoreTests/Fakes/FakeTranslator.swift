@@ -4,19 +4,23 @@ import Foundation
 struct FakeTranslatorError: Error {}
 
 /// The Windows `FakeTranslator`: a gate that blocks `translate` until opened, a `fail` flag, records of every call.
-/// Returns "text-N" for the N-th call unless explicit segments were given.
+/// Returns "text-N" for the N-th call unless explicit segments were given. M11: `segmentsPerCall` scripts the
+/// segments call by call (consumed in order, then `segments` / "text-N" as before).
 actor FakeTranslator: Translator {
     private let language: String
     private let segments: [TranslationSegment]?
+    private var segmentsPerCall: [[TranslationSegment]]
     private let fail: Bool
     private var open: Bool
     private var waiters: [CheckedContinuation<Void, Error>] = []
     private(set) var calls: [[Float]] = []
     private(set) var languages: [String] = []
 
-    init(language: String = "es", segments: [TranslationSegment]? = nil, fail: Bool = false, blocked: Bool = false) {
+    init(language: String = "es", segments: [TranslationSegment]? = nil, segmentsPerCall: [[TranslationSegment]]? = nil,
+         fail: Bool = false, blocked: Bool = false) {
         self.language = language
         self.segments = segments
+        self.segmentsPerCall = segmentsPerCall ?? []
         self.fail = fail
         open = !blocked
     }
@@ -39,7 +43,12 @@ actor FakeTranslator: Translator {
         }
         calls.append(audio)
         languages.append(requested)
-        let produced = segments ?? [TranslationSegment(text: "text-\(calls.count)", noSpeechProbability: 0, averageLogProbability: 0)]
+        let produced: [TranslationSegment]
+        if !segmentsPerCall.isEmpty {
+            produced = segmentsPerCall.removeFirst()
+        } else {
+            produced = segments ?? [TranslationSegment(text: "text-\(calls.count)", noSpeechProbability: 0, averageLogProbability: 0)]
+        }
         return TranslationCandidate(language: language, languageProbability: nil, segments: produced)
     }
 

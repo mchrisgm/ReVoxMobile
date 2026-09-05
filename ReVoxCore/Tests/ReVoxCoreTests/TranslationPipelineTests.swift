@@ -106,6 +106,7 @@ final class TranslationPipelineTests: XCTestCase {
         XCTAssertEqual(entries.first?.english, "text-1")
         XCTAssertEqual(entries.first?.language, "es")
         XCTAssertEqual(entries.first?.original, "")
+        XCTAssertEqual(entries.first?.isGuess, false)
         let entryEmitted = await eventually { h.events.hasEntry }
         XCTAssertTrue(entryEmitted)
         let spokenTexts = await h.speaker.texts
@@ -949,6 +950,66 @@ final class TranslationPipelineTests: XCTestCase {
         let entries = await h.transcript.entries
         XCTAssertEqual(entries.first?.original, "Good morning.")
         XCTAssertFalse(entries.first?.english.isEmpty ?? true)
+        await h.pipeline.stop()
+    }
+
+    // MARK: Unsure phrases (M11, §3)
+
+    private func guessSegments() -> [TranslationSegment] {
+        [TranslationSegment(text: " maybe", noSpeechProbability: 0, averageLogProbability: -2.0)]
+    }
+
+    private func confidentSegments() -> [TranslationSegment] {
+        [TranslationSegment(text: " sure", noSpeechProbability: 0, averageLogProbability: -0.1)]
+    }
+
+    /// The entry that carries `isGuess` in the collected events, if any.
+    private func guessEntry(in events: EventCollector) -> TranscriptEntry? {
+        for event in events.events {
+            if case .entry(let entry) = event, entry.isGuess { return entry }
+        }
+        return nil
+    }
+
+    func testAGuessReachesTheTranscriptAndTheEntryEventButNeverTheVoice() async throws {
+        let h = makeHarness(translator: FakeTranslator(segments: guessSegments()))
+        await h.pipeline.start(configuration())
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let recorded = await eventually { await h.transcript.entries.isEmpty == false }
+        XCTAssertTrue(recorded)
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.first?.english, "maybe")
+        XCTAssertEqual(entries.first?.isGuess, true, "with the default configuration a guess is kept")
+        let emitted = await eventually { self.guessEntry(in: h.events) != nil }
+        XCTAssertTrue(emitted, "\(h.events.events)")
+        _ = await eventually(timeout: 0.5) { await h.speaker.texts.isEmpty == false }
+        let spoken = await h.speaker.texts
+        XCTAssertTrue(spoken.isEmpty, "a guess is never spoken")
+        let enqueued = await h.player?.enqueued ?? []
+        XCTAssertTrue(enqueued.isEmpty)
+        XCTAssertFalse(h.events.events.contains { if case .transcriptOnly = $0 { return true }; return false },
+                       "a guess is not a transcript-only phrase; the Live note must not fire")
+        await h.pipeline.stop()
+    }
+
+    /// With `keepsGuesses` off the guess still reaches the `.entry` event (the Live screen shows it) but not the
+    /// sink; the confident phrase behind it reaches both and is spoken.
+    func testWithKeepsGuessesOffAGuessReachesTheEventButNotTheSink() async throws {
+        let h = makeHarness(translator: FakeTranslator(segmentsPerCall: [guessSegments(), confidentSegments()]))
+        var config = configuration()
+        config.keepsGuesses = false
+        await h.pipeline.start(config)
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        h.source.feed([Float](repeating: 1, count: Segmenter.chunkSamples))
+        let spoke = await eventually { await h.speaker.texts.isEmpty == false }
+        XCTAssertTrue(spoke)
+        let spoken = await h.speaker.texts
+        XCTAssertEqual(spoken, ["sure"], "only the confident phrase is spoken")
+        let entries = await h.transcript.entries
+        XCTAssertEqual(entries.map(\.english), ["sure"], "the guess never reached the sink")
+        XCTAssertEqual(entries.first?.isGuess, false)
+        let guess = guessEntry(in: h.events)
+        XCTAssertEqual(guess?.english, "maybe", "the Live screen still gets the guess: \(h.events.events)")
         await h.pipeline.stop()
     }
 
