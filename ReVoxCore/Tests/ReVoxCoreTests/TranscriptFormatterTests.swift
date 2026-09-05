@@ -71,6 +71,63 @@ final class TranscriptFormatterTests: XCTestCase {
         let entry = TranscriptEntry(timestamp: start, language: "es", original: "hola", english: "hello")
         let data = try JSONEncoder().encode(entry)
         XCTAssertEqual(try JSONDecoder().decode(TranscriptEntry.self, from: data), entry)
+        let guess = TranscriptEntry(timestamp: start, language: "es", original: "", english: "maybe", isGuess: true)
+        let guessData = try JSONEncoder().encode(guess)
+        XCTAssertEqual(try JSONDecoder().decode(TranscriptEntry.self, from: guessData), guess)
+        XCTAssertNotEqual(guess, TranscriptEntry(timestamp: start, language: "es", original: "", english: "maybe"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: guessData) as? [String: Any])
+        XCTAssertEqual(object["isGuess"] as? Bool, true)
+    }
+
+    /// An entry written before M11 has no `isGuess` and decodes as a confident phrase.
+    func testAPreM11EntryDecodesAsConfident() throws {
+        let json = Data(#"{"timestamp":0,"language":"es","original":"","english":"hello"}"#.utf8)
+        let entry = try JSONDecoder().decode(TranscriptEntry.self, from: json)
+        XCTAssertEqual(entry, TranscriptEntry(timestamp: Date(timeIntervalSinceReferenceDate: 0), language: "es", original: "", english: "hello"))
+        XCTAssertFalse(entry.isGuess)
+    }
+
+    // MARK: Unsure phrases (M11, §3)
+
+    func testGuessPrefixAndLine() {
+        XCTAssertEqual(TranscriptFormatter.guessPrefix, "(unsure) ")
+        let formatter = TranscriptFormatter(timeZone: utc)
+        let guess = TranscriptEntry(timestamp: start.addingTimeInterval(1), language: "es", original: "", english: "hello", isGuess: true)
+        XCTAssertEqual(formatter.line(for: guess), "[22:13:21] [es] \n  → (unsure) hello\n")
+        let sure = TranscriptEntry(timestamp: start.addingTimeInterval(1), language: "es", original: "hola", english: "hello")
+        XCTAssertEqual(formatter.line(for: sure), "[22:13:21] [es] hola\n  → hello\n", "a confident line is unchanged")
+    }
+
+    /// The golden items plus a guess between the two consecutive markers: the guess resets the collapse, so both
+    /// markers print, and the guess line carries the prefix. Everything else is the golden text, byte for byte.
+    func testGoldenExportWithAGuessBetweenMarkers() {
+        let formatter = TranscriptFormatter(timeZone: utc)
+        let items: [TranscriptItem] = [
+            .dropMarker(start.addingTimeInterval(1)),
+            .entry(TranscriptEntry(timestamp: start.addingTimeInterval(1.5), language: "es", original: "", english: "hello", isGuess: true)),
+            .dropMarker(start.addingTimeInterval(2)),
+            .entry(TranscriptEntry(timestamp: start.addingTimeInterval(3), language: "fr", original: "", english: "yes")),
+            .dropMarker(start.addingTimeInterval(4)),
+            .entry(TranscriptEntry(timestamp: start.addingTimeInterval(3_600 + 5), language: "es", original: "", english: "hello there")),
+        ]
+        let expected = """
+        # ReVox session 2023-11-14T22:13:20
+        [22:13:21] … (skipped: falling behind)
+        [22:13:21] [es]\u{20}
+          → (unsure) hello
+        [22:13:22] … (skipped: falling behind)
+        [22:13:23] [fr]\u{20}
+          → yes
+        [22:13:24] … (skipped: falling behind)
+        [23:13:25] [es]\u{20}
+          → hello there
+
+        """
+        let text = formatter.export(startedAt: start, items: items)
+        XCTAssertEqual(text, expected)
+        XCTAssertEqual(Array(text.utf8), Array(expected.utf8))
+        XCTAssertEqual(text.components(separatedBy: "skipped: falling behind").count - 1, 3)
+        XCTAssertEqual(text.components(separatedBy: TranscriptFormatter.guessPrefix).count - 1, 1)
     }
 
     func testExportOfAnEmptySessionIsJustTheHeader() {
