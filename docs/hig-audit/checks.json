@@ -20,10 +20,15 @@
     {"type": "target", "name": "session-share-toolbar-item", "w": 44, "h": 44},
     {"type": "target", "name": "session-delete-toolbar-item", "w": 44, "h": 44},
     {"type": "target", "name": "about-licence-link", "w": 358, "h": 44},
+    {"type": "target", "name": "learning-word-chip", "w": 22, "h": 44, "note": "Documented deviation (M11 §2): the chip is minHeight 44 and as wide as its word (22 pt is a two-letter Spanish word at the default size). Chips tile the line at spacing 0, so every touch on the 44 pt line lands on a word — the allowance HIG makes for inline text links; a 44 pt minimum width would turn a Japanese sentence into spaced-out cells."},
+    {"type": "target", "name": "learning-popover-close", "w": 44, "h": 44},
+    {"type": "target", "name": "learning-popover-say-word", "w": 140, "h": 44},
+    {"type": "target", "name": "learning-popover-dictionary", "w": 220, "h": 44},
     {"type": "contrast", "name": "live-falling-behind-pill", "fg": "#000000", "bg": "#FFE5CC"},
     {"type": "contrast", "name": "live-ducking-pill", "fg": "#000000", "bg": "#D9EBFF"},
     {"type": "contrast", "name": "live-banner-text", "fg": "#000000", "bg": "#FFFBD9"},
     {"type": "contrast", "name": "models-recommended-badge", "fg": "#000000", "bg": "#D9EBFF"},
-    {"type": "contrast", "name": "secondary-label-on-white", "fg": "#3C3C43", "bg": "#FFFFFF"}
+    {"type": "contrast", "name": "secondary-label-on-white", "fg": "#3C3C43", "bg": "#FFFFFF"},
+    {"type": "contrast", "name": "learning-word-selected", "fg": "#000000", "bg": "#CBE1E6"}
   ]
 }
