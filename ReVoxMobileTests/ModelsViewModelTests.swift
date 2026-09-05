@@ -39,9 +39,11 @@ final class ModelsViewModelTests: XCTestCase {
                                benchmarks: benchmarks, isBenchmarkRunning: { [unowned self] in self.benchmarkRunning })
     }
 
-    /// M11: a store over a temporary folder, seeded with one run for this test's "iPhone".
+    /// M11: a store over a temporary folder of its own, seeded with one run for this test's "iPhone". Its own
+    /// folder: a store reads every run in its folder at init, so two stores in one test sharing a folder would
+    /// see each other's runs (CI run 123: the "older library" store found the "other phone" store's current run).
     private func benchmarkStore(_ run: BenchmarkRun?, device: String = "iPhone17,1") throws -> BenchmarkStore {
-        let store = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks", isDirectory: true),
+        let store = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks-\(UUID().uuidString)", isDirectory: true),
                                    host: BenchmarkHost(device: device, iOSVersion: "26.0.1", memoryTierGB: 8))
         if let run { try store.save(run) }
         return store
