@@ -43,6 +43,9 @@ final class VoicesViewModel {
     private let selection: @MainActor () async -> SpeakerSelection
     private let systemVoiceSource: () -> [SystemVoiceOption]
     private let isPipelineRunning: @MainActor () -> Bool
+    /// M11 §5: a download verifies (loads) pocket-tts and a delete unloads it — beside the model the benchmark is
+    /// timing, either would spoil the measurement and the §9 memory budget.
+    private let isBenchmarkRunning: @MainActor () -> Bool
 
     private(set) var isPlayingSample = false
     private(set) var systemVoices: [SystemVoiceOption]
@@ -52,14 +55,15 @@ final class VoicesViewModel {
     var deleteFailureAlert: String?
     var lowStorageWarning: String?
     var downloadFailureAlert: String?
-    /// M10: the "Can't download now" alert; only the running-session refusal produces it.
+    /// M10: the "Can't download now" alert; the running-session refusal produces it, and (M11) the benchmark one.
     var downloadRefusedAlert: String?
     @ObservationIgnored private var awaitingUserResult = false
 
     init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, speakerStatus: SpeakerStatusRelay,
          samplePlayer: SamplePlayer, selection: @escaping @MainActor () async -> SpeakerSelection,
          systemVoices: @escaping () -> [SystemVoiceOption] = SystemVoiceOption.installedEnglishVoices,
-         isPipelineRunning: @escaping @MainActor () -> Bool) {
+         isPipelineRunning: @escaping @MainActor () -> Bool,
+         isBenchmarkRunning: @escaping @MainActor () -> Bool = { false }) {
         self.manager = manager
         self.settings = settings
         self.memoryTierGB = deviceInfo.memoryTierGB
@@ -68,6 +72,7 @@ final class VoicesViewModel {
         self.selection = selection
         self.systemVoiceSource = systemVoices
         self.isPipelineRunning = isPipelineRunning
+        self.isBenchmarkRunning = isBenchmarkRunning
         // §6.6: the screen's order is the view model's responsibility, not the source's. `sorted(_:)` is idempotent on
         // the already-sorted output of `installedEnglishVoices()`, and orders any other source (tests, a future source).
         self.systemVoices = SystemVoiceOption.sorted(systemVoices())
@@ -106,9 +111,9 @@ final class VoicesViewModel {
     /// §9: a pocket-tts load or synthesis failure shows Retry here.
     var showsRetry: Bool { speakerStatus.status.isFallback }
 
-    var canDelete: Bool { isPocketTTSInstalled && !isPipelineRunning() }
+    var canDelete: Bool { isPocketTTSInstalled && !isPipelineRunning() && !isBenchmarkRunning() }
     var canPlaySample: Bool { !isPipelineRunning() && !isPlayingSample }
-    var canDownload: Bool { !isPipelineRunning() }
+    var canDownload: Bool { !isPipelineRunning() && !isBenchmarkRunning() }
 
     /// M10: why Play sample is disabled, for the caption under it (a disabled control never goes unexplained).
     /// nil while a sample plays: the spinner beside the button is the reason then.
@@ -116,6 +121,7 @@ final class VoicesViewModel {
 
     var footerText: String? {
         if manager.hasActiveDownload || !manager.pausedKinds.isEmpty { return ModelsViewModel.keepOpenText }
+        if isBenchmarkRunning() { return ModelsViewModel.finishBenchmarkText }
         if isPocketTTSInstalled && isPipelineRunning() { return Self.stopToDeleteText }
         return nil
     }
@@ -123,7 +129,7 @@ final class VoicesViewModel {
     func download() {
         lowStorageWarning = nil
         guard canDownload else {
-            downloadRefusedAlert = Self.stopToDownloadText
+            downloadRefusedAlert = isBenchmarkRunning() ? ModelsViewModel.finishBenchmarkText : Self.stopToDownloadText
             return
         }
         switch manager.freeSpaceVerdict(for: .pocketTTS) {
@@ -175,8 +181,10 @@ final class VoicesViewModel {
         return ModelsViewModel.deleteFailureText(error)
     }
 
-    /// Behind the screen's `confirmationDialog`; refused while the pipeline runs (§6.9). The voice setting is kept.
+    /// Behind the screen's `confirmationDialog`; refused while the pipeline runs (§6.9) or a benchmark does
+    /// (M11 §5, as on the Models screen). The voice setting is kept.
     func delete() throws {
+        guard !isBenchmarkRunning() else { throw BenchmarkError.busy }
         try manager.delete(.pocketTTS, activeModel: settings.settings.whisperModel)
     }
 

@@ -196,7 +196,8 @@ final class AppEnvironment {
             speakerStatus: speakerStatus,
             samplePlayer: SamplePlayer.production(sessionController: sampleController, assembly: assembly, captureMode: { settingsStore.settings.capture }),
             selection: { await assembly.selection() },
-            isPipelineRunning: { activity.isBusy }
+            isPipelineRunning: { activity.isBusy },
+            isBenchmarkRunning: { benchmarkActivity.isRunning }
         )
         live.observe(sessionEvents: sessionController.events)
         live.observe(keepAlive: keepAlive.events)

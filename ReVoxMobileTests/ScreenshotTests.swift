@@ -164,7 +164,22 @@ final class ScreenshotTests: XCTestCase {
         // Models, Voices, Settings.
         let modelsForVoices = hosting.models()
         let voices = try hosting.voices(installed: true)
-        try capture("models", NavigationStack { ModelsView(model: hosting.models()) })
+
+        // M11 §5: the Benchmark screen with a measured run, and the Models screen showing what that run recommends.
+        // The measured note counts only models that are installed now, so the sample run's two measured models are
+        // put on disk first — small then wins on word error rate and carries the note.
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let benchmarkStore = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks", isDirectory: true),
+                                            host: BenchmarkHost(device: "iPhone17,1", iOSVersion: "26.0.1", memoryTierGB: 8))
+        try benchmarkStore.save(.sample())
+        let benchmark = BenchmarkViewModel(store: benchmarkStore, manager: hosting.manager(),
+                                           isPipelineRunning: { false }, releasePipeline: {},
+                                           runner: BenchmarkRunner(seams: FakeBenchmarkSeams().seams), host: FakeInstallHost())
+        let models = hosting.models(benchmarks: benchmarkStore)
+        models.benchmark = benchmark                                  // the "Benchmark this iPhone" row and its footer
+        try capture("models", NavigationStack { ModelsView(model: models) })
+        try capture("benchmark", NavigationStack { BenchmarkView(model: benchmark) })
         try capture("voices", NavigationStack { VoicesView(model: voices) })
         let settings = SettingsViewModel(store: store, mute: mute, voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
         settings.learning = true
@@ -186,8 +201,12 @@ final class ScreenshotTests: XCTestCase {
         }
         try context.save()
         let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
-        // M11 (§4): the bar is a safe-area inset over a bar material; a second turn lets the material settle.
-        try capture("history-selecting", settle: 1.0, NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
+        // M11 (§4): the bar is a safe-area inset over a bar material; a second turn lets the material settle. The
+        // capture sits inside a TabView because the whole point of the bar is where it sits relative to the tab bar.
+        try capture("history-selecting", settle: 1.0, TabView {
+            NavigationStack { HistoryView(exporter: exporter, editing: true) }
+                .tabItem { Label("History", systemImage: "clock") }
+        }.modelContainer(container))
     }
 
     /// M11 §2: the popover's content, hosted on its own — a popover with its arrow cannot be captured without a

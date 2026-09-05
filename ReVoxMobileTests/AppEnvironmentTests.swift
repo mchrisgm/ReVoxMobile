@@ -26,6 +26,8 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertTrue(environment.speakerAssembly.voiceVolume === environment.voiceVolume)
         XCTAssertEqual(environment.voices.offeredVoices, ["alba", "azelma", "cosette", "javert"])
         XCTAssertFalse(environment.voices.isPocketTTSInstalled)
+        // M11 §5: the Voices screen asks the same box the Models screen and Live's supplier do; nothing is running here.
+        XCTAssertTrue(environment.voices.canDownload)
         XCTAssertEqual(environment.broadcast.attachState, .noRing)
         XCTAssertFalse(environment.broadcastCapture.isRunning)
         XCTAssertNotNil(environment.broadcast.onBroadcastLive, "the foreground auto-start is wired")
