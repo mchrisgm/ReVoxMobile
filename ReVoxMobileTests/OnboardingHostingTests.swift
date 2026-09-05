@@ -72,17 +72,24 @@ final class OnboardingHostingTests: XCTestCase {
         model.appendNextDemoRow(now: Date())
         host(OnboardingView(model: model))                                   // playing, two rows with ages
         while model.appendNextDemoRow() {}
-        host(OnboardingPageView(page: .transcript, index: 2, count: model.pages.count, model: model))   // the whole script
+        XCTAssertTrue(model.lastDemoRowIsGuess, "the script ends with the greyed Unsure row")
+        host(OnboardingPageView(page: .transcript, index: 2, count: model.pages.count, model: model))   // the whole script, guess caption
         model.stopDemo()
-        host(OnboardingView(model: model))                                   // stopped, rows kept
+        host(OnboardingView(model: model))                                   // stopped, rows kept, caption still the guess
         XCTAssertTrue(model.isDemoComplete)
     }
 
-    func testProgressBarAndCardHost() {
+    func testProgressBarCardAndPiecesHost() {
         host(OnboardingProgressBar(progress: 0.5, step: 4, count: 7).frame(width: 300))
         host(OnboardingProgressBar(progress: 1, step: 7, count: 7).frame(width: 300))
         host(OnboardingDemoCard { Text("card") })
         host(OnboardingPointsList(points: OnboardingDemo.welcomePoints))
+        host(OnboardingStartStopButton(isRunning: false, accessibilityLabel: "x", accessibilityHint: "y") {})
+        host(OnboardingStartStopButton(isRunning: true, accessibilityLabel: "x", accessibilityHint: "y") {})
+        let controls = OnboardingLiveControls()
+        host(LiveLanguagesGroup(model: controls))
+        host(LiveControlStrip(model: controls, showsVolumeSlider: .constant(true), isMoreExpanded: .constant(true)))
+        host(LiveDetailsPanel(model: controls))
     }
 
     func testSettingsViewHostsWithTheTutorialRow() throws {

@@ -206,6 +206,8 @@ struct OnboardingProgressBar: View {
 }
 
 /// One page: the title (a heading to VoiceOver), one sentence, and the demo. Scrolls when Dynamic Type asks.
+/// The column itself is not padded: the title and sentence take 20 pt each, and every demo pads itself, so the
+/// strip and the Languages group get the same width they have on Live (393 − 2 × 16) and pack identically.
 struct OnboardingPageView: View {
     let page: OnboardingPage
     let index: Int
@@ -218,15 +220,16 @@ struct OnboardingPageView: View {
                 Text(page.title)
                     .font(.title.weight(.bold))
                     .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 20)
                 Text(page.subtitle)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
                 demo
                     .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
             .padding(.vertical, 8)
         }
         .scrollIndicators(.hidden)
@@ -268,7 +271,8 @@ struct OnboardingPageView: View {
     }
 }
 
-/// The card every demo sits in: the Live screen's card, so the tutorial looks like the app it is about.
+/// The card every demo sits in: the Live screen's card, so the tutorial looks like the app it is about. It
+/// carries the page's 20 pt side margin itself (see `OnboardingPageView`).
 struct OnboardingDemoCard<Content: View>: View {
     let content: () -> Content
 
@@ -283,6 +287,7 @@ struct OnboardingDemoCard<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 20)
     }
 }
 
@@ -319,6 +324,39 @@ struct OnboardingPointsList: View {
                 withAnimation(.spring(duration: 0.4, bounce: 0.2)) { revealed = step }
             }
         }
+    }
+}
+
+/// The Live screen's Start / Stop capsule, shared by the controls page and the transcript demo: the same words
+/// `LiveView.buttonTitle(for:)` gives the real one, red while running. No side margin of its own — the caller
+/// places it (inside a card, or at the page's 20 pt).
+struct OnboardingStartStopButton: View {
+    let isRunning: Bool
+    let accessibilityLabel: String
+    let accessibilityHint: String
+    let action: () -> Void
+
+    static func title(running: Bool) -> String {
+        LiveView.buttonTitle(for: running ? .running : .idle)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isRunning ? "stop.fill" : "mic.fill")
+                    .accessibilityHidden(true)
+                Text(Self.title(running: isRunning))
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 50)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(isRunning ? .red : .accentColor)
+        .animation(.default, value: isRunning)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(accessibilityHint)
     }
 }
 
@@ -373,12 +411,25 @@ struct OnboardingSourceDemo: View {
 // MARK: - Start and read
 
 /// The Live screen in miniature: a transcript whose rows slide in one by one, ages counting up under them, and
-/// the same capsule that starts and stops the real thing.
+/// the same capsule that starts and stops the real thing. The script ends with a guess, which the row view greys
+/// and marks Unsure (M11 §3); the caption under the rows says so for as long as the greyed row is there.
 struct OnboardingTranscriptDemo: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static func buttonTitle(playing: Bool) -> String { playing ? "Stop" : "Start" }
+    static let startAccessibilityLabel = "Start the demo"
+    static let stopAccessibilityLabel = "Stop the demo"
+    static let hintText = "A short conversation appears in the transcript, one phrase at a time"
+
+    /// The guess explanation whenever the greyed row is on screen, even after Stop; otherwise what Live says.
+    static func captionText(playing: Bool, lastIsGuess: Bool) -> String {
+        if lastIsGuess { return OnboardingDemo.guessText }
+        return playing ? OnboardingDemo.speakingText : LiveView.microphoneDescription
+    }
+
+    static func captionSymbol(playing: Bool, lastIsGuess: Bool) -> String {
+        lastIsGuess ? "questionmark.circle" : "speaker.wave.2"
+    }
 
     var body: some View {
         OnboardingDemoCard {
@@ -400,37 +451,26 @@ struct OnboardingTranscriptDemo: View {
                 .animation(rowAnimation, value: model.demoRows)
             }
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
-                    .symbolEffect(.variableColor.iterative, isActive: model.isDemoPlaying && !reduceMotion)
+                Image(systemName: Self.captionSymbol(playing: model.isDemoPlaying, lastIsGuess: model.lastDemoRowIsGuess))
+                    .symbolEffect(.variableColor.iterative, isActive: model.isDemoPlaying && !model.lastDemoRowIsGuess && !reduceMotion)
                     .accessibilityHidden(true)
-                Text(model.isDemoPlaying ? OnboardingDemo.speakingText : LiveView.microphoneDescription)
+                Text(Self.captionText(playing: model.isDemoPlaying, lastIsGuess: model.lastDemoRowIsGuess))
                     .contentTransition(.opacity)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .animation(.default, value: model.isDemoPlaying)
-            Button {
+            .animation(.default, value: model.lastDemoRowIsGuess)
+            OnboardingStartStopButton(isRunning: model.isDemoPlaying,
+                                      accessibilityLabel: model.isDemoPlaying ? Self.stopAccessibilityLabel : Self.startAccessibilityLabel,
+                                      accessibilityHint: Self.hintText) {
                 if model.isDemoPlaying {
                     model.stopDemo()
                 } else {
                     model.startDemo()
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: model.isDemoPlaying ? "stop.fill" : "mic.fill")
-                        .accessibilityHidden(true)
-                    Text(Self.buttonTitle(playing: model.isDemoPlaying))
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 50)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .tint(model.isDemoPlaying ? .red : .accentColor)
-            .animation(.default, value: model.isDemoPlaying)
-            .accessibilityLabel(model.isDemoPlaying ? "Stop the demo" : "Start the demo")
-            .accessibilityHint("A short conversation appears in the transcript, one phrase at a time")
         }
     }
 

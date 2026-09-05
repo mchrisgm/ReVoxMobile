@@ -227,14 +227,26 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(model.controls.state, .idle, "the demo session is stopped too")
     }
 
+    func testTheTranscriptCaptionExplainsTheGuessWhileItIsOnScreen() {
+        XCTAssertEqual(OnboardingTranscriptDemo.captionText(playing: false, lastIsGuess: false), LiveView.microphoneDescription)
+        XCTAssertEqual(OnboardingTranscriptDemo.captionText(playing: true, lastIsGuess: false), OnboardingDemo.speakingText)
+        XCTAssertEqual(OnboardingTranscriptDemo.captionText(playing: true, lastIsGuess: true), OnboardingDemo.guessText)
+        XCTAssertEqual(OnboardingTranscriptDemo.captionText(playing: false, lastIsGuess: true), OnboardingDemo.guessText, "after Stop the grey row is still there")
+        XCTAssertEqual(OnboardingTranscriptDemo.captionSymbol(playing: true, lastIsGuess: true), "questionmark.circle")
+        XCTAssertEqual(OnboardingTranscriptDemo.captionSymbol(playing: true, lastIsGuess: false), "speaker.wave.2")
+        XCTAssertEqual(OnboardingTranscriptDemo.captionSymbol(playing: false, lastIsGuess: false), "speaker.wave.2")
+    }
+
     // MARK: Copy
 
     func testCopyBehindTheDemos() {
         XCTAssertEqual(OnboardingView.primaryTitle(isLastPage: false), "Next")
         XCTAssertEqual(OnboardingView.primaryTitle(isLastPage: true), "Start translating")
         XCTAssertEqual(OnboardingView.skipTitle, "Skip")
-        XCTAssertEqual(OnboardingTranscriptDemo.buttonTitle(playing: false), "Start")
-        XCTAssertEqual(OnboardingTranscriptDemo.buttonTitle(playing: true), "Stop")
+        XCTAssertEqual(OnboardingStartStopButton.title(running: false), "Start")
+        XCTAssertEqual(OnboardingStartStopButton.title(running: true), "Stop")
+        XCTAssertEqual(OnboardingStartStopButton.title(running: false), LiveView.buttonTitle(for: .idle))
+        XCTAssertEqual(OnboardingStartStopButton.title(running: true), LiveView.buttonTitle(for: .running))
         XCTAssertEqual(SettingsView.showTutorialTitle, "Show the tutorial")
         XCTAssertEqual(OnboardingDemo.welcomePoints.count, 4)
         XCTAssertEqual(OnboardingDemo.transcriptScript.count, 5)
