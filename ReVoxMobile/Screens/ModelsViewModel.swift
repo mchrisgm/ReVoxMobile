@@ -14,11 +14,18 @@ final class ModelsViewModel {
     static let confirmDeleteMessage = "You can download it again later."
     static let vadName = "Voice detector"
     static let noModelsText = "No models on this iPhone"
+    /// M11: a download or delete is a full model load or unload beside the one the benchmark is timing.
+    static let finishBenchmarkText = "Finish or cancel the benchmark first"
+    static let notMeasuredFooterText = "Recommended by memory size. Run the benchmark to measure this iPhone."
 
     private let manager: ModelManager
     private let settings: SettingsStore
-    private let recommendation: DeviceRecommendation
+    private let deviceInfo: DeviceInfo
+    private let benchmarks: BenchmarkStore?
     private let isPipelineRunning: @MainActor () -> Bool
+    private let isBenchmarkRunning: @MainActor () -> Bool
+    /// M11: the Benchmark screen the Models screen pushes; `AppEnvironment` sets it once both exist.
+    var benchmark: BenchmarkViewModel?
     var lowStorageAlert: String?
     /// A delete the manager refused — the pipeline started while the confirmation dialog was open (§6.9).
     var deleteFailureAlert: String?
@@ -29,11 +36,14 @@ final class ModelsViewModel {
     var downloadRefusedAlert: String?
     @ObservationIgnored private var awaitingUserResult: Set<WhisperModelID> = []
 
-    init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, isPipelineRunning: @escaping @MainActor () -> Bool) {
+    init(manager: ModelManager, settings: SettingsStore, deviceInfo: DeviceInfo, isPipelineRunning: @escaping @MainActor () -> Bool,
+         benchmarks: BenchmarkStore? = nil, isBenchmarkRunning: @escaping @MainActor () -> Bool = { false }) {
         self.manager = manager
         self.settings = settings
-        self.recommendation = deviceInfo.recommendation
+        self.deviceInfo = deviceInfo
+        self.benchmarks = benchmarks
         self.isPipelineRunning = isPipelineRunning
+        self.isBenchmarkRunning = isBenchmarkRunning
         manager.onActiveModelDeleted = { [weak self] replacement in
             guard let self, let replacement else { return }   // none left: the setting stays; Live shows "No model"
             self.settings.update { $0.model = replacement.rawValue }
@@ -44,8 +54,49 @@ final class ModelsViewModel {
 
     var selectedModel: WhisperModelID { settings.settings.whisperModel }
 
+    // MARK: M11: the measured recommendation
+
+    /// The latest run's measured results for the models on disk now: a deleted model's result stops counting.
+    var measuredResults: [ModelBenchmarkResult] {
+        guard let run = benchmarks?.latest else { return [] }
+        let installed = manager.installedWhisper
+        return run.measured.filter { installed.contains($0.model) }
+    }
+
+    /// The benchmark's pick, when one qualifies; nil means the memory tier decides.
+    var measuredRecommendation: WhisperModelID? {
+        DeviceRecommendation.bestMeasured(memory: deviceInfo.recommendation, results: measuredResults)
+    }
+
+    /// The memory tier with `recommended` moved to the measured pick; the memory tier alone until a run qualifies.
+    var recommendation: DeviceRecommendation {
+        DeviceRecommendation.measured(memory: deviceInfo.recommendation, results: measuredResults)
+    }
+
+    /// "Measured on this iPhone on 14 November 2023" for the recommended row, once the recommendation is measured.
+    var measuredNote: String? {
+        guard measuredRecommendation != nil, let date = benchmarks?.latest?.date else { return nil }
+        return Self.measuredNoteText(date: date)
+    }
+
+    /// The Benchmark section's footer: the memory-size note, or when the recommendation was measured.
+    var benchmarkFooterText: String {
+        guard measuredRecommendation != nil, let date = benchmarks?.latest?.date else { return Self.notMeasuredFooterText }
+        return Self.measuredFooterText(date: date)
+    }
+
+    static func measuredNoteText(date: Date, timeZone: TimeZone = .current) -> String {
+        "Measured on this iPhone on \(BenchmarkVerdict.dateText(date, timeZone: timeZone))"
+    }
+
+    static func measuredFooterText(date: Date, timeZone: TimeZone = .current) -> String {
+        "Recommendation measured on this iPhone on \(BenchmarkVerdict.dateText(date, timeZone: timeZone))"
+    }
+
     var rows: [ModelRow] {
-        ModelCatalog.whisperModels.map { descriptor in
+        let recommendation = self.recommendation
+        let measuredNote = self.measuredNote
+        return ModelCatalog.whisperModels.map { descriptor in
             let kind = DownloadKind.whisper(descriptor.id)
             let state = manager.state(for: kind)
             return ModelRow(
@@ -57,7 +108,8 @@ final class ModelsViewModel {
                 warning: recommendation.warnings[descriptor.id],
                 note: descriptor.note,
                 state: state,
-                isSelected: descriptor.id == selectedModel
+                isSelected: descriptor.id == selectedModel,
+                measuredNote: recommendation.recommended == descriptor.id ? measuredNote : nil
             )
         }
     }
@@ -70,11 +122,12 @@ final class ModelsViewModel {
                       noticeText: manager.upstreamChangeText(for: .vad))
     }
 
-    var canDelete: Bool { !isPipelineRunning() }
-    var canDownload: Bool { !isPipelineRunning() }
+    var canDelete: Bool { !isPipelineRunning() && !isBenchmarkRunning() }
+    var canDownload: Bool { !isPipelineRunning() && !isBenchmarkRunning() }
 
     var footerText: String? {
         if manager.hasActiveDownload || !manager.pausedKinds.isEmpty { return Self.keepOpenText }
+        if isBenchmarkRunning() { return Self.finishBenchmarkText }
         if !canDelete { return Self.stopToDeleteText }
         return nil
     }
@@ -87,7 +140,7 @@ final class ModelsViewModel {
     func download(_ id: WhisperModelID) {
         lowStorageWarning = nil
         guard canDownload else {
-            downloadRefusedAlert = Self.stopToDownloadText
+            downloadRefusedAlert = isBenchmarkRunning() ? Self.finishBenchmarkText : Self.stopToDownloadText
             return
         }
         switch manager.freeSpaceVerdict(for: .whisper(id)) {
@@ -115,6 +168,7 @@ final class ModelsViewModel {
 
     /// Behind the screen's `confirmationDialog`; the manager refuses while the pipeline runs (§6.9).
     func delete(_ id: WhisperModelID) throws {
+        guard !isBenchmarkRunning() else { throw BenchmarkError.busy }
         try manager.delete(.whisper(id), activeModel: selectedModel)
     }
 

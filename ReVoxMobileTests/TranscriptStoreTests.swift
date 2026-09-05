@@ -97,15 +97,31 @@ final class TranscriptStoreTests: XCTestCase {
         let store = TranscriptStore(modelContainer: container, metadata: metadata())
         await store.add(TranscriptEntry(timestamp: startedAt.addingTimeInterval(1), language: "es", original: "", english: "hola"))
         await store.addDropMarker(at: startedAt.addingTimeInterval(2))
+        await store.add(TranscriptEntry(timestamp: startedAt.addingTimeInterval(2.5), language: "es", original: "", english: "quizás", isGuess: true))
         await store.add(TranscriptEntry(timestamp: startedAt.addingTimeInterval(3), language: "es", original: "", english: "adiós"))
         await store.close()
 
         let expected = await store.exportText()
         let session = try fetchSessions()[0]
         let rebuilt = TranscriptFormatter().export(startedAt: session.startedAt, items: TranscriptStore.items(from: entries(of: session)))
-        XCTAssertEqual(rebuilt, expected)
+        XCTAssertEqual(rebuilt, expected, "the recorder's export and the Entry-based export agree, guess included")
         XCTAssertTrue(expected.hasPrefix(TranscriptFormatter.headerPrefix))
         XCTAssertTrue(expected.contains("  → hola\n"))
+        XCTAssertTrue(expected.contains("  → \(TranscriptFormatter.guessPrefix)quizás\n"), "M11: the guess line carries the prefix")
         XCTAssertEqual(expected.components(separatedBy: TranscriptFormatter.dropMarkerText).count - 1, 1)
+    }
+
+    /// M11: a guess persists with its flag and reads back through a second context; a confident row stays false.
+    func testAGuessIsPersistedWithItsFlag() async throws {
+        let store = TranscriptStore(modelContainer: container, metadata: metadata())
+        await store.add(TranscriptEntry(timestamp: startedAt.addingTimeInterval(1), language: "es", original: "", english: "maybe", isGuess: true))
+        await store.add(TranscriptEntry(timestamp: startedAt.addingTimeInterval(2), language: "es", original: "", english: "sure"))
+        await store.flush()
+        let rows = entries(of: try fetchSessions()[0])
+        XCTAssertEqual(rows.map(\.english), ["maybe", "sure"])
+        XCTAssertEqual(rows.map(\.isGuess), [true, false])
+        XCTAssertEqual(rows.map(\.isDropMarker), [false, false])
+        let items = TranscriptStore.items(from: rows)
+        XCTAssertEqual(items.first, .entry(TranscriptEntry(timestamp: startedAt.addingTimeInterval(1), language: "es", original: "", english: "maybe", isGuess: true)))
     }
 }

@@ -5,6 +5,8 @@ import ReVoxCore
 /// counts are text, and the whole row reads as one VoiceOver sentence (§8.8).
 struct SessionRowView: View {
     static let dateStyle = Date.FormatStyle(date: .abbreviated, time: .shortened)
+    /// M11: said before a preview that is a guess — the italic and the symbol are the visible cue, this is the spoken one.
+    static let guessPreviewPrefix = "Unsure: "
 
     let summary: SessionSummary
 
@@ -20,17 +22,32 @@ struct SessionRowView: View {
             (Text(Image(systemName: summary.sourceSymbolName)) + Text(" \(summary.metaLineText)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            previewLine
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityText(for: summary))
+    }
+
+    /// M11: a session that holds only guesses previews one — secondary italic with the Unsure symbol inline, so it
+    /// is never mistaken for a confident line. A confident preview is exactly what it was.
+    @ViewBuilder
+    private var previewLine: some View {
+        if summary.previewIsGuess {
+            (Text(Image(systemName: SessionSummary.guessSymbolName)) + Text(" \(summary.previewText)"))
+                .font(.body.italic())
+                .lineLimit(2)
+                .foregroundStyle(.secondary)
+        } else {
             Text(summary.previewText)
                 .font(.body)
                 .lineLimit(2)
                 .foregroundStyle(summary.firstEnglishLine == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
     }
 
-    private var accessibilityText: String {
+    /// The row's one VoiceOver sentence; pure, so the tests read it without a host.
+    static func accessibilityText(for summary: SessionSummary) -> String {
         var parts = [
             "Session \(summary.startedAt.formatted(Self.dateStyle))",
             summary.sourceTitle,
@@ -38,7 +55,7 @@ struct SessionRowView: View {
             summary.entryCountText,
         ]
         if summary.joinedInProgress { parts.append("joined in progress") }
-        parts.append(summary.previewText)
+        parts.append(summary.previewIsGuess ? guessPreviewPrefix + summary.previewText : summary.previewText)
         return parts.joined(separator: ". ") + "."
     }
 }

@@ -17,10 +17,15 @@ struct LiveTranscriptRow: Identifiable, Equatable, Sendable {
     let id: UUID
     let time: Date
     let kind: Kind
+    /// M11: a phrase the gates were unsure about (an unsure language, a low average log-probability). Shown greyed,
+    /// never spoken, kept in History only when the setting says so. A property rather than an associated value so
+    /// every `case .entry(let language, let original, let english)` match in the app and the tests reads unchanged.
+    let isGuess: Bool
 
-    init(id: UUID = UUID(), time: Date, kind: Kind) {
+    init(id: UUID = UUID(), time: Date, kind: Kind, isGuess: Bool = false) {
         self.id = id
         self.time = time
         self.kind = kind
+        self.isGuess = isGuess
     }
 }

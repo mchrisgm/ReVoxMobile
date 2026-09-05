@@ -4,6 +4,8 @@ import ReVoxCore
 /// The History row projection of a `Session` (§8.6): date/time, source, duration, entry count, first English line.
 struct SessionSummary: Equatable, Sendable {
     static let noEntriesText = "Nothing translated"
+    /// M11: the symbol beside an unsure phrase — the History row's preview and the Settings example.
+    static let guessSymbolName = "questionmark.circle"
 
     let startedAt: Date
     let endedAt: Date?
@@ -14,7 +16,11 @@ struct SessionSummary: Equatable, Sendable {
     let joinedInProgress: Bool
     let entryCount: Int
     let dropCount: Int
+    /// M11: how many entries the gates were unsure about. They count as entries — the user chose to keep them.
+    let guessCount: Int
     let firstEnglishLine: String?
+    /// M11: true when the preview line is a guess, which happens only when the session holds nothing confident.
+    let previewIsGuess: Bool
     let duration: TimeInterval?
 
     init(session: Session) {
@@ -29,7 +35,10 @@ struct SessionSummary: Equatable, Sendable {
         let entries = rows.filter { !$0.isDropMarker }
         entryCount = entries.count
         dropCount = rows.count - entries.count
-        firstEnglishLine = entries.first?.english
+        guessCount = entries.filter(\.isGuess).count
+        let preview = entries.first { !$0.isGuess } ?? entries.first
+        firstEnglishLine = preview?.english
+        previewIsGuess = preview?.isGuess ?? false
         if let end = session.endedAt ?? rows.last?.timestamp {
             duration = max(0, end.timeIntervalSince(session.startedAt))
         } else {
@@ -59,6 +68,15 @@ struct SessionSummary: Equatable, Sendable {
         case 0: return nil
         case 1: return "1 phrase skipped"
         default: return "\(dropCount) phrases skipped"
+        }
+    }
+
+    /// M11: the unsure phrases as a count for the Session detail header; nil when there were none, so the row is absent.
+    var guessCountText: String? {
+        switch guessCount {
+        case 0: return nil
+        case 1: return "1 unsure phrase"
+        default: return "\(guessCount) unsure phrases"
         }
     }
 

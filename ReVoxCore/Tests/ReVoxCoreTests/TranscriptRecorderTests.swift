@@ -38,6 +38,20 @@ final class TranscriptRecorderTests: XCTestCase {
         XCTAssertEqual(items.count, 3)                        // the second consecutive marker was not recorded
     }
 
+    /// M11: a guess is an entry like any other to the recorder — stored with its flag, and it resets the drop flag.
+    func testAGuessEntryIsRecordedAndResetsTheDropFlag() async {
+        let recorder = makeRecorder()
+        await recorder.addDropMarker(at: start.addingTimeInterval(1))
+        await recorder.add(TranscriptEntry(timestamp: start.addingTimeInterval(2), language: "es", original: "", english: "maybe", isGuess: true))
+        await recorder.addDropMarker(at: start.addingTimeInterval(3))
+        let items = await recorder.items
+        XCTAssertEqual(items.count, 3)
+        XCTAssertEqual(items[1], .entry(TranscriptEntry(timestamp: start.addingTimeInterval(2), language: "es", original: "", english: "maybe", isGuess: true)))
+        let text = await recorder.exportText()
+        XCTAssertTrue(text.contains("  → (unsure) maybe\n"))
+        XCTAssertEqual(text.components(separatedBy: "skipped: falling behind").count - 1, 2)
+    }
+
     func testCloseIdempotent() async {
         let recorder = makeRecorder()
         await recorder.close()

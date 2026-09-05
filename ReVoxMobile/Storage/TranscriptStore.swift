@@ -44,7 +44,8 @@ actor TranscriptStore: TranscriptSink {
         guard !closed else { return }
         await recorder.add(entry)
         let session = ensureSession()
-        let row = Entry(timestamp: entry.timestamp, language: entry.language, original: entry.original, english: entry.english, isDropMarker: false)
+        let row = Entry(timestamp: entry.timestamp, language: entry.language, original: entry.original, english: entry.english,
+                        isDropMarker: false, isGuess: entry.isGuess)
         row.session = session
         modelContext.insert(row)
         scheduleSave()
@@ -135,7 +136,8 @@ actor TranscriptStore: TranscriptSink {
             if row.isDropMarker {
                 return .dropMarker(row.timestamp)
             }
-            return .entry(TranscriptEntry(timestamp: row.timestamp, language: row.language, original: row.original, english: row.english))
+            return .entry(TranscriptEntry(timestamp: row.timestamp, language: row.language, original: row.original, english: row.english,
+                                          isGuess: row.isGuess))
         }
     }
 }

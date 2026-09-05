@@ -47,21 +47,24 @@ struct SettingsView: View {
                                text: model.language.map { SettingExamples.sourceLanguagePinned(LanguageCatalog.displayName($0, whenNil: "")) }
                                      ?? SettingExamples.sourceLanguageAuto)
             } footer: {
-                Text("Auto-detect runs Whisper's language detection on every phrase and drops phrases it is unsure about.")
+                Text(SettingsViewModel.sourceLanguageHelpText)
             }
 
+            // M11 §3: directly under Source language, whose footer has just said what an unsure phrase is.
+            GuessesSettingsSection(model: model)
+
             Section {
-                Picker("Don't translate", selection: $model.ignoredLanguage) {
+                Picker("You speak", selection: $model.ignoredLanguage) {
                     ForEach(model.ignoredLanguageOptions) { option in
                         Text(option.displayName).tag(option.code)
                     }
                 }
                 .disabled(!model.canIgnoreLanguage)
-                SettingExample(symbol: "hand.raised",
+                SettingExample(symbol: "person.wave.2",
                                text: SettingExamples.skipLanguageText(ignored: model.ignoredLanguage.map { LanguageCatalog.displayName($0, whenNil: "") },
                                                                       pinned: model.language.map { LanguageCatalog.displayName($0, whenNil: "") }))
             } header: {
-                Text("Skip a language")
+                Text("Your language")
             } footer: {
                 Text(model.language == nil
                      ? SettingsViewModel.ignoredLanguageHelpText

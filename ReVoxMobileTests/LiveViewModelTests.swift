@@ -119,6 +119,25 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(model.rows[0].kind, .entry(language: "de", english: "hi"))
         XCTAssertEqual(model.detectedLanguage, "de")
         XCTAssertTrue(model.lastEventHandledOnMainThread)
+        XCTAssertFalse(model.rows[0].isGuess)
+    }
+
+    /// M11: a guess appends a greyed row, leaves `detectedLanguage` alone (the language itself is the doubt) and,
+    /// like any entry, clears the paused-by-iOS status because audio is demonstrably flowing.
+    func testAGuessEntryAppendsAGreyedRowAndLeavesTheDetectedLanguageAlone() async {
+        let model = makeModel()
+        await model.start()
+        await waitUntil { model.state == .running }
+        first.emit(.entry(TranscriptEntry(timestamp: Date(), language: "de", original: "", english: "hi")))
+        await waitUntil("confident row") { model.rows.count == 1 }
+        model.handle(SessionEvent.pausedByIOS)
+        XCTAssertEqual(model.sessionStatus, LiveViewModel.pausedByIOSText)
+        first.emit(.entry(TranscriptEntry(timestamp: Date(), language: "fr", original: "", english: "maybe", isGuess: true)))
+        await waitUntil("guess row") { model.rows.count == 2 }
+        XCTAssertEqual(model.rows[1].kind, .entry(language: "fr", english: "maybe"))
+        XCTAssertTrue(model.rows[1].isGuess)
+        XCTAssertEqual(model.detectedLanguage, "de", "an unsure language does not become the detected one")
+        XCTAssertNil(model.sessionStatus, "audio is flowing, so the paused-by-iOS status clears")
     }
 
     func testErrorEventSetsErrorState() async {
@@ -246,6 +265,9 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(configuration.maxPending, 3)
         settings.ducking = false
         XCTAssertFalse(LiveViewModel.configuration(settings: settings, captureMode: .microphone).duckingEnabled)
+        XCTAssertTrue(configuration.keepsGuesses, "M11 default: History keeps unsure phrases")
+        settings.keepGuesses = false
+        XCTAssertFalse(LiveViewModel.configuration(settings: settings, captureMode: .microphone).keepsGuesses)
     }
 
     func testDuckingEventsDriveThePillAndTheOffText() {

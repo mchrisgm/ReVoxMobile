@@ -6,40 +6,61 @@ import SwiftUI
 /// locked control dims through the environment (`.disabled` on the control), so no caller has to remember to.
 ///
 /// State is never colour alone (§8.8): an "on" pill also says so in its title and swaps to a filled symbol.
+///
+/// At the accessibility type sizes the symbol, title and value stack and the text wraps (Dynamic Type wraps rather
+/// than truncates, M11 §global): a "They speak Spanish" pill at AX5 is wider than any iPhone on one line.
 struct LiveControlPill: View {
     static let minimumHeight: CGFloat = 44
     static let horizontalPadding: CGFloat = 10
     static let lockedOpacity = 0.45
 
-    let systemImage: String
+    /// nil for the You speak / They speak pair, whose words are the symbol.
+    let systemImage: String?
     let title: String
     var value: String? = nil
     var isOn = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var wraps: Bool { dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-            if let value {
-                Text(value)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, Self.horizontalPadding)
+        content
+            .lineLimit(wraps ? nil : 1)
+            .fixedSize(horizontal: !wraps, vertical: wraps)
+            .padding(.horizontal, Self.horizontalPadding)
+            .padding(.vertical, wraps ? 8 : 0)
         .frame(minHeight: Self.minimumHeight)
         .background(isOn ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground), in: Capsule())
         .overlay(Capsule().strokeBorder(isOn ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1))
         .contentShape(Capsule())
         .opacity(isEnabled ? 1 : Self.lockedOpacity)
+    }
+
+    @ViewBuilder private var content: some View {
+        if wraps {
+            VStack(alignment: .leading, spacing: 2) { pieces }
+                .multilineTextAlignment(.leading)
+        } else {
+            HStack(spacing: 5) { pieces }
+        }
+    }
+
+    @ViewBuilder private var pieces: some View {
+        if let systemImage {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
+        }
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.primary)
+        if let value {
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

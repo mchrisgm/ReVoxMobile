@@ -31,8 +31,15 @@ final class AppEnvironment {
     let voices: VoicesViewModel
     let live: LiveViewModel
     let models: ModelsViewModel
+    let benchmarks: BenchmarkStore
+    let benchmark: BenchmarkViewModel
     let settingsModel: SettingsViewModel
     let onboarding: OnboardingViewModel
+    /// M11 §2: says one tapped word through its own synthesizer (created on first use); told when the microphone
+    /// is running so the Say button is disabled then.
+    let wordSpeaker: WordSpeaker
+    /// M11 §2: the popover's services, applied to the environment outermost by `RootView`.
+    let wordLookup: WordLookup
     private var interruptionTask: Task<Void, Never>?
 
     /// Breaks the manager ↔ live-view-model cycle: the manager asks whether the pipeline is busy through this box.
@@ -45,12 +52,41 @@ final class AppEnvironment {
             guard let live else { return false }
             return live.state == .running || live.state == .preparing
         }
+        /// M11 §2: the word speaker's rule, read at every tap of Say.
+        var isMicrophoneRunning: Bool {
+            guard let live else { return false }
+            return AppEnvironment.isMicrophoneRunning(state: live.state, captureMode: live.captureMode)
+        }
+    }
+
+    /// M11 §2, pure: a word said through the speaker while the microphone session is open (preparing or running)
+    /// would be heard and translated back; an Other-apps run reads the ring, not the speaker, so it is allowed.
+    static func isMicrophoneRunning(state: LiveState, captureMode: CaptureMode) -> Bool {
+        (state == .running || state == .preparing) && captureMode == .microphone
+    }
+
+    /// M11: breaks the benchmark ↔ Live cycle the way `LiveActivity` does: the gated pipeline supplier asks whether a
+    /// benchmark is running through this box, hopping to the main actor to read it.
+    @MainActor
+    private final class BenchmarkActivity {
+        weak var benchmark: BenchmarkViewModel?
+        var isRunning: Bool { benchmark?.isRunning ?? false }
+    }
+
+    /// Live's Start during a benchmark would build a second WhisperKit beside the one being timed (§9): the supplier
+    /// refuses with `BenchmarkError.liveBlocked`, which `LiveViewModel` shows as its error banner.
+    static func gated(_ supplier: @escaping PipelineSupplier, isBenchmarkRunning: @escaping @MainActor () -> Bool) -> PipelineSupplier {
+        { settings, progress in
+            let busy = await isBenchmarkRunning()
+            guard !busy else { throw BenchmarkError.liveBlocked }
+            return try await supplier(settings, progress)
+        }
     }
 
     init(configuration: AppConfiguration, deviceInfo: DeviceInfo, settingsURL: URL, modelRoot: URL, transcriptContainer: ModelContainer,
          sessionSeam: any AudioSessionSeam, installSteps: InstallSteps, installHost: any InstallHost, verifiedLoads: VerifiedLoadRecord,
          permission: MicrophonePermission, exportDirectory: URL = TranscriptExporter.defaultDirectory(),
-         onboardingDefaults: UserDefaults = .standard) throws {
+         onboardingDefaults: UserDefaults = .standard, benchmarkDirectory: URL? = nil) throws {
         self.configuration = configuration
         self.deviceInfo = deviceInfo
         self.settings = SettingsStore(fileURL: settingsURL)
@@ -86,19 +122,43 @@ final class AppEnvironment {
             selfCapture: { capture.lastSelfCaptureMeasurement }
         )
         let manager = modelManager
+        let benchmarkActivity = BenchmarkActivity()
         self.live = LiveViewModel(settings: settings, mute: mute, permission: permission,
                                   modelReady: { id in await manager.isWhisperReady(id) },
-                                  supplier: assembler.supplier(),
+                                  supplier: Self.gated(assembler.supplier(), isBenchmarkRunning: { benchmarkActivity.isRunning }),
                                   speakerStatus: speakerStatus,
                                   broadcast: broadcast,
                                   installedModels: { manager.installedWhisper })
         activity.live = live
         live.volume = voiceVolume   // the Live screen's volume slider writes the players' box (M9)
-        self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
+        self.benchmarks = BenchmarkStore(directory: try benchmarkDirectory ?? BenchmarkStore.defaultDirectory(),
+                                         host: BenchmarkHost.current(deviceInfo: deviceInfo))
+        // A local, never `self`: the closure is created before initialisation completes. The synthesizer is made on
+        // the first `speak`, so a test environment never pays for one.
+        let speaker = WordSpeaker(isMicrophoneRunning: { activity.isMicrophoneRunning })
+        self.wordSpeaker = speaker
+        self.wordLookup = WordLookup.production(speaker: speaker)
+        self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy },
+                                      benchmarks: benchmarks, isBenchmarkRunning: { benchmarkActivity.isRunning })
         let liveForRelease = live
         modelManager.onModelFilesChanged = { [weak liveForRelease] in
             Task { @MainActor in await liveForRelease?.releaseCachedPipeline() }
         }
+        // M11 §5: the benchmark releases the cached Live model and pocket-tts first, so exactly one model is resident.
+        let assemblyForBenchmark = speakerAssembly
+        self.benchmark = BenchmarkViewModel(
+            store: benchmarks,
+            manager: modelManager,
+            isPipelineRunning: { activity.isBusy },
+            releasePipeline: { [weak liveForRelease] in
+                await liveForRelease?.releaseCachedPipeline()
+                await assemblyForBenchmark.speaker.unloadPocketTTS()
+            },
+            runner: BenchmarkRunner(seams: .production(layout: layout)),
+            host: installHost
+        )
+        benchmarkActivity.benchmark = benchmark
+        models.benchmark = benchmark
 
         let liveForDegradation = live
         let assemblyForDegradation = speakerAssembly
@@ -136,7 +196,8 @@ final class AppEnvironment {
             speakerStatus: speakerStatus,
             samplePlayer: SamplePlayer.production(sessionController: sampleController, assembly: assembly, captureMode: { settingsStore.settings.capture }),
             selection: { await assembly.selection() },
-            isPipelineRunning: { activity.isBusy }
+            isPipelineRunning: { activity.isBusy },
+            isBenchmarkRunning: { benchmarkActivity.isRunning }
         )
         live.observe(sessionEvents: sessionController.events)
         live.observe(keepAlive: keepAlive.events)
@@ -208,7 +269,8 @@ final class AppEnvironment {
             verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxAppEnvironmentTesting-\(UUID().uuidString)")!),
             permission: .fixed(.granted),
             exportDirectory: root.appendingPathComponent("Exports", isDirectory: true),
-            onboardingDefaults: onboardingDefaults
+            onboardingDefaults: onboardingDefaults,
+            benchmarkDirectory: root.appendingPathComponent(BenchmarkStore.folderName, isDirectory: true)
         )
     }
 

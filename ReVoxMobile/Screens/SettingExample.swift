@@ -56,24 +56,24 @@ enum SettingExamples {
         }
     }
 
-    static let sourceLanguageAuto = "Auto-detect hears “\(spanishOriginal)” as Spanish and translates it. A phrase it cannot place is dropped rather than guessed."
+    static let sourceLanguageAuto = "Auto-detect hears “\(spanishOriginal)” as Spanish and translates it. A phrase it cannot place is shown greyed and marked Unsure, and is not spoken."
     static func sourceLanguagePinned(_ name: String) -> String {
         "Every phrase is decoded as \(name), even one spoken in another language. Pin only when you know what you will hear."
     }
 
-    static let skipLanguageNone = "Everything is translated, including you. Skip your own language so a two-person conversation is not echoed back at you."
+    static let skipLanguageNone = "Everything is translated into English, including you. Choose the language you speak so a conversation is not echoed back at you."
     static func skipLanguage(_ name: String) -> String {
-        "“\(spanishEnglish)” spoken in \(name) is left alone — not translated, not transcribed. Turn on Two-way on the Live screen to have it spoken back in another language instead."
+        "“\(spanishEnglish)” said in \(name) is not translated and not transcribed. Turn on Two-way on the Live tab to have it spoken to the other person in their language instead."
     }
-    /// M10: a pinned source language is never detected, so a skip only ever matches when it names the pinned
+    /// M10/M11: a pinned source language is never detected, so You speak only ever matches when it names the pinned
     /// language itself — and then it matches every phrase.
     static func skipLanguageWhilePinned(ignored: String, pinned: String) -> String {
         if ignored == pinned {
-            return "Source language is pinned to \(pinned) and \(ignored) is skipped, so every phrase is left alone and nothing is translated. Change one of the two."
+            return "Source language is pinned to \(pinned) and \(ignored) is the language you speak, so every phrase counts as yours and nothing is translated. Change one of the two."
         }
-        return "Source language is pinned to \(pinned), so nothing is ever detected as \(ignored) and nothing is skipped. Set Source language to Auto-detect to skip \(ignored)."
+        return "Source language is pinned to \(pinned), so nothing is ever heard as \(ignored) and everything is translated, including you. Set Source language to Auto-detect for You speak to work."
     }
-    /// The one the screen shows: `ignored` and `pinned` are display names, nil for None and Auto-detect.
+    /// The one the screen shows: `ignored` and `pinned` are display names, nil for Not set and Auto-detect.
     static func skipLanguageText(ignored: String?, pinned: String?) -> String {
         guard let ignored else { return skipLanguageNone }
         guard let pinned else { return skipLanguage(ignored) }
@@ -94,7 +94,8 @@ enum SettingExamples {
     }
 
     static func learning(_ on: Bool) -> String {
-        on ? "The words as spoken appear above the translation." : "Only the translation is shown."
+        on ? "The words as spoken appear above the translation. Tap a word to hear it and see what it means."
+           : "Only the translation is shown."
     }
     static func romanize(_ on: Bool) -> String {
         on ? "Under a script you cannot read, how it sounds in Latin letters." : "The original is shown in its own script only."

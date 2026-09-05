@@ -13,7 +13,9 @@ final class SettingsViewModel {
     static let duckingHelpText = "While ReVox speaks, iOS lowers other audio by an amount iOS decides. The Windows ducked-level slider has no iOS equivalent; use Voice volume to balance ReVox's own voice."
     static let duckingAppliesOnStartText = "A change to the ducking toggle takes effect the next time you tap Start."
 
-    private let store: SettingsStore
+    /// Internal, not private: the milestone 11 lanes add their own settings in extension files (`SettingsViewModel+Guesses`,
+    /// `SettingsViewModel+Benchmark`) so several lanes can land without editing this file.
+    let store: SettingsStore
     private let mute: PlaybackMute
     private let volume: VoiceVolume
     let languageOptions: [LanguageOption]
@@ -89,7 +91,7 @@ final class SettingsViewModel {
     }
 
     static let keepModelWhenHotHelpText = "When the iPhone gets hot, ReVox normally switches the next session to a smaller model and says so. With this on, your chosen model is kept. Translation still pauses if the iPhone reaches its critical temperature; iOS would close the app otherwise."
-    static let learningHelpText = "Shows the words as they were spoken above the translation. Each phrase is decoded a second time, so it takes a little longer to appear."
+    static let learningHelpText = "Shows the words as they were spoken above the translation. Each phrase is decoded a second time, so it takes a little longer to appear. Tap any word for its pronunciation and meaning."
     static let romanizeHelpText = "Adds how the original sounds in Latin letters, for scripts you cannot read yet. Only shown when it differs from the original. Japanese kanji come out with their Chinese readings; kana are right."
     static let timeDisplayHelpText = "How long ago a phrase was said is easier to follow in a running conversation than the time it was said. History always shows the time."
 
@@ -106,13 +108,14 @@ final class SettingsViewModel {
         LanguageCatalog.languageOptions(codes: codes, locale: locale)
     }
 
-    /// §8.2 (M8): the language ReVox leaves alone. "None" is the pre-M8 behaviour — everything is translated.
+    /// §8.2 (M8), M11 "You speak": the language you speak, which ReVox neither translates nor transcribes. Not set
+    /// (nil) is the pre-M8 behaviour — everything is translated, including you.
     var ignoredLanguage: String? {
         get { store.settings.ignored }
         set { store.update { $0.ignoredLanguage = newValue } }
     }
 
-    /// The concrete languages the ignore picker offers, with "None" as the first row.
+    /// The concrete languages the You-speak picker offers, with "Not set" as the first row.
     var ignoredLanguageOptions: [LanguageOption] {
         [LanguageOption(code: nil, displayName: Self.noIgnoredLanguageTitle)] + LanguageCatalog.concrete
     }
@@ -123,7 +126,9 @@ final class SettingsViewModel {
     /// under it says what that does.
     var canIgnoreLanguage: Bool { language == nil }
 
-    static let noIgnoredLanguageTitle = "None"
-    static let ignoredLanguageHelpText = "ReVox neither translates nor transcribes this language. Turn on Two-way on the Live screen to have it spoken back in another language instead."
-    static let ignoredLanguageNeedsAutoDetectText = "Ignoring a language needs Source language set to Auto-detect, because a pinned language is never detected."
+    static let noIgnoredLanguageTitle = LiveView.noLanguageTitle
+    static let ignoredLanguageHelpText = "ReVox translates everything it hears into English except the language you speak, which it neither translates nor transcribes. With Two-way on (Live tab), what you say is spoken to the other person in their language instead."
+    static let ignoredLanguageNeedsAutoDetectText = "This needs Source language set to Auto-detect, because a pinned language is never detected."
+    /// M11 (§3): an unsure phrase is kept greyed rather than dropped; the footer under Source language says so.
+    static let sourceLanguageHelpText = "Auto-detect runs Whisper's language detection on every phrase. A phrase it is unsure about is shown greyed and marked Unsure, and is never spoken."
 }

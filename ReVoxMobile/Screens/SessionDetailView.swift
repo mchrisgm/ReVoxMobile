@@ -32,6 +32,9 @@ struct SessionDetailView: View {
                 if let skipped = summary.dropCountText {
                     headerRow("Skipped", value: skipped)   // M10: explains the "… skipped" rows below
                 }
+                if let unsure = summary.guessCountText {
+                    headerRow("Unsure", value: unsure)     // M11: explains the greyed rows below
+                }
                 if session.joinedInProgress {
                     Text("Joined a broadcast already in progress").font(.caption).foregroundStyle(.secondary)
                 }

@@ -10,6 +10,7 @@ final class ModelsViewModelTests: XCTestCase {
     private var host: FakeInstallHost!
     private var store: SettingsStore!
     private var pipelineRunning = false
+    private var benchmarkRunning = false
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxModelsVM-\(UUID().uuidString)", isDirectory: true)
@@ -19,6 +20,7 @@ final class ModelsViewModelTests: XCTestCase {
         host = FakeInstallHost()
         store = SettingsStore(fileURL: root.appendingPathComponent(SettingsCodec.fileName))
         pipelineRunning = false
+        benchmarkRunning = false
     }
 
     override func tearDownWithError() throws {
@@ -26,13 +28,25 @@ final class ModelsViewModelTests: XCTestCase {
     }
 
     private func makeModel(memoryGiB: UInt64 = 6, availableBytes: Int64? = 50_000_000_000,
-                           fileRecord: InstalledFileRecord = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxFileRecord-\(UUID().uuidString)")!)) -> ModelsViewModel {
+                           fileRecord: InstalledFileRecord = InstalledFileRecord(defaults: UserDefaults(suiteName: "ReVoxFileRecord-\(UUID().uuidString)")!),
+                           benchmarks: BenchmarkStore? = nil) -> ModelsViewModel {
         let installer = ModelInstaller(layout: layout, steps: steps.steps(layout: layout),
                                        verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxModelsVM-\(UUID().uuidString)")!))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                    availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: memoryGiB * 1_073_741_824),
-                               isPipelineRunning: { [unowned self] in self.pipelineRunning })
+                               isPipelineRunning: { [unowned self] in self.pipelineRunning },
+                               benchmarks: benchmarks, isBenchmarkRunning: { [unowned self] in self.benchmarkRunning })
+    }
+
+    /// M11: a store over a temporary folder of its own, seeded with one run for this test's "iPhone". Its own
+    /// folder: a store reads every run in its folder at init, so two stores in one test sharing a folder would
+    /// see each other's runs (CI run 123: the "older library" store found the "other phone" store's current run).
+    private func benchmarkStore(_ run: BenchmarkRun?, device: String = "iPhone17,1") throws -> BenchmarkStore {
+        let store = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks-\(UUID().uuidString)", isDirectory: true),
+                                   host: BenchmarkHost(device: device, iOSVersion: "26.0.1", memoryTierGB: 8))
+        if let run { try store.save(run) }
+        return store
     }
 
     func testRowsFollowCatalogOrderWithRecommendationAndSuitability() {
@@ -292,5 +306,91 @@ final class ModelsViewModelTests: XCTestCase {
         model.download(.tiny)
         XCTAssertNil(model.downloadRefusedAlert)
         await waitUntil { model.rows[0].state.phase == .installed }
+    }
+
+    // MARK: M11: the measured recommendation
+
+    func testMeasuredRecommendationMovesTheCapsuleAndNotesTheDate() throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let run = BenchmarkRun.sample()   // tiny WER 0.25, small WER 0.125, both keep up; medium skipped
+        let model = makeModel(memoryGiB: 8, benchmarks: try benchmarkStore(run))
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.small])
+        XCTAssertEqual(model.measuredRecommendation, .small)
+        XCTAssertEqual(model.rows[2].measuredNote, ModelsViewModel.measuredNoteText(date: run.date))
+        XCTAssertNil(model.rows[0].measuredNote, "only the recommended row carries the note")
+        XCTAssertEqual(model.benchmarkFooterText, ModelsViewModel.measuredFooterText(date: run.date))
+        XCTAssertEqual(model.rows[3].warning, DeviceRecommendation.heatWarning, "warnings stay memory-derived")
+        XCTAssertEqual(model.rows.filter { !$0.isSuitable }.count, 0)
+    }
+
+    func testMeasuredRecommendationNeedsTheModelToBeInstalled() throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)   // small is measured but not on disk
+        let run = BenchmarkRun.sample()
+        let model = makeModel(memoryGiB: 8, benchmarks: try benchmarkStore(run))
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.tiny])
+        XCTAssertEqual(model.measuredResults.map(\.model), [.tiny])
+        XCTAssertEqual(model.rows[0].measuredNote, ModelsViewModel.measuredNoteText(date: run.date))
+        XCTAssertNil(model.rows[2].measuredNote)
+    }
+
+    func testStaleLibraryVersionAndOtherHardwareAreIgnored() throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let otherPhone = makeModel(memoryGiB: 8, benchmarks: try benchmarkStore(.sample(), device: "iPhone14,5"))
+        XCTAssertEqual(otherPhone.rows.filter(\.isRecommended).map(\.id), [.small], "the memory tier's small, not a measured pick")
+        XCTAssertNil(otherPhone.measuredRecommendation)
+        XCTAssertNil(otherPhone.rows[2].measuredNote)
+        XCTAssertEqual(otherPhone.benchmarkFooterText, "Recommended by memory size. Run the benchmark to measure this iPhone.")
+
+        let olderLibrary = makeModel(memoryGiB: 8, benchmarks: try benchmarkStore(.sample(whisperKitVersion: "0.9.0")))
+        XCTAssertNil(olderLibrary.measuredRecommendation)
+        XCTAssertEqual(olderLibrary.benchmarkFooterText, ModelsViewModel.notMeasuredFooterText)
+    }
+
+    func testNothingQualifyingFallsBackToMemoryWithoutANote() throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        let slow = BenchmarkRun(date: Date(timeIntervalSince1970: 1_700_000_000), device: "iPhone17,1", iOSVersion: "26.0.1", memoryTierGB: 4,
+                                whisperKitVersion: LibraryVersions.whisperKit, sentence: BenchmarkSentences.spanish,
+                                results: [ModelBenchmarkResult(model: .tiny, loadSeconds: 1, firstSeconds: 3, steadySeconds: 3, audioSeconds: 2,
+                                                               wordErrorRate: 0, residentBeforeMB: 100, peakDeltaMB: 50, thermalState: "fair")])
+        let model = makeModel(memoryGiB: 4, benchmarks: try benchmarkStore(slow))
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.small], "the 4 GB tier's small")
+        XCTAssertNil(model.measuredRecommendation)
+        XCTAssertNil(model.rows[0].measuredNote)
+        XCTAssertEqual(model.benchmarkFooterText, ModelsViewModel.notMeasuredFooterText)
+    }
+
+    func testNoteTexts() {
+        let utc = TimeZone(identifier: "UTC")!
+        XCTAssertEqual(ModelsViewModel.measuredNoteText(date: Date(timeIntervalSince1970: 1_700_000_000), timeZone: utc), "Measured on this iPhone on 14 November 2023")
+        XCTAssertEqual(ModelsViewModel.measuredFooterText(date: Date(timeIntervalSince1970: 1_700_000_000), timeZone: utc), "Recommendation measured on this iPhone on 14 November 2023")
+        XCTAssertEqual(ModelsViewModel.notMeasuredFooterText, "Recommended by memory size. Run the benchmark to measure this iPhone.")
+        XCTAssertEqual(ModelsViewModel.finishBenchmarkText, "Finish or cancel the benchmark first")
+    }
+
+    /// M11: a download's verifying load, or a delete, beside the model being timed is what §9 forbids.
+    func testDownloadAndDeleteAreRefusedWhileABenchmarkRuns() async throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let model = makeModel()
+        benchmarkRunning = true
+        XCTAssertFalse(model.canDownload)
+        XCTAssertFalse(model.canDelete)
+        XCTAssertEqual(model.footerText, "Finish or cancel the benchmark first")
+        model.download(.tiny)
+        XCTAssertEqual(model.downloadRefusedAlert, "Finish or cancel the benchmark first")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.variantDownloads, [])
+        model.deleteConfirmed(.base)
+        XCTAssertEqual(model.deleteFailureAlert, "Finish or cancel the benchmark first")
+        XCTAssertEqual(model.rows[1].state.phase, .installed, "the files stay")
+
+        benchmarkRunning = false
+        model.downloadRefusedAlert = nil
+        XCTAssertTrue(model.canDownload)
+        XCTAssertNil(model.footerText)
+        model.deleteConfirmed(.base)
+        XCTAssertNil(model.deleteFailureAlert)
+        XCTAssertEqual(model.rows[1].state.phase, .idle)
     }
 }

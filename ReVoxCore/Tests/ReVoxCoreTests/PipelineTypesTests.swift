@@ -49,6 +49,7 @@ final class PipelineConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.captureLatencyFrames, 0)
         XCTAssertTrue(configuration.duckingEnabled)
         XCTAssertEqual(configuration.duckingHoldNanoseconds, 250_000_000)
+        XCTAssertTrue(configuration.keepsGuesses, "M11: guesses reach History unless the setting says otherwise")
         XCTAssertEqual(CaptureMode.allCases, [.microphone, .broadcast])
         XCTAssertEqual(CaptureMode.broadcast.rawValue, "broadcast")
     }
@@ -105,6 +106,10 @@ final class PipelineTypesProtocolTests: XCTestCase {
         other = base
         other.preset = .veryFast
         XCTAssertNotEqual(base, other)
+        other = base
+        other.keepsGuesses = false
+        XCTAssertNotEqual(base, other)
+        XCTAssertEqual(PipelineConfiguration(captureMode: .microphone, preset: .balanced, keepsGuesses: false), other)
     }
 
     func testDefaultDependenciesBuildARealSegmenterWithThePresetAndNoSecondDirection() {

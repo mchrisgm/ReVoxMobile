@@ -22,7 +22,7 @@ labels: bug
 - **ReVox build:** <!-- TestFlight build number, or the commit if you built it yourself -->
 - **Source:** Microphone / Other apps (which app?)
 - **Model and voice:** <!-- e.g. small, system voice / pocket-tts alba -->
-- **Two-way:** off / on (Don't translate: …, Reply in: …)
+- **Two-way:** off / on (You speak: …, They speak: …)
 - **Phone locked or ReVox in the background at the time?**
 
 ## Evidence

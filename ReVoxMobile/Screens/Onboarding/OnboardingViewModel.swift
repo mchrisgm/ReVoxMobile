@@ -10,7 +10,8 @@ import ReVoxCore
 @Observable
 final class OnboardingViewModel {
     /// Bump when the tutorial changes enough that someone who finished the old one should see the new one.
-    static let version = 1
+    /// 2: M11 §6, the pages host the real Live controls.
+    static let version = 2
     /// `UserDefaults.standard`, required-reason CA92.1, already declared in `PrivacyInfo.xcprivacy`.
     static let storageKey = "onboarding_completed_version"
 
@@ -20,10 +21,13 @@ final class OnboardingViewModel {
     /// again after `reset()`, false once finished or skipped.
     var shouldShowNow: Bool
 
-    // The demos. Each page's control is bound to one of these, and `reset()` puts them back.
-    var demoSource: CaptureMode = .microphone
-    var demoTwoWay = false
-    var demoLearning = false
+    // The demos. The strip's model is `controls` (M11 §6); the rest are bound to one page each, and `reset()`
+    // puts them all back.
+    let controls: OnboardingLiveControls
+    /// The strip's per-launch states, which `LiveView` keeps in `@State`: here so `reset()` folds them and a
+    /// test can render both.
+    var demoShowsDetails = false
+    var demoShowsVolumeSlider = false
     var demoRomanize = false
     var demoModel: WhisperModelID = OnboardingDemo.recommendedModel
     var demoKeepModelWhenHot = false
@@ -35,6 +39,7 @@ final class OnboardingViewModel {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.controls = OnboardingLiveControls()
         self.shouldShowNow = Self.shouldShow(defaults: defaults)
     }
 
@@ -71,6 +76,7 @@ final class OnboardingViewModel {
     private func complete() {
         defaults.set(Self.version, forKey: Self.storageKey)
         stopDemo()
+        controls.stop()
         shouldShowNow = false
     }
 
@@ -79,9 +85,9 @@ final class OnboardingViewModel {
         defaults.removeObject(forKey: Self.storageKey)
         currentIndex = 0
         stopDemo()
-        demoSource = .microphone
-        demoTwoWay = false
-        demoLearning = false
+        controls.reset()
+        demoShowsDetails = false
+        demoShowsVolumeSlider = false
         demoRomanize = false
         demoModel = OnboardingDemo.recommendedModel
         demoKeepModelWhenHot = false
@@ -113,6 +119,8 @@ final class OnboardingViewModel {
     }
 
     var isDemoComplete: Bool { demoRows.count >= OnboardingDemo.transcriptScript.count }
+    /// The last row on screen is the script's guess: the caption under the rows explains the greying.
+    var lastDemoRowIsGuess: Bool { demoRows.last?.isGuess ?? false }
 
     /// The next scripted row, stamped `now`; false when the script is spent. Public so a test — or a
     /// screenshot — can play the demo through without waiting.
@@ -120,7 +128,8 @@ final class OnboardingViewModel {
     func appendNextDemoRow(now: Date = Date()) -> Bool {
         guard demoRows.count < OnboardingDemo.transcriptScript.count else { return false }
         let line = OnboardingDemo.transcriptScript[demoRows.count]
-        demoRows.append(LiveTranscriptRow(time: now, kind: .entry(language: line.language, original: line.original, english: line.english)))
+        demoRows.append(LiveTranscriptRow(time: now, kind: .entry(language: line.language, original: line.original, english: line.english),
+                                          isGuess: line.isGuess))
         return true
     }
 }

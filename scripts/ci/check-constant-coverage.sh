@@ -53,6 +53,7 @@ SegmenterTests.swift|XCTAssertEqual(veryFast.maxChunks, 93)
 SpeechGateTests.swift|XCTAssertEqual(SpeechGate.noSpeechMax, 0.85)
 SpeechGateTests.swift|XCTAssertEqual(SpeechGate.averageLogProbMin, -1.2)
 SpeechGateTests.swift|XCTAssertEqual(SpeechGate.languageProbMin, 0.4)
+SpeechGateTests.swift|XCTAssertEqual(SpeechGate.guessLogProbFloor, -2.5)
 SpeechGateTests.swift|"", "you", "thanks for watching", "thank you for watching",
 SpeechGateTests.swift|"subtitles by the amara.org community", "subscribe",
 SpeechGateTests.swift|XCTAssertEqual(SpeechGate.hallucinationPhrases.count, 6)

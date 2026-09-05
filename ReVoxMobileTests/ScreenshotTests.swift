@@ -43,7 +43,7 @@ final class ScreenshotTests: XCTestCase {
     /// blank page from a busy one. The layer tree is rendered instead, the window is attached to the app's own
     /// scene so SwiftUI lays out in a real trait environment, and the result is checked for actual content.
     @discardableResult
-    func capture<V: View>(_ name: String, _ view: V) throws -> URL {
+    func capture<V: View>(_ name: String, settle: TimeInterval = 0.25, _ view: V) throws -> URL {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
         let window = Self.makeWindow()
@@ -60,7 +60,7 @@ final class ScreenshotTests: XCTestCase {
         controller.view.frame = window.bounds
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.25))   // one turn for async text and image work
+        RunLoop.current.run(until: Date().addingTimeInterval(settle))   // one turn for async text and image work
 
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 2                                              // @2x: sharp in the README, half the bytes
@@ -96,7 +96,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// Distinct colours across a coarse grid — enough to tell a rendered screen from an empty one without
-    /// reading every pixel of a two-megapixel image.
+    /// reading every pixel of a two-megapixel image. The image is composited over white first: CI run 117's
+    /// `history-selecting` was a transparent page with a few half-transparent white pixels along its edges, and
+    /// their alpha values alone counted as forty "colours", so the layer render passed and the fallback never ran.
     static func distinctColors(in image: UIImage, samples: Int = 48) -> Int {
         guard let cgImage = image.cgImage else { return 0 }
         let width = cgImage.width, height = cgImage.height
@@ -106,6 +108,8 @@ final class ScreenshotTests: XCTestCase {
         guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
                                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: bitmapInfo) else { return 0 }
+        context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         var seen = Set<UInt32>()
         let stepX = max(1, width / samples), stepY = max(1, height / samples)
@@ -150,6 +154,9 @@ final class ScreenshotTests: XCTestCase {
             running.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(Double(index - 4) * 9), language: language,
                                                   original: original, english: english)))
         }
+        // M11 §3: a phrase the gates were unsure about — greyed, marked Unsure, never spoken — under the others.
+        running.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(-2), language: "es", original: "",
+                                              english: "Could you repeat the last number?", isGuess: true)))
         try capture("live-running", NavigationStack {
             LiveView(model: running, models: hosting.models(), broadcastExtensionBundleID: extensionID)
         })
@@ -157,7 +164,22 @@ final class ScreenshotTests: XCTestCase {
         // Models, Voices, Settings.
         let modelsForVoices = hosting.models()
         let voices = try hosting.voices(installed: true)
-        try capture("models", NavigationStack { ModelsView(model: hosting.models()) })
+
+        // M11 §5: the Benchmark screen with a measured run, and the Models screen showing what that run recommends.
+        // The measured note counts only models that are installed now, so the sample run's two measured models are
+        // put on disk first — small then wins on word error rate and carries the note.
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let benchmarkStore = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks", isDirectory: true),
+                                            host: BenchmarkHost(device: "iPhone17,1", iOSVersion: "26.0.1", memoryTierGB: 8))
+        try benchmarkStore.save(.sample())
+        let benchmark = BenchmarkViewModel(store: benchmarkStore, manager: hosting.manager(),
+                                           isPipelineRunning: { false }, releasePipeline: {},
+                                           runner: BenchmarkRunner(seams: FakeBenchmarkSeams().seams), host: FakeInstallHost())
+        let models = hosting.models(benchmarks: benchmarkStore)
+        models.benchmark = benchmark                                  // the "Benchmark this iPhone" row and its footer
+        try capture("models", NavigationStack { ModelsView(model: models) })
+        try capture("benchmark", NavigationStack { BenchmarkView(model: benchmark) })
         try capture("voices", NavigationStack { VoicesView(model: voices) })
         let settings = SettingsViewModel(store: store, mute: mute, voiceVolume: VoiceVolume(), locale: Locale(identifier: "en_US"))
         settings.learning = true
@@ -179,7 +201,35 @@ final class ScreenshotTests: XCTestCase {
         }
         try context.save()
         let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
-        try capture("history-selecting", NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
+        // M11 (§4): the bar is a safe-area inset over a bar material; a second turn lets the material settle. The
+        // capture sits inside a TabView because the whole point of the bar is where it sits relative to the tab bar.
+        try capture("history-selecting", settle: 1.0, TabView {
+            NavigationStack { HistoryView(exporter: exporter, editing: true) }
+                .tabItem { Label("History", systemImage: "clock") }
+        }.modelContainer(container))
+    }
+
+    /// M11 §2: the popover's content, hosted on its own — a popover with its arrow cannot be captured without a
+    /// presentation. Every service is answered, so the image shows the whole thing: pronunciation with a Say
+    /// button, a meaning, the dictionary button and the sentence.
+    func testCapturesTheLearningWordPopover() async throws {
+        let sentence = SettingExamples.spanishOriginal
+        let words = WordSplitter.words(in: sentence, language: "es")
+        let word = try XCTUnwrap(words.first { $0.text == "estación" })
+        let lookup = WordLookup(speaker: WordSpeaker(isMicrophoneRunning: { false }),
+                                hasVoice: { _ in true },
+                                hasDefinition: { _ in true },
+                                translatorAvailability: { _ in .ready })
+        let model = WordPopoverModel(word: word, language: "es", original: sentence, english: SettingExamples.spanishEnglish, lookup: lookup)
+        await model.load()
+        model.receiveMeaning("station")
+        XCTAssertNil(model.translationRequest, "answered: no translation task is attached on the CI simulator")
+        try capture("learning-word", VStack(spacing: 0) {
+            WordPopoverView(model: model)
+                .frame(maxWidth: 360)
+                .padding(.top, 24)
+            Spacer(minLength: 0)
+        })
     }
 
     static let sampleTranscript: [(String, String)] = [

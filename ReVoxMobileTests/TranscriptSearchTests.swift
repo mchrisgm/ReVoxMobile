@@ -17,6 +17,7 @@ final class TranscriptSearchTests: XCTestCase {
     /// carrying text that matches two of the queries below and sorting *before* the first real match of its session,
     /// so both predicates' `!entry.isDropMarker` clause is load-bearing: delete it and "marker" returns a hit and
     /// `hits(query: "morning")` picks the marker as the older session's earliest matching line.
+    /// M11: the row at offset 0.7 is a guess in the same position, and `!entry.isGuess` is load-bearing the same way.
     private func seed() throws {
         let context = ModelContext(container)
         let older = Session(startedAt: start, captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
@@ -37,7 +38,24 @@ final class TranscriptSearchTests: XCTestCase {
             entry.session = row.session
             context.insert(entry)
         }
+        let guess = Entry(timestamp: older.startedAt.addingTimeInterval(0.7), language: "es", original: "",
+                          english: "good morning guessed", isDropMarker: false, isGuess: true)
+        guess.session = older
+        context.insert(guess)
         try context.save()
+    }
+
+    /// M11: a guess is never a hit, and never the earliest matching line of its session.
+    func testUnsurePhrasesAreNeverSearchHits() throws {
+        let guessed = try TranscriptSearch.hits(query: "guessed", in: ModelContext(container))
+        XCTAssertTrue(guessed.hits.isEmpty, "a guess never matches, even when its text contains the query")
+        let morning = try TranscriptSearch.hits(query: "morning", in: ModelContext(container))
+        XCTAssertEqual(morning.hits.count, 2)
+        XCTAssertEqual(morning.hits[1].matchingLine, "good morning everyone",
+                       "the guess sorts before the first confident match of its session and is skipped")
+        let descriptor = FetchDescriptor<Entry>(predicate: TranscriptSearch.fallbackPredicate(query: "guessed"))
+        let fallback = try ModelContext(container).fetch(descriptor)
+        XCTAssertTrue(fallback.isEmpty, "the fallback predicate excludes guesses too")
     }
 
     func testExactMatchGroupsBySessionNewestFirstWithTheEarliestMatchingLine() throws {

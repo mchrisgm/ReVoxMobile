@@ -6,12 +6,29 @@ public struct TranscriptEntry: Sendable, Equatable, Codable {
     public var language: String
     public var original: String          // "" unless Learning mode kept the words as spoken (M9; "" on Windows)
     public var english: String
+    /// M11: the gates were unsure. Greyed in Live and History, "(unsure) " in the export, never spoken.
+    public var isGuess: Bool
 
-    public init(timestamp: Date, language: String, original: String, english: String) {
+    public init(timestamp: Date, language: String, original: String, english: String, isGuess: Bool = false) {
         self.timestamp = timestamp
         self.language = language
         self.original = original
         self.english = english
+        self.isGuess = isGuess
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp, language, original, english, isGuess
+    }
+
+    /// An entry written before M11 has no `isGuess`; `encode(to:)` stays synthesised and writes every key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        language = try container.decode(String.self, forKey: .language)
+        original = try container.decode(String.self, forKey: .original)
+        english = try container.decode(String.self, forKey: .english)
+        isGuess = try container.decodeIfPresent(Bool.self, forKey: .isGuess) ?? false
     }
 }
 
@@ -24,6 +41,9 @@ public enum TranscriptItem: Sendable, Equatable {
 public struct TranscriptFormatter: Sendable {
     public static let headerPrefix = "# ReVox session "
     public static let dropMarkerText = "… (skipped: falling behind)"      // U+2026
+    /// M11: the start of the English line of a guess. Windows never writes one; a session without guesses exports
+    /// byte for byte as before.
+    public static let guessPrefix = "(unsure) "
 
     /// The only stored property, a value type, so `Sendable` holds (no `DateFormatter`).
     public let timeZone: TimeZone
@@ -44,9 +64,11 @@ public struct TranscriptFormatter: Sendable {
         return "\(Self.headerPrefix)\(c.year)-\(c.month)-\(c.day)T\(c.hour):\(c.minute):\(c.second)\n"
     }
 
-    /// "[HH:mm:ss] [<lang>] <original>\n  → <english>\n" (two spaces, U+2192, one space).
+    /// "[HH:mm:ss] [<lang>] <original>\n  → <english>\n" (two spaces, U+2192, one space); a guess's English line
+    /// starts with `guessPrefix`.
     public func line(for entry: TranscriptEntry) -> String {
-        "[\(stamp(entry.timestamp))] [\(entry.language)] \(entry.original)\n  → \(entry.english)\n"
+        let prefix = entry.isGuess ? Self.guessPrefix : ""
+        return "[\(stamp(entry.timestamp))] [\(entry.language)] \(entry.original)\n  → \(prefix)\(entry.english)\n"
     }
 
     /// "[HH:mm:ss] … (skipped: falling behind)\n"

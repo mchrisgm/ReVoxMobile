@@ -41,6 +41,7 @@ final class VoicesViewModelTests: XCTestCase {
     private var sample: SampleRecorder!
     private var manager: ModelManager!
     private var pipelineRunning = false
+    private var benchmarkRunning = false
 
     private static let fabricatedVoices = [
         SystemVoiceOption(id: "com.example.default", name: "Fred", language: "en-US", quality: .default),
@@ -59,6 +60,7 @@ final class VoicesViewModelTests: XCTestCase {
         relay = SpeakerStatusRelay()
         sample = SampleRecorder()
         pipelineRunning = false
+        benchmarkRunning = false
     }
 
     override func tearDownWithError() throws {
@@ -80,7 +82,8 @@ final class VoicesViewModelTests: XCTestCase {
             samplePlayer: sample.player,
             selection: { SpeakerSelection.choose(settings: store.settings, pocketTTSReady: await manager.isPocketTTSReady()) },   // the R11 rule of SpeakerAssembly.selection()
             systemVoices: { Self.fabricatedVoices },
-            isPipelineRunning: { [unowned self] in self.pipelineRunning }
+            isPipelineRunning: { [unowned self] in self.pipelineRunning },
+            isBenchmarkRunning: { [unowned self] in self.benchmarkRunning }
         )
     }
 
@@ -397,5 +400,43 @@ final class VoicesViewModelTests: XCTestCase {
         model.download()
         XCTAssertNil(model.downloadRefusedAlert)
         await waitUntil { model.pocketTTSState.phase == .installed }
+    }
+
+    /// M11 §5: a pocket-tts download or delete is a model load or unload beside the one the benchmark is timing,
+    /// so both are refused while it runs, in the Models screen's words ("Finish or cancel the benchmark first").
+    func testDownloadAndDeleteAreRefusedWhileABenchmarkRuns() throws {
+        try FakeInstallSteps.fabricatePocketTTS(in: layout)
+        let model = makeModel()
+        manager.refreshInstalledStates()
+        XCTAssertTrue(model.canDownload)
+        XCTAssertTrue(model.canDelete)
+        XCTAssertNil(model.footerText)
+
+        benchmarkRunning = true
+        XCTAssertFalse(model.canDownload)
+        XCTAssertFalse(model.canDelete)
+        XCTAssertEqual(model.footerText, ModelsViewModel.finishBenchmarkText)
+
+        model.download()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.finishBenchmarkText)
+        XCTAssertNil(model.lowStorageAlert)
+        XCTAssertEqual(steps.pocketTTSDownloads, 0)
+        XCTAssertEqual(model.pocketTTSState.phase, .installed)
+
+        XCTAssertThrowsError(try model.delete()) { error in
+            XCTAssertEqual(error as? BenchmarkError, .busy)
+        }
+        model.deleteConfirmed()
+        XCTAssertEqual(model.deleteFailureAlert, ModelsViewModel.finishBenchmarkText)
+        XCTAssertEqual(steps.pocketTTSDeletes, 0)
+        XCTAssertTrue(model.isPocketTTSInstalled)
+
+        benchmarkRunning = false
+        model.downloadRefusedAlert = nil
+        XCTAssertTrue(model.canDownload)
+        XCTAssertTrue(model.canDelete)
+        XCTAssertNil(model.footerText)
+        try model.delete()
+        XCTAssertEqual(steps.pocketTTSDeletes, 1, "the same delete goes through once the benchmark is over")
     }
 }
