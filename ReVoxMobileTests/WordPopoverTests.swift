@@ -136,4 +136,82 @@ final class WordPopoverTests: XCTestCase {
         XCTAssertEqual(WordPopoverContent.closeLabel, "Close")
         XCTAssertEqual(WordPopoverContent.lookUpActionTitle("la"), "Look up la")
     }
+
+    // MARK: Model
+
+    func testLoadResolvesEverythingAndAsksForATranslationOnlyWhenReady() async throws {
+        let morning = try word("おはよう", in: "おはよう", language: "ja")
+        let model = WordPopoverModel(word: morning, language: "ja", original: "おはよう", english: "Good morning.",
+                                     lookup: lookup(hasVoice: true, hasDefinition: false, translator: .ready))
+        XCTAssertNil(model.translationRequest, "nothing is asked before load")
+        XCTAssertNil(model.hasDefinition, "unknown until resolved")
+        XCTAssertFalse(model.isLoaded)
+        await model.load()
+        XCTAssertTrue(model.isLoaded)
+        XCTAssertEqual(model.latin, "ohayou")
+        XCTAssertTrue(model.hasVoice)
+        XCTAssertEqual(model.hasDefinition, false)
+        XCTAssertEqual(model.translator, .ready)
+        XCTAssertEqual(model.translationRequest, "おはよう")
+        XCTAssertEqual(model.languageName, "Japanese")
+        let content = model.content
+        XCTAssertEqual(content.meaning, .loading)
+        XCTAssertEqual(content.latin, "ohayou")
+        XCTAssertEqual(content.dictionaryNote, WordPopoverContent.noDictionaryNote(languageName: "Japanese"))
+        XCTAssertEqual(content.word, "おはよう")
+    }
+
+    func testReceiveMeaningEndsTheRequest() async throws {
+        let station = try word("estación", in: sentence)
+        let model = WordPopoverModel(word: station, language: "es", original: sentence, english: english, lookup: lookup(translator: .ready))
+        await model.load()
+        model.receiveMeaning(" station ")
+        XCTAssertEqual(model.content.meaning, .found("station"))
+        XCTAssertNil(model.translationRequest)
+        model.receiveMeaning("platform")
+        XCTAssertEqual(model.content.meaning, .found("station"), "the first answer stands")
+        let blank = WordPopoverModel(word: station, language: "es", original: sentence, english: english, lookup: lookup(translator: .ready))
+        await blank.load()
+        blank.receiveMeaning("  ")
+        XCTAssertEqual(blank.content.meaning, .note(WordPopoverContent.noMeaningText))
+        XCTAssertNil(blank.translationRequest)
+    }
+
+    func testIOS17NeverRequestsATranslation() async throws {
+        let station = try word("estación", in: sentence)
+        let model = WordPopoverModel(word: station, language: "es", original: sentence, english: english, lookup: .unavailable)
+        await model.load()
+        XCTAssertNil(model.translationRequest)
+        XCTAssertEqual(model.content.meaning, .note(WordPopoverContent.needsIOS18Text))
+        XCTAssertFalse(model.content.canSpeak)
+        XCTAssertEqual(model.content.voiceNote, WordPopoverContent.noVoiceNote(languageName: "Spanish"))
+        XCTAssertNil(model.speaker)
+        XCTAssertFalse(model.speak())
+        XCTAssertNil(model.content.latin, "Latin script already")
+        XCTAssertEqual(String(model.content.example.original[model.content.example.range]), "estación")
+    }
+
+    func testTheModelReadsTheMicrophoneFromTheSpeaker() async throws {
+        let recorded = LockedBox<[String]>([])
+        let running = LockedBox(false)
+        let speaker = WordSpeaker(isMicrophoneRunning: { running.value }, voices: { AVSpeechSynthesisVoice.speechVoices() },
+                                  speak: { utterance in recorded.mutate { $0.append(utterance.speechString) } }, stop: {})
+        let station = try word("estación", in: sentence)
+        let model = WordPopoverModel(word: station, language: "es", original: sentence, english: english,
+                                     lookup: lookup(hasVoice: true, speaker: speaker))
+        await model.load()
+        XCTAssertTrue(model.speaker === speaker)
+        XCTAssertTrue(model.content.canSpeak)
+        running.mutate { $0 = true }
+        XCTAssertFalse(model.content.canSpeak)
+        XCTAssertEqual(model.content.speakDisabledNote, WordPopoverContent.microphoneNote)
+        XCTAssertFalse(model.speak())
+        XCTAssertEqual(recorded.value, [])
+        running.mutate { $0 = false }
+        guard AVSpeechSynthesisVoice.speechVoices().contains(where: { $0.language.lowercased().hasPrefix("es") }) else {
+            throw XCTSkip("this simulator has no Spanish voice installed")
+        }
+        XCTAssertTrue(model.speak())
+        XCTAssertEqual(recorded.value, ["estación"])
+    }
 }
