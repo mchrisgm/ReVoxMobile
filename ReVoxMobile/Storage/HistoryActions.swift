@@ -67,7 +67,7 @@ struct HistoryActions {
         let rows = ordered.flatMap(\.entries).sorted { $0.timestamp < $1.timestamp }
         for row in rows {
             let copy = Entry(timestamp: row.timestamp, language: row.language, original: row.original,
-                             english: row.english, isDropMarker: row.isDropMarker)
+                             english: row.english, isDropMarker: row.isDropMarker, isGuess: row.isGuess)
             copy.session = merged
             context.insert(copy)
         }

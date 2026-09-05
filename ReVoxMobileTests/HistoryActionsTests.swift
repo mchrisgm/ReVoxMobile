@@ -75,10 +75,14 @@ final class HistoryActionsTests: XCTestCase {
     func testMergeMakesOneSessionInTimeOrderAndRemovesTheOriginals() throws {
         let context = ModelContext(container)
         let sessions = try sortedSessions(context)
-        // A drop marker in the middle session, and an end time only on the last, to prove both survive.
+        // A drop marker in the middle session, an unsure phrase in the first (M11), and an end time only on the
+        // last, to prove all three survive.
         let marker = Entry(timestamp: sessions[1].startedAt.addingTimeInterval(1.5), language: "", original: "", english: "", isDropMarker: true)
         marker.session = sessions[1]
         context.insert(marker)
+        let guess = Entry(timestamp: sessions[0].startedAt.addingTimeInterval(1.5), language: "es", original: "", english: "unsure 0", isDropMarker: false, isGuess: true)
+        guess.session = sessions[0]
+        context.insert(guess)
         sessions[2].endedAt = sessions[2].startedAt.addingTimeInterval(90)
         sessions[2].joinedInProgress = true
         try context.save()
@@ -87,15 +91,16 @@ final class HistoryActionsTests: XCTestCase {
 
         let after = try counts()
         XCTAssertEqual(after.sessions, 1, "the originals are gone")
-        XCTAssertEqual(after.entries, 7, "6 lines plus the marker, copied, and the originals' rows cascaded away")
+        XCTAssertEqual(after.entries, 8, "6 lines plus the marker and the guess, copied, and the originals' rows cascaded away")
         XCTAssertEqual(merged.startedAt, start, "the earliest session's start")
         XCTAssertEqual(merged.endedAt, sessions[2].startedAt.addingTimeInterval(90), "the latest end")
         XCTAssertTrue(merged.joinedInProgress)
         XCTAssertEqual(merged.modelID, "small")
         let lines = merged.entries.sorted { $0.timestamp < $1.timestamp }
-        XCTAssertEqual(lines.map(\.english), ["line 0.1", "line 0.2", "line 1.1", "", "line 1.2", "line 2.1", "line 2.2"])
+        XCTAssertEqual(lines.map(\.english), ["line 0.1", "unsure 0", "line 0.2", "line 1.1", "", "line 1.2", "line 2.1", "line 2.2"])
         XCTAssertEqual(lines.filter(\.isDropMarker).count, 1)
-        XCTAssertEqual(merged.entries.count, 7)
+        XCTAssertEqual(lines.filter(\.isGuess).map(\.english), ["unsure 0"], "M11: merging keeps the flag")
+        XCTAssertEqual(merged.entries.count, 8)
     }
 
     func testMergeNeedsAtLeastTwoSessions() throws {
