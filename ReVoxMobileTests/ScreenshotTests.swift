@@ -150,6 +150,9 @@ final class ScreenshotTests: XCTestCase {
             running.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(Double(index - 4) * 9), language: language,
                                                   original: original, english: english)))
         }
+        // M11 §3: a phrase the gates were unsure about — greyed, marked Unsure, never spoken — under the others.
+        running.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(-2), language: "es", original: "",
+                                              english: "Could you repeat the last number?", isGuess: true)))
         try capture("live-running", NavigationStack {
             LiveView(model: running, models: hosting.models(), broadcastExtensionBundleID: extensionID)
         })
@@ -180,6 +183,29 @@ final class ScreenshotTests: XCTestCase {
         try context.save()
         let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
         try capture("history-selecting", NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
+    }
+
+    /// M11 §2: the popover's content, hosted on its own — a popover with its arrow cannot be captured without a
+    /// presentation. Every service is answered, so the image shows the whole thing: pronunciation with a Say
+    /// button, a meaning, the dictionary button and the sentence.
+    func testCapturesTheLearningWordPopover() async throws {
+        let sentence = SettingExamples.spanishOriginal
+        let words = WordSplitter.words(in: sentence, language: "es")
+        let word = try XCTUnwrap(words.first { $0.text == "estación" })
+        let lookup = WordLookup(speaker: WordSpeaker(isMicrophoneRunning: { false }),
+                                hasVoice: { _ in true },
+                                hasDefinition: { _ in true },
+                                translatorAvailability: { _ in .ready })
+        let model = WordPopoverModel(word: word, language: "es", original: sentence, english: SettingExamples.spanishEnglish, lookup: lookup)
+        await model.load()
+        model.receiveMeaning("station")
+        XCTAssertNil(model.translationRequest, "answered: no translation task is attached on the CI simulator")
+        try capture("learning-word", VStack(spacing: 0) {
+            WordPopoverView(model: model)
+                .frame(maxWidth: 360)
+                .padding(.top, 24)
+            Spacer(minLength: 0)
+        })
     }
 
     static let sampleTranscript: [(String, String)] = [

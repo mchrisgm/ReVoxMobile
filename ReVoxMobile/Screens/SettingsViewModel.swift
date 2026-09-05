@@ -91,7 +91,7 @@ final class SettingsViewModel {
     }
 
     static let keepModelWhenHotHelpText = "When the iPhone gets hot, ReVox normally switches the next session to a smaller model and says so. With this on, your chosen model is kept. Translation still pauses if the iPhone reaches its critical temperature; iOS would close the app otherwise."
-    static let learningHelpText = "Shows the words as they were spoken above the translation. Each phrase is decoded a second time, so it takes a little longer to appear."
+    static let learningHelpText = "Shows the words as they were spoken above the translation. Each phrase is decoded a second time, so it takes a little longer to appear. Tap any word for its pronunciation and meaning."
     static let romanizeHelpText = "Adds how the original sounds in Latin letters, for scripts you cannot read yet. Only shown when it differs from the original. Japanese kanji come out with their Chinese readings; kana are right."
     static let timeDisplayHelpText = "How long ago a phrase was said is easier to follow in a running conversation than the time it was said. History always shows the time."
 

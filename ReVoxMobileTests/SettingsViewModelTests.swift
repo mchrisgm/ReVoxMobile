@@ -159,6 +159,16 @@ final class SettingsViewModelTests: XCTestCase {
                        "the example is kana on purpose: ICU reads kanji by their Chinese readings")
     }
 
+    /// M11 §2: the Learning copy says the words are tappable — on the example, which is the live demonstration
+    /// (the same row view), and in the footer.
+    func testTheLearningCopySaysWordsAreTappable() {
+        XCTAssertEqual(SettingExamples.learning(true),
+                       "The words as spoken appear above the translation. Tap a word to hear it and see what it means.")
+        XCTAssertEqual(SettingExamples.learning(false), "Only the translation is shown.")
+        XCTAssertTrue(SettingsViewModel.learningHelpText.hasPrefix("Shows the words as they were spoken above the translation."))
+        XCTAssertTrue(SettingsViewModel.learningHelpText.hasSuffix(" Tap any word for its pronunciation and meaning."))
+    }
+
     /// M10: the skip example must say what actually happens while Source language is pinned. The core never detects
     /// a pinned language, so nothing is skipped — unless the pinned language *is* the skipped one, when every
     /// phrase is left alone. The old example promised a skip in both cases.
