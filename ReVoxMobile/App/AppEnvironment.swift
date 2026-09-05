@@ -33,6 +33,11 @@ final class AppEnvironment {
     let models: ModelsViewModel
     let settingsModel: SettingsViewModel
     let onboarding: OnboardingViewModel
+    /// M11 §2: says one tapped word through its own synthesizer (created on first use); told when the microphone
+    /// is running so the Say button is disabled then.
+    let wordSpeaker: WordSpeaker
+    /// M11 §2: the popover's services, applied to the environment outermost by `RootView`.
+    let wordLookup: WordLookup
     private var interruptionTask: Task<Void, Never>?
 
     /// Breaks the manager ↔ live-view-model cycle: the manager asks whether the pipeline is busy through this box.
@@ -45,6 +50,17 @@ final class AppEnvironment {
             guard let live else { return false }
             return live.state == .running || live.state == .preparing
         }
+        /// M11 §2: the word speaker's rule, read at every tap of Say.
+        var isMicrophoneRunning: Bool {
+            guard let live else { return false }
+            return AppEnvironment.isMicrophoneRunning(state: live.state, captureMode: live.captureMode)
+        }
+    }
+
+    /// M11 §2, pure: a word said through the speaker while the microphone session is open (preparing or running)
+    /// would be heard and translated back; an Other-apps run reads the ring, not the speaker, so it is allowed.
+    static func isMicrophoneRunning(state: LiveState, captureMode: CaptureMode) -> Bool {
+        (state == .running || state == .preparing) && captureMode == .microphone
     }
 
     init(configuration: AppConfiguration, deviceInfo: DeviceInfo, settingsURL: URL, modelRoot: URL, transcriptContainer: ModelContainer,
@@ -94,6 +110,11 @@ final class AppEnvironment {
                                   installedModels: { manager.installedWhisper })
         activity.live = live
         live.volume = voiceVolume   // the Live screen's volume slider writes the players' box (M9)
+        // A local, never `self`: the closure is created before initialisation completes. The synthesizer is made on
+        // the first `speak`, so a test environment never pays for one.
+        let speaker = WordSpeaker(isMicrophoneRunning: { activity.isMicrophoneRunning })
+        self.wordSpeaker = speaker
+        self.wordLookup = WordLookup.production(speaker: speaker)
         self.models = ModelsViewModel(manager: modelManager, settings: settings, deviceInfo: deviceInfo, isPipelineRunning: { activity.isBusy })
         let liveForRelease = live
         modelManager.onModelFilesChanged = { [weak liveForRelease] in

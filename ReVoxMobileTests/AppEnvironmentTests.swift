@@ -32,6 +32,28 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.live.broadcastStatusText, nil, "default source is the microphone")
     }
 
+    /// M11 §2: the word popover's services are one environment value built over the app's own speaker.
+    func testWordLookupIsBuiltOverTheAppsWordSpeaker() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxAppEnv-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let environment = try AppEnvironment.testing(root: root)
+        XCTAssertTrue(environment.wordLookup.speaker === environment.wordSpeaker, "one speaker for every popover")
+        XCTAssertFalse(environment.wordSpeaker.isSpeaking)
+        XCTAssertFalse(environment.wordSpeaker.isMicrophoneRunning, "idle: the Say button is live")
+        XCTAssertFalse(environment.wordLookup.hasVoice("zz"), "the production lookup asks the system voices; no voice for an unknown code")
+    }
+
+    /// M11 §2: a word said through the speaker while the microphone is running would be heard and translated, so
+    /// the Say button is disabled exactly then — not during an Other-apps run (the ring carries their audio, not
+    /// the speaker) and not while idle.
+    func testTheMicrophoneRuleBehindTheSayButton() {
+        XCTAssertTrue(AppEnvironment.isMicrophoneRunning(state: .running, captureMode: .microphone))
+        XCTAssertTrue(AppEnvironment.isMicrophoneRunning(state: .preparing, captureMode: .microphone), "the session is already open while preparing")
+        XCTAssertFalse(AppEnvironment.isMicrophoneRunning(state: .running, captureMode: .broadcast))
+        XCTAssertFalse(AppEnvironment.isMicrophoneRunning(state: .idle, captureMode: .microphone))
+        XCTAssertFalse(AppEnvironment.isMicrophoneRunning(state: .error, captureMode: .microphone))
+    }
+
     func testDidBecomeActiveForwardsToTheModelManager() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxAppEnv-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

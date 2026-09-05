@@ -30,5 +30,8 @@ struct RootView: View {
         .fullScreenCover(isPresented: $onboarding.shouldShowNow) {
             OnboardingView(model: onboarding)
         }
+        // M11 §2: outermost, after the cover — presented content inherits only the environment set outside the
+        // presenting modifier, and the tutorial's Learning page promises tappable words.
+        .environment(\.wordLookup, environment.wordLookup)
     }
 }
