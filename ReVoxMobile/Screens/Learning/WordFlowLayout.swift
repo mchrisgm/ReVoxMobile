@@ -40,7 +40,7 @@ struct WordFlowLayout: Layout {
         guard guide == .firstTextBaseline, let first = subviews.first else { return nil }
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         guard let row = Self.rows(sizes: sizes, available: bounds.width).first else { return nil }
-        return bounds.minY + (row.height - sizes[0].height) / 2 + first[VerticalAlignment.firstTextBaseline]
+        return bounds.minY + (row.height - sizes[0].height) / 2 + first.dimensions(in: ProposedViewSize(sizes[0]))[VerticalAlignment.firstTextBaseline]
     }
 
     /// The width the rows are packed into: the proposal's, or — unproposed or unbounded — everything on one row.
