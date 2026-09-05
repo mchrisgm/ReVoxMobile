@@ -108,13 +108,14 @@ final class SettingsViewModel {
         LanguageCatalog.languageOptions(codes: codes, locale: locale)
     }
 
-    /// §8.2 (M8): the language ReVox leaves alone. "None" is the pre-M8 behaviour — everything is translated.
+    /// §8.2 (M8), M11 "You speak": the language you speak, which ReVox neither translates nor transcribes. Not set
+    /// (nil) is the pre-M8 behaviour — everything is translated, including you.
     var ignoredLanguage: String? {
         get { store.settings.ignored }
         set { store.update { $0.ignoredLanguage = newValue } }
     }
 
-    /// The concrete languages the ignore picker offers, with "None" as the first row.
+    /// The concrete languages the You-speak picker offers, with "Not set" as the first row.
     var ignoredLanguageOptions: [LanguageOption] {
         [LanguageOption(code: nil, displayName: Self.noIgnoredLanguageTitle)] + LanguageCatalog.concrete
     }
@@ -125,7 +126,9 @@ final class SettingsViewModel {
     /// under it says what that does.
     var canIgnoreLanguage: Bool { language == nil }
 
-    static let noIgnoredLanguageTitle = "None"
-    static let ignoredLanguageHelpText = "ReVox neither translates nor transcribes this language. Turn on Two-way on the Live screen to have it spoken back in another language instead."
-    static let ignoredLanguageNeedsAutoDetectText = "Ignoring a language needs Source language set to Auto-detect, because a pinned language is never detected."
+    static let noIgnoredLanguageTitle = LiveView.noLanguageTitle
+    static let ignoredLanguageHelpText = "ReVox translates everything it hears into English except the language you speak, which it neither translates nor transcribes. With Two-way on (Live tab), what you say is spoken to the other person in their language instead."
+    static let ignoredLanguageNeedsAutoDetectText = "This needs Source language set to Auto-detect, because a pinned language is never detected."
+    /// M11 (§3): an unsure phrase is kept greyed rather than dropped; the footer under Source language says so.
+    static let sourceLanguageHelpText = "Auto-detect runs Whisper's language detection on every phrase. A phrase it is unsure about is shown greyed and marked Unsure, and is never spoken."
 }
