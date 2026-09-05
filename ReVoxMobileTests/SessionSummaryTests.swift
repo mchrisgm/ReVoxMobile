@@ -25,6 +25,20 @@ final class SessionSummaryTests: XCTestCase {
         return session
     }
 
+    /// M11: the same shape with the guess flag instead of the drop flag.
+    private func sessionWithGuesses(_ entries: [(offset: TimeInterval, english: String, isGuess: Bool)]) throws -> Session {
+        let session = Session(startedAt: start, captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "alba", joinedInProgress: false)
+        context.insert(session)
+        for entry in entries {
+            let row = Entry(timestamp: start.addingTimeInterval(entry.offset), language: "es", original: "", english: entry.english,
+                            isDropMarker: false, isGuess: entry.isGuess)
+            row.session = session
+            context.insert(row)
+        }
+        try context.save()
+        return session
+    }
+
     func testCountsExcludeDropMarkersAndFirstLineIsTheEarliestEntry() throws {
         let summary = SessionSummary(session: try session(endedAt: start.addingTimeInterval(125), entries: [
             (9, "second", false), (2, "", true), (3, "first", false), (10, "", true),
@@ -91,6 +105,38 @@ final class SessionSummaryTests: XCTestCase {
     func testInvalidCaptureModeFallsBackToMicrophone() throws {
         let summary = SessionSummary(session: try session(captureMode: "loopback", entries: []))
         XCTAssertEqual(summary.captureMode, .microphone)
+    }
+
+    // MARK: Unsure phrases (M11)
+
+    func testGuessesCountAsEntriesButNeverAsThePreviewWhileAConfidentLineExists() throws {
+        let summary = SessionSummary(session: try sessionWithGuesses([(1, "maybe", true), (2, "first", false), (3, "perhaps", true)]))
+        XCTAssertEqual(summary.entryCount, 3)
+        XCTAssertEqual(summary.entryCountText, "3 entries")
+        XCTAssertEqual(summary.guessCount, 2)
+        XCTAssertEqual(summary.guessCountText, "2 unsure phrases")
+        XCTAssertEqual(summary.firstEnglishLine, "first", "the earliest confident line, not the earliest line")
+        XCTAssertEqual(summary.previewText, "first")
+        XCTAssertFalse(summary.previewIsGuess)
+        XCTAssertFalse(SessionRowView.accessibilityText(for: summary).contains(SessionRowView.guessPreviewPrefix))
+    }
+
+    func testASessionOfOnlyGuessesPreviewsAGuessAndSaysSo() throws {
+        let summary = SessionSummary(session: try sessionWithGuesses([(1, "maybe", true)]))
+        XCTAssertEqual(summary.guessCountText, "1 unsure phrase")
+        XCTAssertEqual(summary.previewText, "maybe")
+        XCTAssertTrue(summary.previewIsGuess)
+        XCTAssertTrue(SessionRowView.accessibilityText(for: summary).hasSuffix(". Unsure: maybe."))
+        XCTAssertEqual(SessionRowView.guessPreviewPrefix, "Unsure: ")
+        XCTAssertEqual(SessionSummary.guessSymbolName, "questionmark.circle")
+    }
+
+    func testASessionWithoutGuessesHasNoUnsureRow() throws {
+        let summary = SessionSummary(session: try sessionWithGuesses([(1, "sure", false)]))
+        XCTAssertEqual(summary.guessCount, 0)
+        XCTAssertNil(summary.guessCountText, "no guesses, no row")
+        XCTAssertFalse(summary.previewIsGuess)
+        XCTAssertTrue(SessionRowView.accessibilityText(for: summary).hasSuffix(". sure."))
     }
 
     func testDurationTextFormats() {

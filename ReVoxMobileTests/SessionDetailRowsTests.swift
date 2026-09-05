@@ -12,7 +12,7 @@ final class SessionDetailRowsTests: XCTestCase {
         let session = Session(startedAt: start, captureMode: "microphone", pinnedLanguage: nil, modelID: "small", voice: "system", joinedInProgress: false)
         context.insert(session)
         let rows = [
-            Entry(timestamp: start.addingTimeInterval(5), language: "de", original: "", english: "later", isDropMarker: false),
+            Entry(timestamp: start.addingTimeInterval(5), language: "de", original: "", english: "later", isDropMarker: false, isGuess: true),
             Entry(timestamp: start.addingTimeInterval(2), language: "", original: "", english: "", isDropMarker: true),
             Entry(timestamp: start.addingTimeInterval(1), language: "es", original: "", english: "first", isDropMarker: false),
         ]
@@ -25,6 +25,7 @@ final class SessionDetailRowsTests: XCTestCase {
         let mapped = SessionDetailRows.rows(for: session)
         XCTAssertEqual(mapped.map(\.time), [start.addingTimeInterval(1), start.addingTimeInterval(2), start.addingTimeInterval(5)])
         XCTAssertEqual(mapped.map(\.kind), [.entry(language: "es", english: "first"), .dropMarker, .entry(language: "de", english: "later")])
+        XCTAssertEqual(mapped.map(\.isGuess), [false, false, true], "M11: the flag rides along")
         XCTAssertEqual(Set(mapped.map(\.id)).count, 3, "every row has its own identity")
     }
 
@@ -33,8 +34,12 @@ final class SessionDetailRowsTests: XCTestCase {
         let row = SessionDetailRows.row(for: entry)
         XCTAssertEqual(row.time, start)
         XCTAssertEqual(row.kind, .entry(language: "fr", english: "yes"))
+        XCTAssertFalse(row.isGuess)
         let marker = SessionDetailRows.row(for: Entry(timestamp: start, language: "", original: "", english: "", isDropMarker: true))
         XCTAssertEqual(marker.kind, .dropMarker)
+        let guess = SessionDetailRows.row(for: Entry(timestamp: start, language: "fr", original: "", english: "maybe", isDropMarker: false, isGuess: true))
+        XCTAssertEqual(guess.kind, .entry(language: "fr", english: "maybe"))
+        XCTAssertTrue(guess.isGuess, "M11: History greys a guess as Live did")
     }
 
     func testLanguagePinText() {
