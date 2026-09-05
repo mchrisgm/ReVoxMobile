@@ -28,6 +28,15 @@ struct ModelsView: View {
                     if let warning = model.lowStorageWarning { Text(warning) }
                 }
             }
+            if let benchmark = model.benchmark {
+                Section {
+                    NavigationLink(BenchmarkViewModel.linkTitle) { BenchmarkView(model: benchmark) }
+                        .frame(minHeight: 44)
+                        .accessibilityHint(BenchmarkViewModel.linkHint)
+                } footer: {
+                    Text(model.benchmarkFooterText)
+                }
+            }
             Section("Voice detector") {
                 VADRowView(row: model.vadRow)
             }

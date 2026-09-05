@@ -36,6 +36,9 @@ struct ModelRowView: View {
             if let note = row.note {
                 Text(note).font(.caption).foregroundStyle(.secondary)
             }
+            if let measured = row.measuredNote {
+                Label(measured, systemImage: "gauge.with.needle").font(.caption).foregroundStyle(.secondary)
+            }
             stateView
         }
         .padding(.vertical, 4)
@@ -108,6 +111,7 @@ struct ModelRowView: View {
         var parts = ["Model \(row.name)", row.sizeText, ModelsViewModel.phaseText(row.state.phase)]
         if row.isRecommended { parts.append("Recommended") }
         if !row.isSuitable { parts.append(ModelsViewModel.notRecommendedText) }
+        if let measured = row.measuredNote { parts.append(measured) }
         if let fraction = row.state.fraction, row.state.phase.isActive { parts.append(LiveStatusAccessibility.percentText(fraction)) }
         return parts.joined(separator: ". ")
     }
