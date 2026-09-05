@@ -23,17 +23,17 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 
 ## Why ReVox
 
-Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a call in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. Since milestone 8 it also talks back: with **Two-way** on, your own language is left alone and what you say is spoken to the other person in theirs.
+Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a call in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. Since milestone 8 it also talks back: with **Two-way** on, what you say is spoken to the other person in their language, and the language you speak is neither translated nor spoken back at you.
 
 ## What it looks like
 
 | | | |
 |:---:|:---:|:---:|
-| ![The Live screen before a session: three rows of pills — Mic, Balanced, Duck on and an info button; Learn off, Two-way on and the volume; Leave alone English and Reply in Spanish — the status line, and a teal Start button](docs/screenshots/live-idle.png) | ![The Live screen translating: the pills dimmed behind a "Stop to change" lock, a Spanish phrase with the words as spoken above its English translation, three more phrases with their ages, and a red Stop button](docs/screenshots/live-running.png) | ![The Models screen: tiny, base, small (Recommended, selected), medium and large-v3 with sizes and Download buttons, and the storage footer](docs/screenshots/models.png) |
+| ![The Live screen before a session: three captioned rows of pills — Listen: Mic, Balanced and an info button; Voice: Duck on and 100%; Languages: Two-way on and Learn off, with You speak English and They speak Spanish on the line beneath — the status line, and a teal Start button](docs/screenshots/live-idle.png) | ![The Live screen translating: the pills dimmed behind a "Stop to change" lock line, a Spanish phrase with the words as spoken as tappable chips above its English translation, three more phrases with their ages, and a red Stop button](docs/screenshots/live-running.png) | ![The Models screen: tiny, base, small (Recommended, selected), medium and large-v3 with sizes and Download buttons, the Benchmark this iPhone row, and the storage footer](docs/screenshots/models.png) |
 | **Live, ready to start** — every control is a pill; the transcript gets the rest of the screen | **Live, translating** — the pills lock, and each phrase shows its language, translation and age | **Models** — five Whisper sizes, the recommendation for this iPhone, and what they will cost in space |
-| ![The Voices screen: the pocket-tts section with alba selected, azelma, cosette and javert, a Play sample button, and the System voices section below](docs/screenshots/voices.png) | ![The Settings screen: the three latency modes with an example of what the selected one does, the Source language picker with an example, and the Skip a language section](docs/screenshots/settings.png) | ![History in edit mode: two sessions with selection circles, the search field, Clear All, and the Merge and Delete bar](docs/screenshots/history-selecting.png) |
+| ![The Voices screen: the pocket-tts section with alba selected, azelma, cosette and javert, a Play sample button, and the System voices section below](docs/screenshots/voices.png) | ![The Settings screen: the three latency modes with an example of what the selected one does, the Source language picker with an example, and the Unsure phrases toggle with its greyed sample row](docs/screenshots/settings.png) | ![History in edit mode: two sessions with selection circles, the search field, Clear All, and the Merge and Delete bar](docs/screenshots/history-selecting.png) |
 | **Voices** — the four pocket-tts voices with a sample, or any English system voice | **Settings** — every setting shows an example of what it does with its current value | **History** — search across sessions, then select several to merge or delete |
-| ![The first tutorial page: a progress bar and Skip, the ReVox mark, "Welcome to ReVox", four bullet lines — hears the microphone or other apps, translates on the iPhone itself, speaks the translation aloud, keeps a transcript in History — and a Next button](docs/screenshots/onboarding-welcome.png) | ![The tutorial's transcript page: "Start and read", a demo transcript with four phrases and their ages, "Speaking the translation aloud", a red Stop capsule, and Back and Next buttons](docs/screenshots/onboarding-transcript.png) | |
+| ![The first tutorial page: a progress bar and Skip, the ReVox mark, "Welcome to ReVox", four bullet lines — hears the microphone or other apps, translates on the iPhone itself, speaks the translation aloud, keeps a transcript in History — and a Next button](docs/screenshots/onboarding-welcome.png) | ![The tutorial's transcript page: "Start and read", a demo transcript with four phrases and their ages, one greyed and marked Unsure with a caption explaining it, "Speaking the translation aloud", a red Stop capsule, and Back and Next buttons](docs/screenshots/onboarding-transcript.png) | |
 | **Tutorial, first page** — seven pages on the first launch, or from Settings any time | **Tutorial, the transcript** — a demo conversation types itself in and can be started and stopped | |
 
 <sub>Every screenshot here is rendered from the real screen by CI (`ScreenshotTests`), so they cannot drift from the app. See [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md).</sub>
@@ -65,7 +65,7 @@ flowchart LR
 
 - **Segmenter.** Silero VAD scores every 512-sample chunk at 16 kHz; a phrase ends after the latency mode's silence (500 / 300 / 200 ms) or at its maximum length (10 / 4 / 3 s), with 200 ms of pre-roll. [Why ReVox drives the model itself →](docs/adr/0003-drive-silero-vad-ourselves.md)
 - **Backpressure.** At most three phrases wait to be translated; older ones are dropped, the **Falling behind** badge appears and the transcript records `… (skipped: falling behind)`.
-- **Gates.** Language detection (unless a source language is pinned) with a probability gate, then Whisper's no-speech and log-probability gates and a hallucination list — the Windows gates, ported one-to-one.
+- **Gates.** Language detection (unless a source language is pinned) with a probability gate, then Whisper's no-speech and log-probability gates and a hallucination list — the Windows gates, ported one-to-one, with one deviation: a phrase the gates are unsure about is kept as a greyed, unspoken **Unsure** phrase instead of being dropped (row W8 of [the design spec](docs/superpowers/specs/2026-09-02-revox-mobile-design.md)).
 - **Speaking.** The English is spoken by pocket-tts (once downloaded) or the iPhone's own voice; while it speaks, other apps are ducked and the capture gate drops what the microphone or the broadcast hears of ReVox's own voice.
 - **Two-way.** The reply direction goes through Apple's on-device Translation framework (iOS 18) and an iOS voice for the target language. [ADR-0006](docs/adr/0006-whisper-translate-is-english-only.md), [ADR-0007](docs/adr/0007-pocket-tts-english-only-system-voice-for-replies.md)
 
@@ -108,9 +108,9 @@ cd ReVoxCore && swift test
 <details open>
 <summary><strong>First run</strong></summary>
 
-The first launch opens a short interactive tutorial: seven pages that show a demo transcript typing itself in and let you try the source picker, Two-way, Learning, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
+The first launch opens a short interactive tutorial: seven pages that host the real Live controls and a demo transcript typing itself in, and let you try the pills, Two-way with You speak and They speak, Learning with its tappable words, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
 
-1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model.
+1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model. Once a model is installed, **Settings › Models › Benchmark this iPhone** times every installed model on your phone and moves the recommendation to what it measured.
 2. Keep ReVox open while the download runs — iOS stops the transfer when the app is suspended. A paused row resumes when you come back.
 3. Optionally go to **Settings › Voices** and download a pocket-tts voice (*alba*, *azelma*, *cosette* or *javert*). Until you do, ReVox speaks with the iPhone's own voice, which needs no download.
 
@@ -119,7 +119,7 @@ The first launch opens a short interactive tutorial: seven pages that show a dem
 <details>
 <summary><strong>Translating</strong></summary>
 
-The Live screen keeps its controls to two rows of pills above the transcript — source, latency, ducking, Learning, Two-way and volume, with a third row for the two-way languages — and an ⓘ button that unfolds what each one does, so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
+The Live screen keeps its controls to three captioned rows of pills above the transcript — **Listen** (Mic or Other apps, the latency mode, and an ⓘ that unfolds what every pill does), **Voice** (ducking and the voice volume) and **Languages** (Two-way and Learning, with a **You speak** / **They speak** line beneath while Two-way is on) — so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
 
 1. On the **Live** tab, choose what to listen to:
    - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
@@ -128,38 +128,39 @@ The Live screen keeps its controls to two rows of pills above the transcript —
 3. Speak, or start playing. Each finished phrase appears in the transcript with its detected language and its English translation, and is spoken aloud.
 4. Tap **Stop** when you are done. The session is saved to **History**.
 
-The source and the two-way controls are locked while a session runs: ReVox reads them once, at Start. Stop and start again to change them.
+Every pill except the voice volume and the ⓘ is locked while a session runs, and a **Stop to change** line appears under the rows: ReVox reads them once, at Start. Stop and start again to change them.
 
 </details>
 
 <details>
 <summary><strong>Two-way conversation</strong></summary>
 
-By default ReVox translates everything it hears into English, including you. In a real conversation that is usually not what you want: your own language should be left alone, and what you say should be spoken back to the other person in *their* language.
+By default ReVox translates everything it hears into English, including you. In a real conversation that is usually not what you want: what you say should not be echoed back at you in English, it should be spoken to the other person in *their* language. So the two languages are named by the two people — **You speak** and **They speak** — on the Live tab, in Settings and in the tutorial alike.
 
-1. In **Settings › Skip a language**, choose the language ReVox should leave alone — normally your own. From then on ReVox neither translates nor transcribes it, and **Source language** must stay on **Auto-detect** for it to work (a pinned language is never detected).
-2. On the **Live** tab, turn on **Two-way**. Two pickers appear: **Don't translate** (the same setting, so you can change it mid-conversation) and **Reply in**.
-3. Choose the other person's language under **Reply in**. Now both directions are live: their language is translated to English and spoken to you, and yours is transcribed and spoken back to them in the language you chose. Both sides appear in the transcript.
+1. Tell ReVox the language you speak: **Settings › Your language › You speak** (the first row is **Not set**). From then on ReVox neither translates nor transcribes that language, and **Source language** must stay on **Auto-detect** for it to work — a pinned language is never detected, and the pill says so.
+2. On the **Live** tab, turn on **Two-way** in the Languages row. A line appears beneath it with the pair: **You speak** (the same setting, so you can change it mid-conversation; it reads **Choose…** until it is set) and **They speak**, which shows **English** until you pick something else.
+3. Choose the other person's language under **They speak**. Now both directions are live: what they say is translated to English and spoken to you, and what you say is transcribed and spoken to them in their language. The ⓘ panel spells it out — "What you say in English is spoken to them in Spanish; what they say is spoken to you in English." — and both sides appear in the transcript.
 
 Two things to know about the reply direction:
 
 - Whisper translates *into English only*, so the reply is produced by iOS's own on-device translator. That needs **iOS 18 or later**; on iOS 17, and on any language pair iOS cannot translate, the phrase is still transcribed — it is simply not spoken, and ReVox says so on the screen rather than falling silent without explanation.
-- The reply is spoken by an iOS voice for that language (pocket-tts speaks English only). If your iPhone has no voice for the language you picked, ReVox tells you while you are picking it; add one in **iOS Settings › Accessibility › Spoken Content › Voices**.
+- The reply is spoken by an iOS voice for that language (pocket-tts speaks English only). If your iPhone has no voice for the language under **They speak**, the pill shows a crossed speaker and the ⓘ panel says that what you say to them stays in the transcript; add one in **iOS Settings › Accessibility › Spoken Content › Voices**.
 
 </details>
 
 <details>
 <summary><strong>While translating</strong></summary>
 
-- **Quick controls** sit on the Live screen under the two-way card: latency mode, ducking, Learning and the voice volume. Volume changes at once; the other three are read at Start, so they lock while a session runs.
+- **Quick controls** are the pills on the Live screen: Listen (the source and the latency mode), Voice (ducking and the voice volume) and Languages (Two-way and Learning). Volume changes at once; everything else is read at Start, so it locks while a session runs.
 - **Mute** the voice with the speaker button in the navigation bar; the transcript keeps running.
 - **Ducking** lowers other apps' audio while ReVox speaks. Turn it off in Settings or the quick controls; the change applies at the next Start.
 - **Voice volume** sets how loud ReVox's own voice is.
 - **Latency mode** trades responsiveness for context: *Balanced* (500 ms of silence ends a phrase, 10 s maximum), *Fast* (300 ms, 4 s) or *Very fast* (200 ms, 3 s — the quickest, with more and shorter phrases and more work for the model).
-- **Learning** shows the words as they were spoken above the translation, so you can follow the other language as well as understand it. Each phrase is decoded a second time, so it takes a little longer to appear. **Romanize** (Settings › Learning) adds how the original sounds in Latin letters under a script you cannot read; Japanese kana are right, kanji come out with their Chinese readings.
+- **Learning** shows the words as they were spoken above the translation, so you can follow the other language as well as understand it. Each phrase is decoded a second time, so it takes a little longer to appear. Tap any word for its pronunciation and meaning: a small popover shows how it sounds in Latin letters, says it aloud (not while the microphone is listening, or ReVox would hear itself), gives its English meaning on iOS 18, offers **Look up in the dictionary** when the iPhone has a dictionary for that language, and shows the sentence with the word highlighted. Right-to-left languages show plain text for now. **Romanize** (Settings › Learning) adds how the whole original sounds in Latin letters under a script you cannot read; Japanese kana are right, kanji come out with their Chinese readings.
 - **How long ago.** Each Live row shows how long ago the phrase was said — `12 s`, `3 min` — counting up as you read, which is easier to follow in a running conversation than the clock time. Settings › Time on the Live screen switches to the time, or both. History always shows the time.
 - **Keep my model when hot** (Settings › Heat). When the iPhone gets hot, ReVox normally moves the next session to a smaller installed model and says so. Turn this on to keep your chosen model regardless. Translation still pauses at the iPhone's critical temperature, because iOS would otherwise close the app.
 - If phrases arrive faster than they can be translated, ReVox keeps the newest three, shows **Falling behind** and marks the gap in the transcript.
+- **Unsure phrases.** When ReVox is not sure of the language or the words — the language guess is weak, or the phrase scores between the log-probability gate and the noise floor — the phrase is not thrown away: it appears greyed, marked **Unsure** with a question-mark symbol and in italics, and is never spoken aloud. **Settings › Unsure phrases › Keep unsure phrases in History** (on by default) decides whether History and the exported file keep them too, marked `(unsure)`; off keeps them on the Live screen only. A change takes effect the next time you tap Start.
 - Every setting in **Settings** shows an example of what it does with its current value — a sample transcript row, a timeline, a sentence — under the control.
 
 </details>
@@ -236,9 +237,12 @@ capture → Segmenter → segment queue (max 3) → WhisperKitTranslator → tra
 | 7 | Hardening: storage accounting, recovery, thermal and memory pressure | Done |
 | 8 | Two-way conversation, the skipped language, Live screen polish, screenshots | Done |
 | 9 | Keep my model when hot, quick controls, Very fast, merging sessions, Learning mode, how-long-ago, setting examples, the pocket-tts click | Done |
-| 10 | UI compaction, full review, README, first-run tutorial | **Current** |
+| 10 | UI compaction, full review, README, first-run tutorial | Done |
+| 11 | Grouped Live controls, You speak / They speak, tappable words, unsure phrases, the History bar, on-device benchmark, tutorial refresh | **Current** |
 
 Milestone 9 was the owner's second round of fixes and improvements: the model stays through a hot iPhone when asked, the settings a conversation reaches for sit on the Live screen, sessions merge in History, Learning mode shows the words as spoken (and how they sound), rows say how long ago rather than when, every setting shows an example, the selected model is highlighted as a whole row, and the click before every pocket-tts phrase is gated out of the clip.
+
+Milestone 11 is the owner's third round: the Live pills sit in three captioned rows, the two-way pair is named by the two people, a word in Learning mode opens its pronunciation and meaning, a phrase ReVox is unsure about stays greyed instead of vanishing, the Merge / Delete bar sits above the tab bar, **Benchmark this iPhone** measures the models on the phone in your hand, and the tutorial hosts the real controls.
 
 What each milestone was measured to do on real devices is recorded row by row in [`docs/measurements/`](docs/measurements/); a row that has not yet been measured on an iPhone says `pending`, and this README says "pending device measurement" wherever it leans on one.
 
@@ -252,7 +256,7 @@ These are iOS rules, not bugs, and they make the iPhone app behave differently f
 4. **Background.** Translation continues under the `audio` background mode while the audio session and engine run; the app must be started from the foreground first. iOS may still suspend the app under memory pressure, in which case the transcript shows a gap. The audio session and engine configuration that keeps a session alive in the background was measured and is recorded in [docs/broadcast-bridge.md](docs/broadcast-bridge.md).
 5. **Self-capture.** In broadcast mode the extension also hears ReVox's English voice; the timing gate drops audio while ReVox speaks and for 300 ms after, so speech that overlaps ReVox's voice is not translated.
 6. **The second direction.** Whisper's translate task produces English and nothing else, so translating *out of* English — the reply half of a two-way conversation — uses Apple's on-device `Translation` framework, which is iOS 18 and later. On iOS 17, and for any pair iOS has no model for, the phrase is transcribed in the language it was spoken in and not spoken back; the Live screen says which. Replies are spoken by an iOS voice for the target language, because pocket-tts speaks English only.
-7. **Heat and battery.** Every model can be downloaded on every supported iPhone. ReVox recommends small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
+7. **Heat and battery.** Every model can be downloaded on every supported iPhone. Until you run the benchmark ReVox recommends by memory size: small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning. After **Benchmark this iPhone** it recommends the most accurate installed model that ran at least twice as fast as real time and loaded in under 10 s, and the Models screen says when it was measured; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
 
 ## How ReVox handles failure
 
@@ -276,9 +280,23 @@ What each of these was measured to do on real devices is recorded in [docs/measu
 - **Which files.** The Whisper models and their tokenizers are downloaded at pinned commit revisions, so the same version of ReVox always installs the same files. The Silero voice detector and the pocket-tts voices come from FluidAudio's `main` branch, which cannot be pinned, so ReVox records their file list at install and flags a later difference on the row ("Files changed since download — re-download to be sure") instead of using it silently.
 - **Offline.** After the downloads finish, ReVox contacts no server at all. The only hosts it ever contacts, and only while you start a download, are `huggingface.co` and its CDN.
 
+### Which model?
+
+What to expect, from Argmax's published WhisperKit runs on iPhones — 10-minute files transcribed offline, so a speed factor rather than a per-phrase latency; iPhone 12 mini to iPhone 17 Pro, iOS 17 to 26, dashboard last updated 2025-10-17 — until your own benchmark replaces them:
+
+| Model | Published speed (× real time, slowest to fastest iPhone) | Published word error rate (mean of two test sets) | Notes |
+|---|---|---|---|
+| tiny | 27–94× | ≈ 16–18 % | The quickest and the roughest. |
+| base | 15–61× | ≈ 12–13 % | The recommendation below 4 GB. |
+| small | 7–21× | ≈ 8.7–9.1 % | The default; flagged with a warning on the iPhone 12 family. |
+| medium | not published | not published | No published iPhone run exists; the benchmark is the only number. |
+| large-v3 (the 947 MB build ReVox installs) | 1.4–2.3× | ≈ 24–29 % on long recordings, 4.6–4.9 % on clean read speech | A15 and later; the slowest and hottest. |
+
+Source: the WhisperKit Benchmarks dashboard on Hugging Face ([`argmaxinc/whisperkit-benchmarks`](https://huggingface.co/spaces/argmaxinc/whisperkit-benchmarks), `dashboard_data/performance_data.json` and `support_data.csv`); a warm load of an already-compiled model is under a second for small and one to two seconds for large-v3 in those runs, while the first load after an install compiles for the Neural Engine and takes longer. Short phrases in a live conversation carry a per-phrase overhead these batch figures do not show; **Benchmark this iPhone** measures that on your iPhone, and [docs/measurements/m11-model-benchmark.md](docs/measurements/m11-model-benchmark.md) carries the cited reference numbers as expectations, the recommendation thresholds, and the table the owner fills by pasting the app's shared text.
+
 ## Transcripts
 
-Every session is stored on the iPhone (SwiftData, in the app's own container, never synced). The **History** tab lists sessions newest first with the time, source, duration, entry count and first English line; the search field filters by English text and shows the matching line per session; a session opens to its header (start time, source, model, voice, source language) and its entries in the Live row style. **Share** exports the session as a `.txt` in the same format as the Windows app — a `# ReVox session <timestamp>` header, then `[HH:MM:SS] [<lang>] ` and `  → <english>` per entry, with `… (skipped: falling behind)` markers — through the share sheet (Files, Mail, AirDrop). The original-language text is empty on both platforms; only the English translation is stored. Swipe a row to delete it; **Clear All** and the per-session **Delete** ask for confirmation. Exported files live in the app's temporary folder and are removed after a day.
+Every session is stored on the iPhone (SwiftData, in the app's own container, never synced). The **History** tab lists sessions newest first with the time, source, duration, entry count and first English line; the search field filters by English text and shows the matching line per session; a session opens to its header (start time, source, model, voice, source language) and its entries in the Live row style. **Share** exports the session as a `.txt` in the same format as the Windows app — a `# ReVox session <timestamp>` header, then `[HH:MM:SS] [<lang>] ` and `  → <english>` per entry, with `… (skipped: falling behind)` markers — through the share sheet (Files, Mail, AirDrop). Since milestone 11 a phrase ReVox was unsure about is kept as well, while **Keep unsure phrases in History** is on: greyed and marked **Unsure** in the session, counted in the session's header ("1 unsure phrase"), never matched by the search, and exported with `(unsure) ` at the start of its English line. The original-language text is empty on both platforms; only the English translation is stored. Swipe a row to delete it; **Clear All** and the per-session **Delete** ask for confirmation. Exported files live in the app's temporary folder and are removed after a day.
 
 ## Delivery
 

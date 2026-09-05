@@ -6,7 +6,7 @@ Accepted
 
 ## Date
 
-Rulings R6 and R7 in the design spec of 2026-09-02; the reply routing added in milestone 8 (2026-09-04); recorded 2026-09-04.
+Rulings R6 and R7 in the design spec of 2026-09-02; the reply routing added in milestone 8 (2026-09-04); recorded 2026-09-04. Milestone 11 (2026-09-05) renamed the picker to **They speak**; the decision is unchanged.
 
 ## Context
 
@@ -15,7 +15,7 @@ ReVox's own voice is Kyutai's pocket-tts, run through FluidAudio with `language:
 ## Decision
 
 - The **system voice is the default and the automatic fallback**: it is used until pocket-tts is installed, and `EffectiveSpeaker` switches to it for the rest of a session if pocket-tts fails, posting the reason to the status line ("Using system voice: pocket-tts failed to load") without failing the pipeline. The Voices screen lists both engines and offers Retry.
-- **pocket-tts speaks English only.** A phrase in any other language — the reply half of a two-way conversation — goes straight to the system voice with an `AVSpeechSynthesisVoice` for that language. If the iPhone has no voice for the language the user picks under Reply in, ReVox says so while they are picking it; the user adds one in iOS Settings › Accessibility › Spoken Content › Voices.
+- **pocket-tts speaks English only.** A phrase in any other language — the reply half of a two-way conversation — goes straight to the system voice with an `AVSpeechSynthesisVoice` for that language. If the iPhone has no voice for the language the user picks under **They speak**, the pill shows a crossed speaker and the ⓘ panel says so while they are picking it; the user adds one in iOS Settings › Accessibility › Spoken Content › Voices.
 - Under memory pressure the pocket-tts models are dropped first and the session continues with the system voice.
 
 ## Consequences
