@@ -41,7 +41,7 @@ final class GuessHostingTests: XCTestCase {
         for size in [DynamicTypeSize.large, .accessibility5] {
             host(List {
                 ForEach(rows) { row in
-                    LiveTranscriptRowView(row: row, now: said.addingTimeInterval(12), timeDisplay: .both, showsOriginal: true, romanizes: true)
+                    LiveTranscriptRowView(row: row, now: self.said.addingTimeInterval(12), timeDisplay: .both, showsOriginal: true, romanizes: true)
                 }
             }
             .environment(\.dynamicTypeSize, size))
