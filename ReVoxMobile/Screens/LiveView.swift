@@ -356,10 +356,4 @@ struct LiveView: View {
         let youName = LanguageCatalog.displayName(you, whenNil: noLanguageTitle)
         return "Two-way is off: \(youName) is not translated and not spoken back at you; everything else is spoken to you in English."
     }
-
-    /// Kept for `OnboardingTwoWayDemo` only: wave 2 (lane L6) hosts `LiveLanguagesGroup` there and deletes this.
-    static func twoWaySummary(ignored: String?, target: String?) -> String {
-        twoWaySummary(you: ignored, they: target)
-    }
-
 }
