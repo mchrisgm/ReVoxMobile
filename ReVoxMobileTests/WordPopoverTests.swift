@@ -17,6 +17,20 @@ final class WordPopoverTests: XCTestCase {
                    translatorAvailability: { _ in translator })
     }
 
+    private func word(_ text: String, in sentence: String, language: String = "es") throws -> OriginalWord {
+        try XCTUnwrap(WordSplitter.words(in: sentence, language: language).first { $0.text == text })
+    }
+
+    /// "estación" in the Spanish sample sentence, with every input at a sensible default.
+    private func content(latin: String? = nil, hasVoice: Bool = true, isMicrophoneRunning: Bool = false, hasDefinition: Bool? = nil,
+                         translator: WordTranslatorAvailability = .ready, meaning: WordPopoverContent.MeaningResult = .pending,
+                         languageName: String = "Spanish") throws -> WordPopoverContent {
+        let station = try word("estación", in: sentence)
+        return WordPopoverContent.make(word: station.text, languageName: languageName, latin: latin, hasVoice: hasVoice,
+                                       isMicrophoneRunning: isMicrophoneRunning, hasDefinition: hasDefinition, translator: translator,
+                                       meaning: meaning, original: sentence, range: station.range, english: english)
+    }
+
     // MARK: The environment value
 
     /// Every hosted test row gets this: no speaker, no voice, no dictionary, iOS 17 copy — and no framework touched.
@@ -41,5 +55,85 @@ final class WordPopoverTests: XCTestCase {
         XCTAssertNotEqual(availability, .unavailableOnThisiOS, "the iOS 18 branch answered; which case depends on the simulator's packs")
         let probed = await WordTranslatorProbe.availability(language: "es")
         XCTAssertEqual(probed, availability)
+    }
+
+    // MARK: Content
+
+    func testMakeKeepsTheLatinFormOnlyWhenThereIsOne() throws {
+        XCTAssertEqual(try content(latin: "ohayou").latin, "ohayou")
+        XCTAssertNil(try content(latin: nil).latin)
+    }
+
+    func testMakeShowsTheTranslatorsProgressTextAndAbsence() throws {
+        XCTAssertEqual(try content(translator: .ready, meaning: .pending).meaning, .loading)
+        XCTAssertEqual(try content(translator: .ready, meaning: .text("station")).meaning, .found("station"))
+        XCTAssertEqual(try content(translator: .ready, meaning: .absent).meaning, .note(WordPopoverContent.noMeaningText))
+        XCTAssertEqual(WordPopoverContent.noMeaningText, "No meaning found for this word.")
+    }
+
+    func testMakeExplainsEveryUnavailableTranslator() throws {
+        XCTAssertEqual(try content(translator: .unavailableOnThisiOS).meaning, .note(WordPopoverContent.needsIOS18Text))
+        XCTAssertEqual(WordPopoverContent.needsIOS18Text, "Meanings for single words need iOS 18. The whole sentence is translated below.")
+        XCTAssertEqual(try content(translator: .needsDownload).meaning, .note(WordPopoverContent.needsDownloadText(languageName: "Spanish")))
+        XCTAssertEqual(WordPopoverContent.needsDownloadText(languageName: "Spanish"),
+                       "To see what a word means, download Spanish for Apple's on-device translator in Settings › Apps › Translate.")
+        XCTAssertEqual(try content(translator: .unsupported).meaning, .note(WordPopoverContent.unsupportedText(languageName: "Spanish")))
+        XCTAssertEqual(WordPopoverContent.unsupportedText(languageName: "Spanish"),
+                       "Apple's on-device translator has no Spanish, so only the whole sentence is translated.")
+        // A pending answer is a note, never progress, when no translator will ever answer.
+        XCTAssertEqual(try content(translator: .unsupported, meaning: .pending).meaning,
+                       .note(WordPopoverContent.unsupportedText(languageName: "Spanish")))
+    }
+
+    func testTheSayButtonFollowsTheVoiceAndTheMicrophone() throws {
+        let live = try content(hasVoice: true, isMicrophoneRunning: false)
+        XCTAssertTrue(live.hasVoice)
+        XCTAssertTrue(live.canSpeak)
+        XCTAssertNil(live.speakDisabledNote)
+        XCTAssertNil(live.voiceNote)
+        let listening = try content(hasVoice: true, isMicrophoneRunning: true)
+        XCTAssertFalse(listening.canSpeak)
+        XCTAssertEqual(listening.speakDisabledNote, WordPopoverContent.microphoneNote)
+        XCTAssertEqual(WordPopoverContent.microphoneNote, "Stop listening to hear words through the microphone")
+        let silent = try content(hasVoice: false, languageName: "Japanese")
+        XCTAssertFalse(silent.canSpeak)
+        XCTAssertNil(silent.speakDisabledNote)
+        XCTAssertEqual(silent.voiceNote, "This iPhone has no Japanese voice. Add one in Settings › Accessibility › Spoken Content › Voices.")
+    }
+
+    /// `hasDefinition` is resolved last and can be slow: neither the button nor the note shows until it is known.
+    func testTheDictionaryButtonAndNoteWaitUntilTheAnswerIsKnown() throws {
+        let unknown = try content(hasDefinition: nil)
+        XCTAssertFalse(unknown.showsDictionaryButton)
+        XCTAssertNil(unknown.dictionaryNote)
+        let known = try content(hasDefinition: true)
+        XCTAssertTrue(known.showsDictionaryButton)
+        XCTAssertNil(known.dictionaryNote)
+        let missing = try content(hasDefinition: false)
+        XCTAssertFalse(missing.showsDictionaryButton)
+        XCTAssertEqual(missing.dictionaryNote,
+                       "This word is not in this iPhone's dictionaries. You can add a Spanish one in Settings › General › Dictionary.")
+    }
+
+    func testTheExampleKeepsTheSentenceAndTheRange() throws {
+        let example = try content().example
+        XCTAssertEqual(example.original, sentence)
+        XCTAssertEqual(String(sentence[example.range]), "estación")
+        XCTAssertEqual(example.english, english)
+    }
+
+    func testCopyNamesTheWordAndTheLanguage() {
+        XCTAssertEqual(WordPopoverContent.pronunciationHeader, "Pronunciation")
+        XCTAssertEqual(WordPopoverContent.meaningHeader, "Meaning")
+        XCTAssertEqual(WordPopoverContent.exampleHeader, "In this sentence")
+        XCTAssertEqual(WordPopoverContent.speakTitle("estación"), "Say estación")
+        XCTAssertEqual(WordPopoverContent.speakingTitle, "Speaking…")
+        XCTAssertEqual(WordPopoverContent.speakAccessibilityLabel(word: "おはよう", languageName: "Japanese"), "Say おはよう in Japanese")
+        XCTAssertEqual(WordPopoverContent.speakHint(languageName: "Spanish"), "Speaks the word with this iPhone's Spanish voice")
+        XCTAssertEqual(WordPopoverContent.translatingText, "Translating…")
+        XCTAssertEqual(WordPopoverContent.dictionaryButtonTitle, "Look up in the dictionary")
+        XCTAssertEqual(WordPopoverContent.dictionaryHint, "Opens this iPhone's dictionary at this word")
+        XCTAssertEqual(WordPopoverContent.closeLabel, "Close")
+        XCTAssertEqual(WordPopoverContent.lookUpActionTitle("la"), "Look up la")
     }
 }
