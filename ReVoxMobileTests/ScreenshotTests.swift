@@ -43,7 +43,7 @@ final class ScreenshotTests: XCTestCase {
     /// blank page from a busy one. The layer tree is rendered instead, the window is attached to the app's own
     /// scene so SwiftUI lays out in a real trait environment, and the result is checked for actual content.
     @discardableResult
-    func capture<V: View>(_ name: String, _ view: V) throws -> URL {
+    func capture<V: View>(_ name: String, settle: TimeInterval = 0.25, _ view: V) throws -> URL {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
         let window = Self.makeWindow()
@@ -60,7 +60,7 @@ final class ScreenshotTests: XCTestCase {
         controller.view.frame = window.bounds
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.25))   // one turn for async text and image work
+        RunLoop.current.run(until: Date().addingTimeInterval(settle))   // one turn for async text and image work
 
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 2                                              // @2x: sharp in the README, half the bytes
@@ -96,7 +96,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// Distinct colours across a coarse grid — enough to tell a rendered screen from an empty one without
-    /// reading every pixel of a two-megapixel image.
+    /// reading every pixel of a two-megapixel image. The image is composited over white first: CI run 117's
+    /// `history-selecting` was a transparent page with a few half-transparent white pixels along its edges, and
+    /// their alpha values alone counted as forty "colours", so the layer render passed and the fallback never ran.
     static func distinctColors(in image: UIImage, samples: Int = 48) -> Int {
         guard let cgImage = image.cgImage else { return 0 }
         let width = cgImage.width, height = cgImage.height
@@ -106,6 +108,8 @@ final class ScreenshotTests: XCTestCase {
         guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
                                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: bitmapInfo) else { return 0 }
+        context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         var seen = Set<UInt32>()
         let stepX = max(1, width / samples), stepY = max(1, height / samples)
@@ -182,7 +186,8 @@ final class ScreenshotTests: XCTestCase {
         }
         try context.save()
         let exporter = TranscriptExporter(directory: root.appendingPathComponent("exports", isDirectory: true))
-        try capture("history-selecting", NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
+        // M11 (§4): the bar is a safe-area inset over a bar material; a second turn lets the material settle.
+        try capture("history-selecting", settle: 1.0, NavigationStack { HistoryView(exporter: exporter, editing: true) }.modelContainer(container))
     }
 
     /// M11 §2: the popover's content, hosted on its own — a popover with its arrow cannot be captured without a
