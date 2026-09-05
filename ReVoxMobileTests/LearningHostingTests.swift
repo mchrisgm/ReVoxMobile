@@ -52,4 +52,68 @@ final class LearningHostingTests: XCTestCase {
         }
         .frame(width: 390))
     }
+
+    private func lookup(hasVoice: Bool, hasDefinition: Bool, translator: WordTranslatorAvailability, speaker: WordSpeaker? = nil) -> WordLookup {
+        WordLookup(speaker: speaker, hasVoice: { _ in hasVoice }, hasDefinition: { _ in hasDefinition },
+                   translatorAvailability: { _ in translator })
+    }
+
+    // MARK: WordPopoverView and DictionaryView
+
+    /// Every source combination the popover can show, at the default size and at `.accessibility5`, where the
+    /// content adapts to a sheet. `translationRequest` is nil in every hosted model, so no translation task is
+    /// ever attached on the CI simulator.
+    func testWordPopoverViewHostsEveryState() async throws {
+        let gracias = try XCTUnwrap(WordSplitter.words(in: sentence, language: "es").first { $0.text == "gracias" })
+        func model(_ lookup: WordLookup) -> WordPopoverModel {
+            WordPopoverModel(word: gracias, language: "es", original: sentence, english: english, lookup: lookup)
+        }
+        // iOS 17 copy, the default lookup: no speaker, no voice, no dictionary.
+        host(WordPopoverView(model: model(.unavailable)))
+        for translator in [WordTranslatorAvailability.needsDownload, .unsupported] {
+            let unavailable = model(lookup(hasVoice: false, hasDefinition: false, translator: translator))
+            await unavailable.load()
+            XCTAssertNil(unavailable.translationRequest)
+            host(WordPopoverView(model: unavailable))
+        }
+        // No voice, a dictionary entry: the voice note and the Look up button.
+        let noVoice = model(lookup(hasVoice: false, hasDefinition: true, translator: .unavailableOnThisiOS))
+        await noVoice.load()
+        host(WordPopoverView(model: noVoice, onLookUp: { _ in }, onClose: {}))
+        // Ready and answered, with a live Say button.
+        let speaker = WordSpeaker(voices: { [] }, speak: { _ in }, stop: {})
+        let ready = model(lookup(hasVoice: true, hasDefinition: false, translator: .ready, speaker: speaker))
+        await ready.load()
+        ready.receiveMeaning("thank you")
+        XCTAssertNil(ready.translationRequest)
+        host(WordPopoverView(model: ready))
+        host(WordPopoverView(model: ready).environment(\.dynamicTypeSize, .accessibility5))
+        speaker.noteStarted()
+        host(WordPopoverView(model: ready))                       // "Speaking…"
+        speaker.noteFinished()
+        // Say disabled while a microphone run is going.
+        let listening = WordSpeaker(isMicrophoneRunning: { true }, voices: { [] }, speak: { _ in }, stop: {})
+        let disabled = model(lookup(hasVoice: true, hasDefinition: false, translator: .ready, speaker: listening))
+        await disabled.load()
+        disabled.receiveMeaning(nil)
+        XCTAssertEqual(disabled.content.speakDisabledNote, WordPopoverContent.microphoneNote)
+        host(WordPopoverView(model: disabled))
+        XCTAssertEqual(WordPopoverView.idealWidth, 300)
+        XCTAssertEqual(WordPopoverView.maximumWidth, 360)
+        XCTAssertEqual(WordPopoverView.buttonHeight, 44)
+    }
+
+    func testTheHighlightedSentenceKeepsEveryCharacter() throws {
+        let words = WordSplitter.words(in: sentence, language: "es")
+        for word in words {
+            let example = WordPopoverContent.Example(original: sentence, range: word.range, english: english)
+            host(WordPopoverView.highlightedSentence(example))
+        }
+        XCTAssertEqual(words.map(\.text), ["Buenos", "días", "gracias", "por", "acompañarnos", "hoy"])
+    }
+
+    func testDictionaryViewHosts() {
+        host(DictionaryView(term: "station"))
+        XCTAssertEqual(DictionaryTerm(term: "station").id, "station")
+    }
 }
