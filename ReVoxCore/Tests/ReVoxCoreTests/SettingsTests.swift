@@ -46,7 +46,7 @@ final class SettingsTests: XCTestCase {
     func testEncodedKeysAreWindowsSnakeCase() throws {
         let json = String(decoding: try SettingsCodec.encode(Settings()), as: UTF8.self)
         for key in ["\"model\"", "\"language\"", "\"voice\"", "\"system_voice_identifier\"", "\"ducking\"",
-                    "\"voice_volume\"", "\"latency_mode\"", "\"capture_mode\""] {
+                    "\"voice_volume\"", "\"latency_mode\"", "\"capture_mode\"", "\"keep_guesses\""] {
             XCTAssertTrue(json.contains(key), key)
         }
         XCTAssertTrue(json.contains("\"language\" : null") || json.contains("\"language\":null"))
@@ -229,9 +229,34 @@ final class SettingsTests: XCTestCase {
     }
 
     func testExplicitNullsKeepTheOptionalsEmptyAndTheDefaultsForTheRest() {
-        let json = #"{"language": null, "system_voice_identifier": null, "ignored_language": null, "two_way_language": null}"#
+        let json = #"{"language": null, "system_voice_identifier": null, "ignored_language": null, "two_way_language": null, "keep_guesses": null}"#
         let settings = SettingsCodec.decode(Data(json.utf8))
         XCTAssertEqual(settings, Settings())
+    }
+
+    // MARK: Unsure phrases (M11)
+
+    func testTheM11FieldDefaultsToKeepingGuesses() {
+        XCTAssertTrue(Settings().keepGuesses, "History matches what Live showed unless the user turns it off")
+    }
+
+    func testTheM11FieldRoundTripsThroughSnakeCase() throws {
+        var settings = Settings()
+        settings.keepGuesses = false
+        let data = try JSONEncoder().encode(settings)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["keep_guesses"] as? Bool, false)
+        XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: data), settings)
+        XCTAssertNotEqual(settings, Settings(), "the field is part of equality")
+    }
+
+    /// A settings file written before M11 has no `keep_guesses` and keeps the default.
+    func testASettingsFileFromBeforeM11Decodes() throws {
+        let json = Data(#"{"model":"small","language":null,"voice":"alba","ducking":true,"learning":true}"#.utf8)
+        let settings = try JSONDecoder().decode(Settings.self, from: json)
+        XCTAssertTrue(settings.keepGuesses)
+        XCTAssertTrue(settings.learning)
+        XCTAssertEqual(SettingsCodec.decode(Data(#"{"keep_guesses": false}"#.utf8)).keepGuesses, false)
     }
 
     func testSaveCreatesTheDirectoryAndOverwritesAtomically() throws {
