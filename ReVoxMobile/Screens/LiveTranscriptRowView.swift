@@ -63,6 +63,15 @@ struct LiveTranscriptRowView: View {
         "Language \(LanguageCatalog.displayName(code, whenNil: code))"
     }
 
+    /// M11 §3: a phrase the gates were unsure about. The marker is the first line of the text column, so it stacks
+    /// under the badge at the accessibility sizes like the rest of the text; the English is italic and secondary, so
+    /// the state is never carried by colour alone; VoiceOver reads the marker as "Unsure translation" between the
+    /// language and the English in the row's one combined element.
+    static let guessMarkerText = "Unsure"
+    static let guessAccessibilityText = "Unsure translation"
+    /// One symbol with the History row and the Settings example.
+    static let guessSymbolName = SessionSummary.guessSymbolName
+
     var body: some View {
         switch row.kind {
         case .entry(let language, let original, let english):
@@ -124,6 +133,7 @@ struct LiveTranscriptRowView: View {
 
     private func textColumn(original: String, english: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
+            if row.isGuess { guessMarker }
             if showsOriginal, !original.isEmpty, original != english {
                 Text(original).font(.body).foregroundStyle(.secondary)
                 if romanizes, let latin = Romanizer.romanize(original) {
@@ -131,7 +141,17 @@ struct LiveTranscriptRowView: View {
                     Text(latin).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text(english).font(.body)
+            Text(english)
+                .font(row.isGuess ? .body.italic() : .body)
+                .foregroundStyle(row.isGuess ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         }
+    }
+
+    /// M11 §3: the visible reason a row is greyed, read as "Unsure translation".
+    private var guessMarker: some View {
+        Label(Self.guessMarkerText, systemImage: Self.guessSymbolName)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(Self.guessAccessibilityText)
     }
 }

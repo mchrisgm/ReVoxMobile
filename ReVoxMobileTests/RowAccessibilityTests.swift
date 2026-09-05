@@ -73,4 +73,14 @@ final class RowAccessibilityTests: XCTestCase {
         XCTAssertEqual(ModelRowView.accessibilityText(for: paused), "Model tiny. ≈ 77 MB. Paused",
                        "a paused fraction is not spoken as progress: nothing is moving")
     }
+
+    // MARK: M11 §3: the guess marker
+
+    func testTheGuessMarkerCopyIsExactAndSharesTheHistorySymbol() {
+        XCTAssertEqual(LiveTranscriptRowView.guessMarkerText, "Unsure")
+        XCTAssertEqual(LiveTranscriptRowView.guessAccessibilityText, "Unsure translation")
+        XCTAssertEqual(LiveTranscriptRowView.guessSymbolName, "questionmark.circle")
+        XCTAssertEqual(LiveTranscriptRowView.guessSymbolName, SessionSummary.guessSymbolName,
+                       "Live, Session detail, the History row and the Settings example show one symbol")
+    }
 }
