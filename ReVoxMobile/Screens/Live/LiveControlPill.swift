@@ -11,7 +11,8 @@ struct LiveControlPill: View {
     static let horizontalPadding: CGFloat = 10
     static let lockedOpacity = 0.45
 
-    let systemImage: String
+    /// nil for the You speak / They speak pair, whose words are the symbol.
+    let systemImage: String?
     let title: String
     var value: String? = nil
     var isOn = false
@@ -19,10 +20,12 @@ struct LiveControlPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
-                .accessibilityHidden(true)
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.subheadline)
+                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                    .accessibilityHidden(true)
+            }
             Text(title)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)

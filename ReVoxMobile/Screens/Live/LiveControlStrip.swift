@@ -222,16 +222,31 @@ struct LiveControlStrip: View {
     static let twoWayPillName = "Two-way"
     static let volumePillName = "Voice volume"
     static let moreAccessibilityLabel = "Details"
-    static let leaveAloneTitle = "Leave alone"
-    static let replyInTitle = "Reply in"
     static let duckingHelpText = "Lowers other apps' audio while ReVox speaks; applies at the next Start"
     static let learningHelpText = "Shows the words as spoken above the translation; applies at the next Start"
-    static let leaveAloneHintText = "The language ReVox does not translate"
-    static let replyInHintText = "The language that language is spoken back in"
     static let showVolumeHintText = "Shows the volume slider"
     static let hideVolumeHintText = "Hides the volume slider"
     static let moreHintText = "Explains what each control does"
     static let lessHintText = "Hides the explanations"
+
+    /// The caption column of every group: fixed so the pills align across the three rows (M11 §1).
+    static let captionColumnWidth: CGFloat = 72
+    static let listenCaption = "Listen"
+    static let voiceCaption = "Voice"
+    static let languagesCaption = "Languages"
+    static let youSpeakTitle = "You speak"
+    static let theySpeakTitle = "They speak"
+    static let chooseLanguageTitle = "Choose…"
+    static let youSpeakHintText = "The language you speak; what you say is spoken to them in their language"
+    static let theySpeakHintText = "The other person's language; what you say is spoken to them in it"
+    static let noVoiceValueSuffix = ", no voice on this iPhone"
+    static let volumeHelpText = "How loud ReVox's own voice is; other apps are not affected"
+    static let lockedDetailText = "Stop to change the dimmed controls — ReVox reads them once, at Start."
+
+    /// "Spanish, no voice on this iPhone": the crossed speaker is never the only signal.
+    static func theySpeakAccessibilityValue(name: String, hasVoice: Bool) -> String {
+        hasVoice ? name : name + noVoiceValueSuffix
+    }
 
     /// Source, latency, ducking, Learning and two-way are read once, when the pipeline starts (§8.2, M9).
     static func locksControls(in state: LiveState) -> Bool {

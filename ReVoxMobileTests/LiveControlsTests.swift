@@ -168,4 +168,35 @@ final class LiveControlsTests: XCTestCase {
         XCTAssertTrue(live.canChooseYourLanguage)
         XCTAssertNil(live.pinnedSourceNote)
     }
+
+    func testTheLiveViewModelIsTheStripsModel() {
+        let live = liveModel(store())
+        let controls: any LiveControlsModel = live
+        controls.isTwoWay = true
+        controls.theySpeak = "es"
+        XCTAssertEqual(live.twoWayLanguage, "es", "the strip writes through the protocol into the same setting")
+        XCTAssertEqual(controls.state, .idle)
+        XCTAssertTrue(controls.canChooseYourLanguage)
+        XCTAssertNil(controls.pinnedSourceNote)
+        XCTAssertNil(controls.twoWayVoiceNote)
+    }
+
+    func testTheGroupsAndThePairPillsSayWhoSpeaksWhat() {
+        XCTAssertEqual(LiveControlStrip.listenCaption, "Listen")
+        XCTAssertEqual(LiveControlStrip.voiceCaption, "Voice")
+        XCTAssertEqual(LiveControlStrip.languagesCaption, "Languages")
+        XCTAssertEqual(Set([LiveControlStrip.listenCaption, LiveControlStrip.voiceCaption, LiveControlStrip.languagesCaption]).count, 3)
+        XCTAssertEqual(LiveControlStrip.captionColumnWidth, 72)
+        XCTAssertEqual(LiveControlStrip.youSpeakTitle, "You speak")
+        XCTAssertEqual(LiveControlStrip.theySpeakTitle, "They speak")
+        XCTAssertEqual(LiveControlStrip.chooseLanguageTitle, "Choose…")
+        XCTAssertEqual(LiveControlStrip.youSpeakHintText, "The language you speak; what you say is spoken to them in their language")
+        XCTAssertEqual(LiveControlStrip.theySpeakHintText, "The other person's language; what you say is spoken to them in it")
+        XCTAssertEqual(LiveControlStrip.theySpeakAccessibilityValue(name: "Spanish", hasVoice: true), "Spanish")
+        XCTAssertEqual(LiveControlStrip.theySpeakAccessibilityValue(name: "Spanish", hasVoice: false), "Spanish, no voice on this iPhone")
+        XCTAssertEqual(LiveControlStrip.lockedDetailText, "Stop to change the dimmed controls — ReVox reads them once, at Start.")
+        XCTAssertTrue(LiveControlStrip.lockedDetailText.hasPrefix(LiveControlStrip.lockedText))
+        XCTAssertEqual(LiveControlStrip.volumeHelpText, "How loud ReVox's own voice is; other apps are not affected")
+        XCTAssertNotEqual(LiveControlStrip.volumeHelpText, LiveControlStrip.duckingHelpText)
+    }
 }
