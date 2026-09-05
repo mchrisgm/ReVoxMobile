@@ -4,9 +4,10 @@ import UIKit
 import ReVoxCore
 @testable import ReVoxMobile
 
-/// Hosts the tutorial (M10) in a `UIHostingController` on every page, with every demo in both of its states:
-/// SwiftUI has no unit-test renderer, so this proves the views build against the model and do not trap on
-/// first layout — the same bar `ScreenHostingTests` holds the other screens to.
+/// Hosts the tutorial (M10, refreshed in M11 §6) in a `UIHostingController` on every page, with every demo in
+/// both of its states — the real Live strip over the demo model included, idle and locked, at the default and
+/// an accessibility type size: SwiftUI has no unit-test renderer, so this proves the views build against the
+/// model and do not trap on first layout — the same bar `ScreenHostingTests` holds the other screens to.
 @MainActor
 final class OnboardingHostingTests: XCTestCase {
     private var defaults: UserDefaults!
@@ -68,6 +69,50 @@ final class OnboardingHostingTests: XCTestCase {
         }
         model.reset()
         XCTAssertFalse(model.controls.isTwoWay, "reset between passes: the demo model is shared")
+    }
+
+    /// The pair line's edge states inside the tutorial: a language with no voice (the crossed speaker and the
+    /// panel's note), You speak unset (the "Choose…" pill and Live's nil footnote), and the caption-above-pills
+    /// branch at an accessibility size.
+    func testTheLanguagesGroupHostsItsEdgeStatesInsideTheTutorial() {
+        let model = OnboardingViewModel(defaults: defaults)
+        let count = model.pages.count
+        model.controls.isTwoWay = true
+        model.demoShowsDetails = true
+        model.controls.theySpeak = "zz"
+        XCTAssertNotNil(model.controls.twoWayVoiceNote, "no iPhone has a voice for a code that is not a language")
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))
+        host(OnboardingPageView(page: .twoWay, index: 3, count: count, model: model))
+        model.controls.ignoredLanguage = nil
+        host(OnboardingPageView(page: .twoWay, index: 3, count: count, model: model))
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))
+        model.reset()
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model).environment(\.dynamicTypeSize, .accessibility3))
+        model.controls.isTwoWay = true
+        host(OnboardingPageView(page: .twoWay, index: 3, count: count, model: model).environment(\.dynamicTypeSize, .accessibility3))
+        host(OnboardingPageView(page: .learning, index: 4, count: count, model: model).environment(\.dynamicTypeSize, .accessibility3))
+        model.reset()
+    }
+
+    /// M11 §6: the demo Start locks the strip exactly as a session does — dimmed pills, the lock line, the panel's
+    /// locked line and the red Stop — and Stop unlocks it.
+    func testTheControlsPageLocksOnStartAndUnlocksOnStop() {
+        let model = OnboardingViewModel(defaults: defaults)
+        let count = model.pages.count
+        model.demoShowsDetails = true
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))
+        XCTAssertFalse(LiveControlStrip.locksControls(in: model.controls.state))
+        model.controls.start()
+        XCTAssertTrue(LiveControlStrip.locksControls(in: model.controls.state))
+        XCTAssertTrue(model.controls.isRunning)
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))
+        host(OnboardingView(model: model))
+        model.controls.isTwoWay = true
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))   // locked with the pair line
+        model.controls.stop()
+        XCTAssertFalse(LiveControlStrip.locksControls(in: model.controls.state))
+        host(OnboardingPageView(page: .controls, index: 1, count: count, model: model))
+        model.reset()
     }
 
     func testTranscriptDemoHostsEmptyPlayingAndStopped() {
