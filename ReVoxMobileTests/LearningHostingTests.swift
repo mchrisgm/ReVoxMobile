@@ -116,4 +116,39 @@ final class LearningHostingTests: XCTestCase {
         host(DictionaryView(term: "station"))
         XCTAssertEqual(DictionaryTerm(term: "station").id, "station")
     }
+
+    // MARK: OriginalWordsLine
+
+    /// The chips with and without a selection, at the default and the largest accessibility size, one- and
+    /// two-character Japanese chips with no minimum width, the line inside the row's baseline-aligned HStack as
+    /// the row view places it (wave 2), and the custom-action modifier on a combined element.
+    func testOriginalWordsLineHostsWithAndWithoutASelection() throws {
+        let words = WordSplitter.words(in: sentence, language: "es")
+        XCTAssertEqual(words.count, 6)
+        host(OriginalWordsLine(original: sentence, language: "es", english: english, words: words, lookup: .constant(nil)))
+        host(OriginalWordsLine(original: sentence, language: "es", english: english, words: words, lookup: .constant(nil))
+            .environment(\.dynamicTypeSize, .accessibility5))
+        let selected = WordPopoverModel(word: words[1], language: "es", original: sentence, english: english, lookup: .unavailable)
+        host(OriginalWordsLine(original: sentence, language: "es", english: english, words: words, lookup: .constant(selected)))
+        let tokyo = "東京タワーに行きます"
+        let japanese = WordSplitter.words(in: tokyo, language: "ja")
+        XCTAssertFalse(japanese.isEmpty)
+        host(OriginalWordsLine(original: tokyo, language: "ja", english: "I am going to Tokyo Tower.", words: japanese, lookup: .constant(nil)))
+        host(HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("10:41:07").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text("es").font(.caption2.weight(.semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                OriginalWordsLine(original: sentence, language: "es", english: english, words: words, lookup: .constant(nil))
+                Text(english).font(.body)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: 390))
+        host(Text(sentence)
+            .accessibilityElement(children: .combine)
+            .modifier(WordLookUpActions(words: words, language: "es", original: sentence, english: english, lookup: .constant(nil))))
+        XCTAssertEqual(OriginalWordsLine.chipMinimumHeight, 44)
+        XCTAssertEqual(OriginalWordsLine.chipCornerRadius, 6)
+        XCTAssertEqual(OriginalWordsLine.selectedFillOpacity, 0.22)
+    }
 }

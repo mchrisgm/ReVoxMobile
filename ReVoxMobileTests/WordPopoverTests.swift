@@ -214,4 +214,32 @@ final class WordPopoverTests: XCTestCase {
         XCTAssertTrue(model.speak())
         XCTAssertEqual(recorded.value, ["estación"])
     }
+
+    // MARK: Selection (the row's tap and its VoiceOver action)
+
+    /// UIKit refuses to present while a dismissal is in flight: an open popover is closed first and the new
+    /// model staged on the next run-loop turn, so `lookup` never points at a word with no popover.
+    func testSelectingWhileAnotherPopoverIsOpenClosesItFirst() async throws {
+        let holder = LockedBox<WordPopoverModel?>(nil)
+        let binding = Binding<WordPopoverModel?>(get: { holder.value }, set: { model in holder.mutate { $0 = model } })
+        let words = WordSplitter.words(in: sentence, language: "es")
+        XCTAssertEqual(words.count, 4)
+        OriginalWordsLine.select(words[0], language: "es", original: sentence, english: english, lookup: .unavailable, into: binding)
+        XCTAssertEqual(holder.value?.word, words[0], "nothing open: staged at once")
+        OriginalWordsLine.select(words[3], language: "es", original: sentence, english: english, lookup: .unavailable, into: binding)
+        XCTAssertNil(holder.value, "the open popover is closed first")
+        await waitUntil("the new word staged on the next turn") { holder.value?.word == words[3] }
+        XCTAssertEqual(holder.value?.language, "es")
+        XCTAssertEqual(holder.value?.english, english)
+    }
+
+    func testCustomActionsAreCappedAtTwelveWords() {
+        let many = WordSplitter.words(in: (1...20).map { "palabra\($0)" }.joined(separator: " "), language: "es")
+        XCTAssertEqual(many.count, 20)
+        XCTAssertEqual(OriginalWordsLine.actionWords(many).map(\.id), Array(0..<12))
+        XCTAssertEqual(OriginalWordsLine.customActionLimit, 12)
+        let few = WordSplitter.words(in: "Buenos días.", language: "es")
+        XCTAssertEqual(OriginalWordsLine.actionWords(few), few)
+        XCTAssertEqual(OriginalWordsLine.actionWords([]), [])
+    }
 }
