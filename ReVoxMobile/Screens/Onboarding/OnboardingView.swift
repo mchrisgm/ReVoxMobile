@@ -1,10 +1,11 @@
 import SwiftUI
 import ReVoxCore
 
-/// The first-run tutorial (M10): seven pages, each with a demo the reader taps rather than a paragraph they read.
-/// Presented as a full-screen cover from the root, so it cannot be swiped away half-read; Skip is always in the
-/// corner. Pages slide in from the side they come from and fade; under Reduce Motion they crossfade and nothing
-/// bounces. Every control is at least 44 pt tall; every colour is a semantic one, so dark mode needs no work.
+/// The first-run tutorial (M10, refreshed in M11 §6): seven pages, each with a demo the reader taps rather than a
+/// paragraph they read — the Live controls themselves, over a demo model. Presented as a full-screen cover from
+/// the root, so it cannot be swiped away half-read; Skip is always in the corner. Pages slide in from the side
+/// they come from and fade; under Reduce Motion they crossfade and nothing bounces. Every control is at least
+/// 44 pt tall; every colour is a semantic one, so dark mode needs no work.
 struct OnboardingView: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -30,6 +31,7 @@ struct OnboardingView: View {
             footer
         }
         .background(Color(.systemBackground))
+        .onAppear { model.controls.refreshVoiceNote() }
         .onDisappear { model.stopDemo() }
     }
 
@@ -206,6 +208,8 @@ struct OnboardingProgressBar: View {
 }
 
 /// One page: the title (a heading to VoiceOver), one sentence, and the demo. Scrolls when Dynamic Type asks.
+/// The column itself is not padded: the title and sentence take 20 pt each, and every demo pads itself, so the
+/// strip and the Languages group get the same width they have on Live (393 − 2 × 16) and pack identically.
 struct OnboardingPageView: View {
     let page: OnboardingPage
     let index: Int
@@ -218,15 +222,16 @@ struct OnboardingPageView: View {
                 Text(page.title)
                     .font(.title.weight(.bold))
                     .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 20)
                 Text(page.subtitle)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
                 demo
                     .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
             .padding(.vertical, 8)
         }
         .scrollIndicators(.hidden)
@@ -245,8 +250,8 @@ struct OnboardingPageView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-        case .source:
-            OnboardingSourceDemo(model: model)
+        case .controls:
+            OnboardingControlsDemo(model: model)
         case .transcript:
             OnboardingTranscriptDemo(model: model)
         case .twoWay:
@@ -268,7 +273,8 @@ struct OnboardingPageView: View {
     }
 }
 
-/// The card every demo sits in: the Live screen's card, so the tutorial looks like the app it is about.
+/// The card every demo sits in: the Live screen's card, so the tutorial looks like the app it is about. It
+/// carries the page's 20 pt side margin itself (see `OnboardingPageView`).
 struct OnboardingDemoCard<Content: View>: View {
     let content: () -> Content
 
@@ -283,6 +289,7 @@ struct OnboardingDemoCard<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 20)
     }
 }
 
@@ -322,46 +329,95 @@ struct OnboardingPointsList: View {
     }
 }
 
-// MARK: - Choose a source
+/// The Live screen's Start / Stop capsule, shared by the controls page and the transcript demo: the same words
+/// `LiveView.buttonTitle(for:)` gives the real one, red while running. No side margin of its own — the caller
+/// places it (inside a card, or at the page's 20 pt).
+struct OnboardingStartStopButton: View {
+    let isRunning: Bool
+    let accessibilityLabel: String
+    let accessibilityHint: String
+    let action: () -> Void
 
-struct OnboardingSourceDemo: View {
+    static func title(running: Bool) -> String {
+        LiveView.buttonTitle(for: running ? .running : .idle)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isRunning ? "stop.fill" : "mic.fill")
+                    .accessibilityHidden(true)
+                Text(Self.title(running: isRunning))
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 50)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(isRunning ? .red : .accentColor)
+        .animation(.default, value: isRunning)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(accessibilityHint)
+    }
+}
+
+// MARK: - The Live controls
+
+/// The Live strip itself over the demo model (M11 §6): every pill, menu, the details panel and the volume slider
+/// are the real views, so nothing here can drift from Live. Under the strip, the current source's line and a tip;
+/// then a Start capsule that locks the pills the way a session does, and Stop that unlocks them.
+struct OnboardingControlsDemo: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let tipText = "The source is read once, at Start. Stop and start again to change it."
+    static let tipText = "The volume applies at once; everything else is read when a session starts. This Start is a demo — nothing is recorded."
+    static let lockedTipText = "A session is running: the dimmed pills say “\(LiveControlStrip.lockedText)” because ReVox read them at Start. Tap Stop to change them."
+    static let startAccessibilityLabel = "Start a demo session"
+    static let stopAccessibilityLabel = "Stop the demo session"
+    static let startHint = "Locks the pills the way a real session does; nothing is recorded"
+    static let stopHint = "Unlocks the pills"
 
     var body: some View {
-        OnboardingDemoCard {
-            Text("Listen to")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            Picker("Listen to", selection: $model.demoSource) {
-                ForEach(LiveView.availableSources, id: \.self) { mode in
-                    Text(LiveView.title(for: mode)).tag(mode)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            LiveControlStrip(model: model.controls, showsVolumeSlider: $model.demoShowsVolumeSlider, isMoreExpanded: $model.demoShowsDetails)
+            if model.demoShowsDetails {
+                LiveDetailsPanel(model: model.controls)
             }
-            .pickerStyle(.segmented)
-            .accessibilityLabel("Audio source")
-            Label {
-                Text(LiveView.description(for: model.demoSource))
+            OnboardingDemoCard {
+                Label {
+                    Text(LiveView.description(for: model.controls.captureMode))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: LiveView.symbol(for: model.controls.captureMode))
+                        .foregroundStyle(Color.accentColor)
+                        .contentTransition(symbolTransition)
+                }
+                .accessibilityElement(children: .combine)
+                Divider()
+                Text(model.controls.isRunning ? Self.lockedTipText : Self.tipText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .contentTransition(.opacity)
                     .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: LiveView.symbol(for: model.demoSource))
-                    .foregroundStyle(Color.accentColor)
-                    .contentTransition(symbolTransition)
             }
-            .accessibilityElement(children: .combine)
-            Divider()
-            Text(Self.tipText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            OnboardingStartStopButton(isRunning: model.controls.isRunning,
+                                      accessibilityLabel: model.controls.isRunning ? Self.stopAccessibilityLabel : Self.startAccessibilityLabel,
+                                      accessibilityHint: model.controls.isRunning ? Self.stopHint : Self.startHint) {
+                if model.controls.isRunning {
+                    model.controls.stop()
+                } else {
+                    model.controls.start()
+                }
+            }
+            .padding(.horizontal, 20)
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.demoSource)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.controls.state)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.1), value: model.controls.captureMode)
+        .animation(reduceMotion ? nil : .default, value: model.demoShowsDetails)
     }
 
     private var symbolTransition: ContentTransition {
@@ -373,12 +429,25 @@ struct OnboardingSourceDemo: View {
 // MARK: - Start and read
 
 /// The Live screen in miniature: a transcript whose rows slide in one by one, ages counting up under them, and
-/// the same capsule that starts and stops the real thing.
+/// the same capsule that starts and stops the real thing. The script ends with a guess, which the row view greys
+/// and marks Unsure (M11 §3); the caption under the rows says so for as long as the greyed row is there.
 struct OnboardingTranscriptDemo: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static func buttonTitle(playing: Bool) -> String { playing ? "Stop" : "Start" }
+    static let startAccessibilityLabel = "Start the demo"
+    static let stopAccessibilityLabel = "Stop the demo"
+    static let hintText = "A short conversation appears in the transcript, one phrase at a time"
+
+    /// The guess explanation whenever the greyed row is on screen, even after Stop; otherwise what Live says.
+    static func captionText(playing: Bool, lastIsGuess: Bool) -> String {
+        if lastIsGuess { return OnboardingDemo.guessText }
+        return playing ? OnboardingDemo.speakingText : LiveView.microphoneDescription
+    }
+
+    static func captionSymbol(playing: Bool, lastIsGuess: Bool) -> String {
+        lastIsGuess ? "questionmark.circle" : "speaker.wave.2"
+    }
 
     var body: some View {
         OnboardingDemoCard {
@@ -400,37 +469,26 @@ struct OnboardingTranscriptDemo: View {
                 .animation(rowAnimation, value: model.demoRows)
             }
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
-                    .symbolEffect(.variableColor.iterative, isActive: model.isDemoPlaying && !reduceMotion)
+                Image(systemName: Self.captionSymbol(playing: model.isDemoPlaying, lastIsGuess: model.lastDemoRowIsGuess))
+                    .symbolEffect(.variableColor.iterative, isActive: model.isDemoPlaying && !model.lastDemoRowIsGuess && !reduceMotion)
                     .accessibilityHidden(true)
-                Text(model.isDemoPlaying ? OnboardingDemo.speakingText : LiveView.microphoneDescription)
+                Text(Self.captionText(playing: model.isDemoPlaying, lastIsGuess: model.lastDemoRowIsGuess))
                     .contentTransition(.opacity)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .animation(.default, value: model.isDemoPlaying)
-            Button {
+            .animation(.default, value: model.lastDemoRowIsGuess)
+            OnboardingStartStopButton(isRunning: model.isDemoPlaying,
+                                      accessibilityLabel: model.isDemoPlaying ? Self.stopAccessibilityLabel : Self.startAccessibilityLabel,
+                                      accessibilityHint: Self.hintText) {
                 if model.isDemoPlaying {
                     model.stopDemo()
                 } else {
                     model.startDemo()
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: model.isDemoPlaying ? "stop.fill" : "mic.fill")
-                        .accessibilityHidden(true)
-                    Text(Self.buttonTitle(playing: model.isDemoPlaying))
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 50)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .tint(model.isDemoPlaying ? .red : .accentColor)
-            .animation(.default, value: model.isDemoPlaying)
-            .accessibilityLabel(model.isDemoPlaying ? "Stop the demo" : "Start the demo")
-            .accessibilityHint("A short conversation appears in the transcript, one phrase at a time")
         }
     }
 
@@ -445,82 +503,67 @@ struct OnboardingTranscriptDemo: View {
 
 // MARK: - Two-way
 
+/// The real Languages group over the demo model: tap Two-way and the You speak / They speak pills appear beneath
+/// it exactly as on Live, the reply row appears under the other person's line, and the footnote says what will be
+/// spoken to whom in the languages the pills show.
 struct OnboardingTwoWayDemo: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        OnboardingDemoCard {
-            Toggle(isOn: $model.demoTwoWay) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Two-way").font(.subheadline.weight(.semibold))
-                    Text(LiveView.twoWaySummary(ignored: OnboardingDemo.twoWayIgnored,
-                                                target: model.demoTwoWay ? OnboardingDemo.twoWayTarget : nil))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.opacity)
+        VStack(alignment: .leading, spacing: 12) {
+            LiveLanguagesGroup(model: model.controls)
+                .padding(.horizontal)
+            OnboardingDemoCard {
+                LiveTranscriptRowView(row: OnboardingDemo.theirLine)
+                if model.controls.isTwoWay {
+                    LiveTranscriptRowView(row: OnboardingDemo.yourReply)
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
+                Text(model.controls.isTwoWay
+                     ? OnboardingDemo.twoWayOnText(you: model.controls.ignoredLanguage, they: model.controls.theySpeak)
+                     : OnboardingDemo.twoWayOffText(you: model.controls.ignoredLanguage))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minHeight: 44)
-            .accessibilityHint(LiveView.twoWayHintText)
-            if model.demoTwoWay {
-                languageRow(title: "Don't translate", value: LanguageCatalog.displayName(OnboardingDemo.twoWayIgnored, whenNil: LiveView.noLanguageTitle))
-                languageRow(title: "Reply in", value: LanguageCatalog.displayName(OnboardingDemo.twoWayTarget, whenNil: LiveView.noLanguageTitle))
-            }
-            Divider()
-            LiveTranscriptRowView(row: OnboardingDemo.theirLine)
-            if model.demoTwoWay {
-                LiveTranscriptRowView(row: OnboardingDemo.yourReply)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            }
-            Text(model.demoTwoWay ? OnboardingDemo.twoWayOnText : OnboardingDemo.twoWayOffText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .contentTransition(.opacity)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.2), value: model.demoTwoWay)
-    }
-
-    private func languageRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title).font(.subheadline)
-            Spacer(minLength: 8)
-            Text(value).font(.subheadline).foregroundStyle(.secondary)
-        }
-        .frame(minHeight: 32)
-        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-        .accessibilityElement(children: .combine)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.2), value: model.controls.isTwoWay)
     }
 }
 
 // MARK: - Learning
 
+/// The same real group: tap Learn and the example rows show the words as spoken above the translation, through
+/// the real row view (so its words are tappable, M11 §2). Romanize has no pill on Live, so the card keeps the
+/// Settings-shaped toggle for it.
 struct OnboardingLearningDemo: View {
     @Bindable var model: OnboardingViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        OnboardingDemoCard {
-            Toggle("Learning", isOn: $model.demoLearning)
-                .frame(minHeight: 44)
-                .accessibilityHint("Shows the words as spoken above the translation")
-            Toggle("Romanize", isOn: $model.demoRomanize)
-                .frame(minHeight: 44)
-                .disabled(!model.demoLearning)
-                .accessibilityHint("Adds how the original sounds in Latin letters")
-            Divider()
-            LiveTranscriptRowView(row: SettingExamples.sampleRow(original: SettingExamples.spanishOriginal),
-                                  showsOriginal: model.demoLearning)
-            LiveTranscriptRowView(row: SettingExamples.japaneseRow,
-                                  showsOriginal: model.demoLearning, romanizes: model.demoLearning && model.demoRomanize)
-            Text(OnboardingDemo.learningText(learning: model.demoLearning, romanize: model.demoRomanize))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .contentTransition(.opacity)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 12) {
+            LiveLanguagesGroup(model: model.controls)
+                .padding(.horizontal)
+            OnboardingDemoCard {
+                Toggle("Romanize", isOn: $model.demoRomanize)
+                    .frame(minHeight: 44)
+                    .disabled(!model.controls.isLearning)
+                    .accessibilityHint("Adds how the original sounds in Latin letters")
+                Divider()
+                LiveTranscriptRowView(row: SettingExamples.sampleRow(original: SettingExamples.spanishOriginal),
+                                      showsOriginal: model.controls.isLearning)
+                LiveTranscriptRowView(row: SettingExamples.japaneseRow,
+                                      showsOriginal: model.controls.isLearning, romanizes: model.controls.isLearning && model.demoRomanize)
+                Text(OnboardingDemo.learningText(learning: model.controls.isLearning, romanize: model.demoRomanize))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.15), value: model.demoLearning)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.15), value: model.controls.isLearning)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.45, bounce: 0.15), value: model.demoRomanize)
     }
 }
@@ -548,6 +591,10 @@ struct OnboardingModelsDemo: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
+            Label(OnboardingDemo.benchmarkText, systemImage: "stopwatch")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
             Text("Voices")

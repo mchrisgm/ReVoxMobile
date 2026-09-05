@@ -101,8 +101,6 @@ final class TwoWayLiveTests: XCTestCase {
                        "Two-way is off: everything ReVox hears is spoken to you in English, including what you say.")
         XCTAssertEqual(LiveView.twoWayOffSummary(you: "en"),
                        "Two-way is off: English is not translated and not spoken back at you; everything else is spoken to you in English.")
-        XCTAssertEqual(LiveView.twoWaySummary(ignored: "en", target: "es"), LiveView.twoWaySummary(you: "en", they: "es"),
-                       "the tutorial's call site forwards until lane L6 hosts the real group")
         XCTAssertEqual(LiveView.twoWayHintText, "Speaks what you say to the other person in their language")
         XCTAssertEqual(LiveView.noLanguageTitle, "Not set")
         for text in [LiveView.twoWaySummary(you: nil, they: nil), same, LiveView.twoWaySummary(you: "en", they: "es"),
