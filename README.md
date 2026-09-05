@@ -33,7 +33,7 @@ Live translation usually means sending audio to a server. ReVox does not have on
 | **Live, ready to start** — every control is a pill; the transcript gets the rest of the screen | **Live, translating** — the pills lock, and each phrase shows its language, translation and age | **Models** — five Whisper sizes, the recommendation for this iPhone, and what they will cost in space |
 | ![The Voices screen: the pocket-tts section with alba selected, azelma, cosette and javert, a Play sample button, and the System voices section below](docs/screenshots/voices.png) | ![The Settings screen: the three latency modes with an example of what the selected one does, the Source language picker with an example, and the Unsure phrases toggle with its greyed sample row](docs/screenshots/settings.png) | ![History in edit mode: two sessions with selection circles, the search field, Clear All, and the Merge and Delete bar](docs/screenshots/history-selecting.png) |
 | **Voices** — the four pocket-tts voices with a sample, or any English system voice | **Settings** — every setting shows an example of what it does with its current value | **History** — search across sessions, then select several to merge or delete |
-| ![The first tutorial page: a progress bar and Skip, the ReVox mark, "Welcome to ReVox", four bullet lines — hears the microphone or other apps, translates on the iPhone itself, speaks the translation aloud, keeps a transcript in History — and a Next button](docs/screenshots/onboarding-welcome.png) | ![The tutorial's transcript page: "Start and read", a demo transcript with four phrases and their ages, "Speaking the translation aloud", a red Stop capsule, and Back and Next buttons](docs/screenshots/onboarding-transcript.png) | |
+| ![The first tutorial page: a progress bar and Skip, the ReVox mark, "Welcome to ReVox", four bullet lines — hears the microphone or other apps, translates on the iPhone itself, speaks the translation aloud, keeps a transcript in History — and a Next button](docs/screenshots/onboarding-welcome.png) | ![The tutorial's transcript page: "Start and read", a demo transcript with four phrases and their ages, one greyed and marked Unsure with a caption explaining it, "Speaking the translation aloud", a red Stop capsule, and Back and Next buttons](docs/screenshots/onboarding-transcript.png) | |
 | **Tutorial, first page** — seven pages on the first launch, or from Settings any time | **Tutorial, the transcript** — a demo conversation types itself in and can be started and stopped | |
 
 <sub>Every screenshot here is rendered from the real screen by CI (`ScreenshotTests`), so they cannot drift from the app. See [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md).</sub>
@@ -108,7 +108,7 @@ cd ReVoxCore && swift test
 <details open>
 <summary><strong>First run</strong></summary>
 
-The first launch opens a short interactive tutorial: seven pages that show a demo transcript typing itself in and let you try the source picker, Two-way, Learning, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
+The first launch opens a short interactive tutorial: seven pages that host the real Live controls and a demo transcript typing itself in, and let you try the pills, Two-way with You speak and They speak, Learning with its tappable words, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
 
 1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model.
 2. Keep ReVox open while the download runs — iOS stops the transfer when the app is suspended. A paused row resumes when you come back.
@@ -119,7 +119,7 @@ The first launch opens a short interactive tutorial: seven pages that show a dem
 <details>
 <summary><strong>Translating</strong></summary>
 
-The Live screen keeps its controls to two rows of pills above the transcript — source, latency, ducking, Learning, Two-way and volume, with a third row for the two-way languages — and an ⓘ button that unfolds what each one does, so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
+The Live screen keeps its controls to three captioned rows of pills above the transcript — **Listen** (Mic or Other apps, the latency mode, and an ⓘ that unfolds what every pill does), **Voice** (ducking and the voice volume) and **Languages** (Two-way and Learning, with a **You speak** / **They speak** line beneath while Two-way is on) — so the transcript gets the screen. A pill's text says what it is set to; tap it to change it.
 
 1. On the **Live** tab, choose what to listen to:
    - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
@@ -128,7 +128,7 @@ The Live screen keeps its controls to two rows of pills above the transcript —
 3. Speak, or start playing. Each finished phrase appears in the transcript with its detected language and its English translation, and is spoken aloud.
 4. Tap **Stop** when you are done. The session is saved to **History**.
 
-The source and the two-way controls are locked while a session runs: ReVox reads them once, at Start. Stop and start again to change them.
+Every pill except the voice volume and the ⓘ is locked while a session runs, and a **Stop to change** line appears under the rows: ReVox reads them once, at Start. Stop and start again to change them.
 
 </details>
 
@@ -151,12 +151,12 @@ Two things to know about the reply direction:
 <details>
 <summary><strong>While translating</strong></summary>
 
-- **Quick controls** sit on the Live screen under the two-way card: latency mode, ducking, Learning and the voice volume. Volume changes at once; the other three are read at Start, so they lock while a session runs.
+- **Quick controls** are the pills on the Live screen: Listen (the source and the latency mode), Voice (ducking and the voice volume) and Languages (Two-way and Learning). Volume changes at once; everything else is read at Start, so it locks while a session runs.
 - **Mute** the voice with the speaker button in the navigation bar; the transcript keeps running.
 - **Ducking** lowers other apps' audio while ReVox speaks. Turn it off in Settings or the quick controls; the change applies at the next Start.
 - **Voice volume** sets how loud ReVox's own voice is.
 - **Latency mode** trades responsiveness for context: *Balanced* (500 ms of silence ends a phrase, 10 s maximum), *Fast* (300 ms, 4 s) or *Very fast* (200 ms, 3 s — the quickest, with more and shorter phrases and more work for the model).
-- **Learning** shows the words as they were spoken above the translation, so you can follow the other language as well as understand it. Each phrase is decoded a second time, so it takes a little longer to appear. **Romanize** (Settings › Learning) adds how the original sounds in Latin letters under a script you cannot read; Japanese kana are right, kanji come out with their Chinese readings.
+- **Learning** shows the words as they were spoken above the translation, so you can follow the other language as well as understand it. Each phrase is decoded a second time, so it takes a little longer to appear. Tap any word for its pronunciation and meaning: a small popover shows how it sounds in Latin letters, says it aloud (not while the microphone is listening, or ReVox would hear itself), gives its English meaning on iOS 18, offers **Look up in the dictionary** when the iPhone has a dictionary for that language, and shows the sentence with the word highlighted. Right-to-left languages show plain text for now. **Romanize** (Settings › Learning) adds how the whole original sounds in Latin letters under a script you cannot read; Japanese kana are right, kanji come out with their Chinese readings.
 - **How long ago.** Each Live row shows how long ago the phrase was said — `12 s`, `3 min` — counting up as you read, which is easier to follow in a running conversation than the clock time. Settings › Time on the Live screen switches to the time, or both. History always shows the time.
 - **Keep my model when hot** (Settings › Heat). When the iPhone gets hot, ReVox normally moves the next session to a smaller installed model and says so. Turn this on to keep your chosen model regardless. Translation still pauses at the iPhone's critical temperature, because iOS would otherwise close the app.
 - If phrases arrive faster than they can be translated, ReVox keeps the newest three, shows **Falling behind** and marks the gap in the transcript.
