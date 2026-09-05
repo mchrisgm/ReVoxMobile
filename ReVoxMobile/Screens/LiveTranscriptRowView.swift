@@ -12,6 +12,11 @@ struct LiveTranscriptRowView: View {
     var romanizes = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// M11 §2: this row's one open popover, nil when none. Held by the row, so the Live screen's one-second
+    /// TimelineView ticks and row appends keep it; `OriginalWordsLine` and `WordLookUpActions` read the services
+    /// from `\.wordLookup` themselves (the default is `WordLookup.unavailable`, so every hosted test row is honest
+    /// and inert; `RootView` applies the production one outermost).
+    @State private var lookup: WordPopoverModel?
 
     private static let timeStyle = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
 
@@ -72,12 +77,37 @@ struct LiveTranscriptRowView: View {
     /// One symbol with the History row and the Settings example.
     static let guessSymbolName = SessionSummary.guessSymbolName
 
+    /// M11 §2: the languages whose original stays plain text for now — the chip layout runs left to right. One
+    /// list with the splitter.
+    static let rightToLeftLanguages: Set<String> = WordSplitter.rightToLeftLanguages
+    /// M11 §2: VoiceOver gets a "Look up ‹word›" custom action for at most this many words of a row.
+    static let maxWordActions = OriginalWordsLine.customActionLimit
+
+    /// M11 §2, pure: the original line is worth tapping — non-empty, different from the English, not English
+    /// (nothing to learn) and not right-to-left. Learning off, English rows and guesses without an original render
+    /// exactly as before.
+    static func tapsWords(language: String, original: String, english: String) -> Bool {
+        !original.isEmpty && original != english && language != "en" && !WordSplitter.isRightToLeft(language)
+    }
+
+    /// The custom action's title; the popover it opens is the same one a tap opens.
+    static func wordActionTitle(_ word: String) -> String { WordPopoverContent.lookUpActionTitle(word) }
+
+    /// The words that get a custom action: the first `maxWordActions`, in sentence order, so a long row does not
+    /// put thirty actions before its own.
+    static func actionWords(_ words: [OriginalWord]) -> [OriginalWord] { OriginalWordsLine.actionWords(words) }
+
     var body: some View {
         switch row.kind {
         case .entry(let language, let original, let english):
-            entryRow(language: language, original: original, english: english)
+            let words = tappableWords(language: language, original: original, english: english)
+            entryRow(language: language, original: original, english: english, words: words)
                 .padding(.vertical, 2)
                 .accessibilityElement(children: .combine)
+                // M11 §2: the words are reachable without the chips — one "Look up ‹word›" action per word, on the
+                // row itself so they survive the combine (the words line is `children: .ignore` and reads as the
+                // sentence). Empty `words`: no actions, the row reads as it always has.
+                .modifier(WordLookUpActions(words: words, language: language, original: original, english: english, lookup: $lookup))
         case .dropMarker:
             Text("… skipped: falling behind")
                 .font(.caption.italic())
@@ -97,7 +127,7 @@ struct LiveTranscriptRowView: View {
     /// sizes, where the leading column alone can take half the width. There the time and the badge go on one line
     /// and the text under them; at every other size the layout is the one-line row it always was.
     @ViewBuilder
-    private func entryRow(language: String, original: String, english: String) -> some View {
+    private func entryRow(language: String, original: String, english: String, words: [OriginalWord]) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
@@ -105,16 +135,24 @@ struct LiveTranscriptRowView: View {
                     languageBadge(language)
                     Spacer(minLength: 0)
                 }
-                textColumn(original: original, english: english)
+                textColumn(language: language, original: original, english: english, words: words)
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 leadingColumn
                 languageBadge(language)
-                textColumn(original: original, english: english)
+                textColumn(language: language, original: original, english: english, words: words)
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// Empty unless the row shows its original and `tapsWords` says yes. `WordSplitter.cachedWords` is memoised
+    /// per (language, sentence) on the main actor, so the body under the TimelineView never re-tokenises.
+    @MainActor
+    private func tappableWords(language: String, original: String, english: String) -> [OriginalWord] {
+        guard showsOriginal, Self.tapsWords(language: language, original: original, english: english) else { return [] }
+        return WordSplitter.cachedWords(in: original, language: language)
     }
 
     private var leadingColumn: some View {
@@ -131,18 +169,24 @@ struct LiveTranscriptRowView: View {
             .accessibilityLabel(Self.languageAccessibilityText(language))
     }
 
-    private func textColumn(original: String, english: String) -> some View {
+    private func textColumn(language: String, original: String, english: String, words: [OriginalWord]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if row.isGuess { guessMarker }
             if showsOriginal, !original.isEmpty, original != english {
-                Text(original).font(.body).foregroundStyle(.secondary)
+                if words.isEmpty {
+                    Text(original).font(.body).foregroundStyle(.secondary)
+                } else {
+                    // M11 §2: the greying of a guess stays outside this line — the chips are secondary already and
+                    // the marker above says why; the line reads as the sentence, so the combined row is unchanged.
+                    OriginalWordsLine(original: original, language: language, english: english, words: words, lookup: $lookup)
+                }
                 if romanizes, let latin = Romanizer.romanize(original) {
                     // `.secondary`, not `.tertiary`: the tertiary label composites to about 1.7:1 on white (M10 audit).
                     Text(latin).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Text(english)
-                .font(row.isGuess ? .body.italic() : .body)
+                .font(row.isGuess ? Font.body.italic() : Font.body)
                 .foregroundStyle(row.isGuess ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         }
     }
