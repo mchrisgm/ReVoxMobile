@@ -29,7 +29,7 @@ Live translation usually means sending audio to a server. ReVox does not have on
 
 | | | |
 |:---:|:---:|:---:|
-| ![The Live screen before a session: three captioned rows of pills — Listen: Mic, Balanced and an info button; Voice: Duck on and 100%; Languages: Two-way on and Learn off, with You speak English and They speak Spanish on the line beneath — the status line, and a teal Start button](docs/screenshots/live-idle.png) | ![The Live screen translating: the pills dimmed behind a "Stop to change" lock line, a Spanish phrase with the words as spoken as tappable chips above its English translation, three more phrases with their ages, and a red Stop button](docs/screenshots/live-running.png) | ![The Models screen: tiny, base, small (Recommended, selected), medium and large-v3 with sizes and Download buttons, and the storage footer](docs/screenshots/models.png) |
+| ![The Live screen before a session: three captioned rows of pills — Listen: Mic, Balanced and an info button; Voice: Duck on and 100%; Languages: Two-way on and Learn off, with You speak English and They speak Spanish on the line beneath — the status line, and a teal Start button](docs/screenshots/live-idle.png) | ![The Live screen translating: the pills dimmed behind a "Stop to change" lock line, a Spanish phrase with the words as spoken as tappable chips above its English translation, three more phrases with their ages, and a red Stop button](docs/screenshots/live-running.png) | ![The Models screen: tiny, base, small (Recommended, selected), medium and large-v3 with sizes and Download buttons, the Benchmark this iPhone row, and the storage footer](docs/screenshots/models.png) |
 | **Live, ready to start** — every control is a pill; the transcript gets the rest of the screen | **Live, translating** — the pills lock, and each phrase shows its language, translation and age | **Models** — five Whisper sizes, the recommendation for this iPhone, and what they will cost in space |
 | ![The Voices screen: the pocket-tts section with alba selected, azelma, cosette and javert, a Play sample button, and the System voices section below](docs/screenshots/voices.png) | ![The Settings screen: the three latency modes with an example of what the selected one does, the Source language picker with an example, and the Unsure phrases toggle with its greyed sample row](docs/screenshots/settings.png) | ![History in edit mode: two sessions with selection circles, the search field, Clear All, and the Merge and Delete bar](docs/screenshots/history-selecting.png) |
 | **Voices** — the four pocket-tts voices with a sample, or any English system voice | **Settings** — every setting shows an example of what it does with its current value | **History** — search across sessions, then select several to merge or delete |
@@ -110,7 +110,7 @@ cd ReVoxCore && swift test
 
 The first launch opens a short interactive tutorial: seven pages that host the real Live controls and a demo transcript typing itself in, and let you try the pills, Two-way with You speak and They speak, Learning with its tappable words, Romanize and the model choice without changing a setting. Skip it any time; **Settings › Show the tutorial** brings it back. [docs/onboarding.md](docs/onboarding.md) describes each page.
 
-1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model.
+1. Open ReVox and go to **Settings › Models**. Tap **Download** next to a Whisper model. **Small** is the default and the right choice for most iPhones; the screen marks which models suit yours and warns about the ones that will be slow or hot. The voice detector downloads with your first model. Once a model is installed, **Settings › Models › Benchmark this iPhone** times every installed model on your phone and moves the recommendation to what it measured.
 2. Keep ReVox open while the download runs — iOS stops the transfer when the app is suspended. A paused row resumes when you come back.
 3. Optionally go to **Settings › Voices** and download a pocket-tts voice (*alba*, *azelma*, *cosette* or *javert*). Until you do, ReVox speaks with the iPhone's own voice, which needs no download.
 
@@ -253,7 +253,7 @@ These are iOS rules, not bugs, and they make the iPhone app behave differently f
 4. **Background.** Translation continues under the `audio` background mode while the audio session and engine run; the app must be started from the foreground first. iOS may still suspend the app under memory pressure, in which case the transcript shows a gap. The audio session and engine configuration that keeps a session alive in the background was measured and is recorded in [docs/broadcast-bridge.md](docs/broadcast-bridge.md).
 5. **Self-capture.** In broadcast mode the extension also hears ReVox's English voice; the timing gate drops audio while ReVox speaks and for 300 ms after, so speech that overlaps ReVox's voice is not translated.
 6. **The second direction.** Whisper's translate task produces English and nothing else, so translating *out of* English — the reply half of a two-way conversation — uses Apple's on-device `Translation` framework, which is iOS 18 and later. On iOS 17, and for any pair iOS has no model for, the phrase is transcribed in the language it was spoken in and not spoken back; the Live screen says which. Replies are spoken by an iOS voice for the target language, because pocket-tts speaks English only.
-7. **Heat and battery.** Every model can be downloaded on every supported iPhone. ReVox recommends small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
+7. **Heat and battery.** Every model can be downloaded on every supported iPhone. Until you run the benchmark ReVox recommends by memory size: small by default (base below 4 GB); medium is in the suitable set from 6 GB, large-v3 from 8 GB; on 8 GB devices both medium and large-v3 carry a "long load time and heat" warning. After **Benchmark this iPhone** it recommends the most accurate installed model that ran at least twice as fast as real time and loaded in under 10 s, and the Models screen says when it was measured; models outside the suitable set for this iPhone are labelled "Not recommended for this iPhone" but are never hidden.
 
 ## How ReVox handles failure
 
@@ -276,6 +276,20 @@ What each of these was measured to do on real devices is recorded in [docs/measu
 - **Downloads.** ReVox needs about 25 % more free space than a model's size plus a reserve, and refuses a download with the exact numbers when there is not enough. Keep the app open while a download runs: iOS stops the transfer when the app is suspended, and ReVox shows the row as Paused and resumes when you come back.
 - **Which files.** The Whisper models and their tokenizers are downloaded at pinned commit revisions, so the same version of ReVox always installs the same files. The Silero voice detector and the pocket-tts voices come from FluidAudio's `main` branch, which cannot be pinned, so ReVox records their file list at install and flags a later difference on the row ("Files changed since download — re-download to be sure") instead of using it silently.
 - **Offline.** After the downloads finish, ReVox contacts no server at all. The only hosts it ever contacts, and only while you start a download, are `huggingface.co` and its CDN.
+
+### Which model?
+
+What to expect, from Argmax's published WhisperKit runs on iPhones — 10-minute files transcribed offline, so a speed factor rather than a per-phrase latency; iPhone 12 mini to iPhone 17 Pro, iOS 17 to 26, dashboard last updated 2025-10-17 — until your own benchmark replaces them:
+
+| Model | Published speed (× real time, slowest to fastest iPhone) | Published word error rate (mean of two test sets) | Notes |
+|---|---|---|---|
+| tiny | 27–94× | ≈ 16–18 % | The quickest and the roughest. |
+| base | 15–61× | ≈ 12–13 % | The recommendation below 4 GB. |
+| small | 7–21× | ≈ 8.7–9.1 % | The default; flagged with a warning on the iPhone 12 family. |
+| medium | not published | not published | No published iPhone run exists; the benchmark is the only number. |
+| large-v3 (the 947 MB build ReVox installs) | 1.4–2.3× | ≈ 24–29 % on long recordings, 4.6–4.9 % on clean read speech | A15 and later; the slowest and hottest. |
+
+Source: the WhisperKit Benchmarks dashboard on Hugging Face ([`argmaxinc/whisperkit-benchmarks`](https://huggingface.co/spaces/argmaxinc/whisperkit-benchmarks), `dashboard_data/performance_data.json` and `support_data.csv`); a warm load of an already-compiled model is under a second for small and one to two seconds for large-v3 in those runs, while the first load after an install compiles for the Neural Engine and takes longer. Short phrases in a live conversation carry a per-phrase overhead these batch figures do not show; **Benchmark this iPhone** measures that on your iPhone, and [docs/measurements/m11-model-benchmark.md](docs/measurements/m11-model-benchmark.md) carries the cited reference numbers as expectations, the recommendation thresholds, and the table the owner fills by pasting the app's shared text.
 
 ## Transcripts
 
