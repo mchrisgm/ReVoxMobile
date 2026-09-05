@@ -35,20 +35,49 @@ final class PillFlowLayoutTests: XCTestCase {
         XCTAssertEqual(PillFlowLayout.width(for: ProposedViewSize(width: 150, height: nil), sizes: sizes, spacing: 6), 150)
     }
 
-    /// The seven pills of the idle strip fit two rows on a 393 pt phone (361 pt inside the 16 pt margins) at the
-    /// default type size, in the strip's order: the ⓘ closes the first row and the volume the second. The widths
-    /// are the ones CI run 107 rendered, each rounded up a couple of points; the point of the test is that a
-    /// change to a title, the padding or the order that pushes a pill onto a third row is seen here first.
-    func testTheIdleStripIsTwoRowsOnAThreeNinetyThreePointPhone() {
-        let pills = [size(66), size(108), size(102), size(44), size(106), size(132), size(92)]   // Mic, Balanced, Duck on, ⓘ, Learn off, Two-way off, 100%
-        let rows = PillFlowLayout.rows(sizes: pills, available: 393 - 32, spacing: LiveControlStrip.pillSpacing)
-        XCTAssertEqual(rows.map(\.items), [[0, 1, 2, 3], [4, 5, 6]])
+    // MARK: M11 — one captioned row per group on a 393 pt phone (361 pt inside the margins)
+
+    /// The width a pill or caption renders at on this simulator at the default type size — measured here rather
+    /// than typed in, so a title, padding or font change moves the packing with it. The M10 numbers CI run 107
+    /// measured were Mic 66, Balanced 108, ⓘ 44, Duck on 102, 100% 92, Two-way off 132, Learn off 106; the pair
+    /// pills are estimated at You speak English 150 and They speak Spanish 161, and the failure message prints
+    /// what CI actually measured.
+    @MainActor private func width<V: View>(_ view: V) -> CGFloat {
+        let controller = UIHostingController(rootView: view)
+        return controller.sizeThatFits(in: CGSize(width: 1_000, height: LiveControlPill.minimumHeight)).width.rounded(.up)
     }
 
-    /// With two-way on the two language pills are a third row of their own (measured 179 and 160 pt).
-    func testTheLanguagePillsAreTheThirdRowWhileTwoWayIsOn() {
-        let pills = [size(66), size(108), size(102), size(44), size(106), size(129), size(92), size(181), size(162)]
-        let rows = PillFlowLayout.rows(sizes: pills, available: 393 - 32, spacing: LiveControlStrip.pillSpacing)
-        XCTAssertEqual(rows.map(\.items), [[0, 1, 2, 3], [4, 5, 6], [7, 8]])
+    private static let phone: CGFloat = 393 - 32
+    private static let narrowPhone: CGFloat = 320 - 32
+
+    @MainActor func testEachIdleGroupIsOneRowOnAThreeNinetyThreePointPhone() {
+        let caption = width(LiveGroupCaption(title: LiveControlStrip.languagesCaption))
+        XCTAssertEqual(caption, LiveControlStrip.captionColumnWidth, "the longest caption fits the fixed column")
+        let listen = [caption, width(LiveControlPill(systemImage: "mic", title: "Mic")),
+                      width(LiveControlPill(systemImage: LiveControlStrip.latencySymbol(for: .balanced), title: "Balanced")),
+                      LiveControlPill.minimumHeight].map { size($0) }
+        let voice = [caption, width(LiveControlPill(systemImage: "waveform.badge.minus", title: "Duck on", isOn: true)),
+                     width(LiveControlPill(systemImage: "speaker.wave.3", title: "100%"))].map { size($0) }
+        let languages = [caption, width(LiveControlPill(systemImage: "arrow.left.arrow.right", title: "Two-way off")),
+                         width(LiveControlPill(systemImage: "text.book.closed", title: "Learn off"))].map { size($0) }
+        for (name, group) in [("Listen", listen), ("Voice", voice), ("Languages", languages)] {
+            let rows = PillFlowLayout.rows(sizes: group, available: Self.phone, spacing: LiveControlStrip.pillSpacing)
+            XCTAssertEqual(rows.count, 1, "\(name) measured \(group.map(\.width)) at \(Self.phone) pt")
+        }
+    }
+
+    @MainActor func testTheLanguagePairIsOneRowOnAThreeNinetyThreePointPhone() {
+        let pair = [width(LiveControlPill(systemImage: nil, title: LiveControlStrip.youSpeakTitle, value: "English")),
+                    width(LiveControlPill(systemImage: nil, title: LiveControlStrip.theySpeakTitle, value: "Spanish"))].map { size($0) }
+        let rows = PillFlowLayout.rows(sizes: pair, available: Self.phone, spacing: LiveControlStrip.pillSpacing)
+        XCTAssertEqual(rows.map(\.items), [[0, 1]], "measured \(pair.map(\.width))")
+    }
+
+    /// On a 320 pt phone a group wraps inside itself: the ⓘ drops under Listen, the pair becomes two lines.
+    func testAGroupWrapsOnlyInsideItselfOnAThreeTwentyPointPhone() {
+        let listen = [size(72), size(66), size(108), size(44)]
+        XCTAssertEqual(PillFlowLayout.rows(sizes: listen, available: Self.narrowPhone, spacing: LiveControlStrip.pillSpacing).map(\.items), [[0, 1, 2], [3]])
+        let pair = [size(150), size(161)]
+        XCTAssertEqual(PillFlowLayout.rows(sizes: pair, available: Self.narrowPhone, spacing: LiveControlStrip.pillSpacing).map(\.items), [[0], [1]])
     }
 }

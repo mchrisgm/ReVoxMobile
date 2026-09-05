@@ -197,4 +197,54 @@ final class SettingsViewModelTests: XCTestCase {
         model.language = nil
         XCTAssertTrue(model.canIgnoreLanguage)
     }
+
+    // MARK: M11 — Your language, You speak
+
+    func testTheYourLanguageCopyNamesThePeopleNotTheMechanism() {
+        XCTAssertEqual(SettingsViewModel.noIgnoredLanguageTitle, "Not set")
+        XCTAssertEqual(SettingsViewModel.noIgnoredLanguageTitle, LiveView.noLanguageTitle, "one word on both screens")
+        XCTAssertEqual(SettingsViewModel.ignoredLanguageHelpText,
+                       "ReVox translates everything it hears into English except the language you speak, which it neither translates nor transcribes. With Two-way on (Live tab), what you say is spoken to the other person in their language instead.")
+        XCTAssertEqual(SettingsViewModel.ignoredLanguageNeedsAutoDetectText,
+                       "This needs Source language set to Auto-detect, because a pinned language is never detected.")
+        XCTAssertEqual(SettingExamples.skipLanguageNone,
+                       "Everything is translated into English, including you. Choose the language you speak so a conversation is not echoed back at you.")
+        XCTAssertEqual(SettingExamples.skipLanguage("English"),
+                       "“Where is the station?” said in English is not translated and not transcribed. Turn on Two-way on the Live tab to have it spoken to the other person in their language instead.")
+        XCTAssertEqual(SettingExamples.skipLanguageWhilePinned(ignored: "English", pinned: "English"),
+                       "Source language is pinned to English and English is the language you speak, so every phrase counts as yours and nothing is translated. Change one of the two.")
+        XCTAssertEqual(SettingExamples.skipLanguageWhilePinned(ignored: "English", pinned: "French"),
+                       "Source language is pinned to French, so nothing is ever heard as English and everything is translated, including you. Set Source language to Auto-detect for You speak to work.")
+        let model = SettingsViewModel(store: makeStore(), mute: PlaybackMute())
+        XCTAssertEqual(model.ignoredLanguageOptions.first?.displayName, "Not set")
+        for text in [SettingsViewModel.ignoredLanguageHelpText, SettingsViewModel.ignoredLanguageNeedsAutoDetectText,
+                     SettingExamples.skipLanguageText(ignored: nil, pinned: nil), SettingExamples.skipLanguageText(ignored: "English", pinned: nil),
+                     SettingExamples.skipLanguageText(ignored: "English", pinned: "English"), SettingExamples.skipLanguageText(ignored: "English", pinned: "French")] {
+            for retired in ["left alone", "Leave alone", "Reply in", "Don't translate", "Skip a language", "ignored", "skipped"] {
+                XCTAssertFalse(text.contains(retired), "\(retired) in: \(text)")
+            }
+        }
+    }
+
+    func testTheSourceLanguageCopyKeepsUnsurePhrasesInsteadOfDroppingThem() {
+        XCTAssertEqual(SettingsViewModel.sourceLanguageHelpText,
+                       "Auto-detect runs Whisper's language detection on every phrase. A phrase it is unsure about is shown greyed and marked Unsure, and is never spoken.")
+        XCTAssertEqual(SettingExamples.sourceLanguageAuto,
+                       "Auto-detect hears “¿Dónde está la estación?” as Spanish and translates it. A phrase it cannot place is shown greyed and marked Unsure, and is not spoken.")
+        XCTAssertFalse(SettingExamples.sourceLanguageAuto.contains("dropped"))
+    }
+
+    func testLiveAndSettingsWriteTheSameYourLanguage() {
+        let store = makeStore()
+        let settings = SettingsViewModel(store: store, mute: PlaybackMute())
+        let live = LiveViewModel(settings: store, mute: PlaybackMute(), permission: .fixed(.granted),
+                                 modelReady: { _ in true }, supplier: { _, _ in FakeLivePipeline() })
+        live.ignoredLanguage = "en"
+        XCTAssertEqual(settings.ignoredLanguage, "en", "the Live pill and the Settings row are one setting")
+        settings.ignoredLanguage = "es"
+        XCTAssertEqual(live.ignoredLanguage, "es")
+        settings.ignoredLanguage = nil
+        XCTAssertNil(live.ignoredLanguage)
+        XCTAssertNil(store.settings.ignoredLanguage, "Not set stores nil, the key the Windows app reads")
+    }
 }

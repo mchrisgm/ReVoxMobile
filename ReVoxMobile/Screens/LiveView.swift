@@ -288,9 +288,9 @@ struct LiveView: View {
     // MARK: Copy
 
     static let lockedWhileRunningText = "Stop to change this"
-    static let noLanguageTitle = "None"
+    static let noLanguageTitle = "Not set"
     static let preparingText = "Getting the model ready…"
-    static let twoWayHintText = "Speaks the language ReVox is not translating back in another language"
+    static let twoWayHintText = "Speaks what you say to the other person in their language"
     static let microphoneDescription = "Translates what this iPhone's microphone hears."
     static let broadcastDescription = "Translates a call, a video or anything else playing on this iPhone."
 
@@ -337,13 +337,29 @@ struct LiveView: View {
         isDucked ? status : nil
     }
 
-    /// The details panel's two-way line: what two-way will actually do, in the languages chosen, or what is still missing.
+    /// The details panel's Languages line while Two-way is on: both directions in the names of the two people, or
+    /// what is still missing. `they` nil or "" is English — what actually runs (`Settings.twoWayLanguage`).
+    static func twoWaySummary(you: String?, they: String?) -> String {
+        guard let you else { return "Choose the language you speak." }
+        let youName = LanguageCatalog.displayName(you, whenNil: noLanguageTitle)
+        let theyCode = they.flatMap { $0.isEmpty ? nil : $0 } ?? "en"
+        guard theyCode != you else {
+            return "You and they both speak \(youName), so there is nothing to translate. Choose the language they speak."
+        }
+        let theyName = LanguageCatalog.displayName(theyCode, whenNil: noLanguageTitle)
+        return "What you say in \(youName) is spoken to them in \(theyName); what they say is spoken to you in English."
+    }
+
+    /// The same line while Two-way is off: the one place Settings › Your language shows on Live in that state.
+    static func twoWayOffSummary(you: String?) -> String {
+        guard let you else { return "Two-way is off: everything ReVox hears is spoken to you in English, including what you say." }
+        let youName = LanguageCatalog.displayName(you, whenNil: noLanguageTitle)
+        return "Two-way is off: \(youName) is not translated and not spoken back at you; everything else is spoken to you in English."
+    }
+
+    /// Kept for `OnboardingTwoWayDemo` only: wave 2 (lane L6) hosts `LiveLanguagesGroup` there and deletes this.
     static func twoWaySummary(ignored: String?, target: String?) -> String {
-        guard let ignored else { return "Choose a language to leave alone" }
-        let ignoredName = LanguageCatalog.displayName(ignored, whenNil: noLanguageTitle)
-        guard let target, target != ignored else { return "\(ignoredName) is left alone" }
-        let targetName = LanguageCatalog.displayName(target, whenNil: noLanguageTitle)
-        return "\(ignoredName) is spoken back in \(targetName)"
+        twoWaySummary(you: ignored, they: target)
     }
 
 }

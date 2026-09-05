@@ -128,4 +128,75 @@ final class LiveControlsTests: XCTestCase {
         XCTAssertNil(LiveView.duckingBadge(isDucked: false, status: nil))
         XCTAssertEqual(LiveView.duckingBadge(isDucked: true, status: LiveViewModel.duckingText), LiveViewModel.duckingText)
     }
+
+    // MARK: M11 — You speak / They speak
+
+    func testTheySpeakShowsEnglishUntilOneIsStored() {
+        let settings = store()
+        let live = liveModel(settings)
+        XCTAssertEqual(live.theySpeak, "en")
+        XCTAssertNil(settings.settings.twoWayLanguage, "English is the stored nil, as on Windows")
+        live.ignoredLanguage = "en"
+        live.isTwoWay = true
+        live.theySpeak = "es"
+        XCTAssertEqual(settings.settings.twoWayLanguage, "es")
+        XCTAssertEqual(live.twoWayPair?.source, "en")
+        XCTAssertEqual(live.twoWayPair?.target, "es")
+        live.theySpeak = "en"
+        XCTAssertNil(settings.settings.twoWayLanguage, "choosing English stores nil")
+        XCTAssertNil(live.twoWayPair)
+        live.theySpeak = "zz"
+        XCTAssertNotNil(live.twoWayVoiceNote, "the setter went through twoWayLanguage, so the voice note refreshed")
+        live.theySpeak = "en"
+        XCTAssertNil(live.twoWayVoiceNote)
+    }
+
+    func testYourLanguageCanBeChosenOnLiveOnlyWithAutoDetect() {
+        let settings = store()
+        let live = liveModel(settings)
+        XCTAssertTrue(live.canChooseYourLanguage)
+        XCTAssertNil(live.pinnedSourceNote)
+        settings.update { $0.language = "fr" }
+        XCTAssertFalse(live.canChooseYourLanguage)
+        XCTAssertEqual(live.pinnedSourceNote,
+                       "Source language is pinned to French in Settings, so the language you speak cannot be chosen here. Set it to Auto-detect for Two-way to work.")
+        live.ignoredLanguage = "en"
+        XCTAssertEqual(live.pinnedSourceNote,
+                       "Source language is pinned to French in Settings, so nothing is heard as English. Set it to Auto-detect for Two-way to work.")
+        XCTAssertEqual(live.pinnedSourceNote, LiveViewModel.pinnedSourceNote(pinned: "French", you: "English"))
+        settings.update { $0.language = nil }
+        XCTAssertTrue(live.canChooseYourLanguage)
+        XCTAssertNil(live.pinnedSourceNote)
+    }
+
+    func testTheLiveViewModelIsTheStripsModel() {
+        let live = liveModel(store())
+        let controls: any LiveControlsModel = live
+        controls.isTwoWay = true
+        controls.theySpeak = "es"
+        XCTAssertEqual(live.twoWayLanguage, "es", "the strip writes through the protocol into the same setting")
+        XCTAssertEqual(controls.state, .idle)
+        XCTAssertTrue(controls.canChooseYourLanguage)
+        XCTAssertNil(controls.pinnedSourceNote)
+        XCTAssertNil(controls.twoWayVoiceNote)
+    }
+
+    func testTheGroupsAndThePairPillsSayWhoSpeaksWhat() {
+        XCTAssertEqual(LiveControlStrip.listenCaption, "Listen")
+        XCTAssertEqual(LiveControlStrip.voiceCaption, "Voice")
+        XCTAssertEqual(LiveControlStrip.languagesCaption, "Languages")
+        XCTAssertEqual(Set([LiveControlStrip.listenCaption, LiveControlStrip.voiceCaption, LiveControlStrip.languagesCaption]).count, 3)
+        XCTAssertEqual(LiveControlStrip.captionColumnWidth, 72)
+        XCTAssertEqual(LiveControlStrip.youSpeakTitle, "You speak")
+        XCTAssertEqual(LiveControlStrip.theySpeakTitle, "They speak")
+        XCTAssertEqual(LiveControlStrip.chooseLanguageTitle, "Choose…")
+        XCTAssertEqual(LiveControlStrip.youSpeakHintText, "The language you speak; what you say is spoken to them in their language")
+        XCTAssertEqual(LiveControlStrip.theySpeakHintText, "The other person's language; what you say is spoken to them in it")
+        XCTAssertEqual(LiveControlStrip.theySpeakAccessibilityValue(name: "Spanish", hasVoice: true), "Spanish")
+        XCTAssertEqual(LiveControlStrip.theySpeakAccessibilityValue(name: "Spanish", hasVoice: false), "Spanish, no voice on this iPhone")
+        XCTAssertEqual(LiveControlStrip.lockedDetailText, "Stop to change the dimmed controls — ReVox reads them once, at Start.")
+        XCTAssertTrue(LiveControlStrip.lockedDetailText.hasPrefix(LiveControlStrip.lockedText))
+        XCTAssertEqual(LiveControlStrip.volumeHelpText, "How loud ReVox's own voice is; other apps are not affected")
+        XCTAssertNotEqual(LiveControlStrip.volumeHelpText, LiveControlStrip.duckingHelpText)
+    }
 }

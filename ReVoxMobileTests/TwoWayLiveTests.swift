@@ -87,10 +87,29 @@ final class TwoWayLiveTests: XCTestCase {
 
     // MARK: Copy
 
-    func testTheToggleSubtitleNamesWhatTwoWayWillDo() {
-        XCTAssertEqual(LiveView.twoWaySummary(ignored: nil, target: nil), "Choose a language to leave alone")
-        XCTAssertEqual(LiveView.twoWaySummary(ignored: "en", target: nil), "English is left alone")
-        XCTAssertEqual(LiveView.twoWaySummary(ignored: "en", target: "es"), "English is spoken back in Spanish")
+    func testThePanelLineNamesBothDirectionsByThePeople() {
+        XCTAssertEqual(LiveView.twoWaySummary(you: nil, they: nil), "Choose the language you speak.")
+        let same = "You and they both speak English, so there is nothing to translate. Choose the language they speak."
+        XCTAssertEqual(LiveView.twoWaySummary(you: "en", they: nil), same, "nil is English, which is what runs")
+        XCTAssertEqual(LiveView.twoWaySummary(you: "en", they: ""), same)
+        XCTAssertEqual(LiveView.twoWaySummary(you: "en", they: "en"), same)
+        XCTAssertEqual(LiveView.twoWaySummary(you: "en", they: "es"),
+                       "What you say in English is spoken to them in Spanish; what they say is spoken to you in English.")
+        XCTAssertEqual(LiveView.twoWaySummary(you: "es", they: nil),
+                       "What you say in Spanish is spoken to them in English; what they say is spoken to you in English.")
+        XCTAssertEqual(LiveView.twoWayOffSummary(you: nil),
+                       "Two-way is off: everything ReVox hears is spoken to you in English, including what you say.")
+        XCTAssertEqual(LiveView.twoWayOffSummary(you: "en"),
+                       "Two-way is off: English is not translated and not spoken back at you; everything else is spoken to you in English.")
+        XCTAssertEqual(LiveView.twoWaySummary(ignored: "en", target: "es"), LiveView.twoWaySummary(you: "en", they: "es"),
+                       "the tutorial's call site forwards until lane L6 hosts the real group")
+        XCTAssertEqual(LiveView.twoWayHintText, "Speaks what you say to the other person in their language")
+        XCTAssertEqual(LiveView.noLanguageTitle, "Not set")
+        for text in [LiveView.twoWaySummary(you: nil, they: nil), same, LiveView.twoWaySummary(you: "en", they: "es"),
+                     LiveView.twoWayOffSummary(you: nil), LiveView.twoWayOffSummary(you: "en"), LiveView.twoWayHintText] {
+            XCTAssertFalse(text.contains("left alone"), text)
+            XCTAssertFalse(text.contains("Reply in"), text)
+        }
     }
 
     func testTheStartButtonSaysWhatTheStateIs() {
@@ -112,6 +131,8 @@ final class TwoWayLiveTests: XCTestCase {
         XCTAssertNil(LiveViewModel.voiceNote(for: nil))
         XCTAssertNotNil(LiveViewModel.voiceNote(for: "zz"), "no iPhone ships a voice for a code that is not a language")
         XCTAssertNil(LiveViewModel.voiceNote(for: "en"), "every iPhone speaks English")
+        let note = LiveViewModel.voiceNote(for: "zz")
+        XCTAssertEqual(note, "This iPhone has no zz voice, so what you say to them stays in the transcript. Add one in Settings › Accessibility › Spoken Content › Voices.")
         let live = liveModel(store())
         XCTAssertNil(live.twoWayVoiceNote)
         live.twoWayLanguage = "zz"

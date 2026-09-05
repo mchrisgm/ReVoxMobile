@@ -229,6 +229,32 @@ final class ScreenHostingTests: XCTestCase {
         XCTAssertTrue(LiveControlStrip.locksControls(in: broadcast.state))
         host(LiveControlPill(systemImage: "mic", title: "Mic"))
         host(LiveControlPill(systemImage: "speaker.wave.2", title: "Volume", value: "80%", isOn: true).disabled(true))
+        // M11 §1: the captioned groups and the pair line in every state — nothing chosen (Choose…), They speak
+        // English with no voice note, a pinned source language (You speak disabled, the pinned note in the panel),
+        // the caption-above-pills branch, the group the tutorial hosts, and the bare pair pill. The pinned pass
+        // resets `settings.language`: the store is shared by every model in this test.
+        twoWay.isTwoWay = true
+        twoWay.ignoredLanguage = nil
+        twoWay.theySpeak = "es"
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(true)))
+        host(LiveDetailsPanel(model: twoWay))
+        twoWay.theySpeak = "en"
+        XCTAssertNil(twoWay.twoWayVoiceNote)
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(false)))
+        twoWay.ignoredLanguage = "en"
+        store.update { $0.language = "es" }
+        XCTAssertFalse(twoWay.canChooseYourLanguage)
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(true)))
+        host(LiveDetailsPanel(model: twoWay))
+        store.update { $0.language = nil }
+        XCTAssertTrue(twoWay.canChooseYourLanguage)
+        host(LiveControlStrip(model: twoWay, showsVolumeSlider: .constant(false), isMoreExpanded: .constant(false)).dynamicTypeSize(.accessibility3))
+        host(LiveLanguagesGroup(model: twoWay))
+        host(LiveListenGroup(model: twoWay, isMoreExpanded: .constant(true)))
+        host(LiveVoiceGroup(model: twoWay, showsVolumeSlider: .constant(true)))
+        host(LiveVolumeRow(model: twoWay))
+        host(LiveLockedLine())
+        host(LiveControlPill(systemImage: nil, title: LiveControlStrip.youSpeakTitle, value: LiveControlStrip.chooseLanguageTitle))
 
         XCTAssertEqual(LiveView.availableSources, [.microphone, .broadcast])
         XCTAssertEqual(BroadcastPickerButton.size, 50)
