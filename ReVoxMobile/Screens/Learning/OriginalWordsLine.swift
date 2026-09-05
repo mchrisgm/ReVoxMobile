@@ -93,6 +93,10 @@ struct OriginalWordsLine: View {
                     onClose: { lookup = nil }
                 )
                 .onDisappear {
+                    // The Say gate is read at the tap; a word still being spoken when the popover closes would be
+                    // heard by the microphone of a run started right after. Every dismissal — Close, a tap outside,
+                    // the dictionary handoff, the next word — passes through here.
+                    model.speaker?.stop()
                     if let term = pendingDictionaryTerm {
                         pendingDictionaryTerm = nil
                         dictionaryTerm = DictionaryTerm(term: term)

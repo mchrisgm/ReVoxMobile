@@ -11,15 +11,17 @@ struct PillFlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let width = Self.width(for: proposal, sizes: sizes, spacing: spacing)
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let width = Self.width(for: proposal, sizes: ideal, spacing: spacing)
+        let sizes = Self.sizes(subviews, ideal: ideal, cappedTo: width)
         let rows = Self.rows(sizes: sizes, available: width, spacing: spacing)
         let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
         return CGSize(width: width, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let sizes = Self.sizes(subviews, ideal: ideal, cappedTo: bounds.width)
         let rows = Self.rows(sizes: sizes, available: bounds.width, spacing: spacing)
         var y = bounds.minY
         for row in rows {
@@ -31,6 +33,15 @@ struct PillFlowLayout: Layout {
                 x += size.width + spacing
             }
             y += row.height + spacing
+        }
+    }
+
+    /// A pill wider than the whole row is measured again at the row's width, so at the accessibility type sizes
+    /// (where `LiveControlPill` lets its text wrap) it wraps inside its capsule instead of running off the screen
+    /// edge (M11 review). At the other sizes a pill is fixed-width and answers with its ideal size regardless.
+    static func sizes(_ subviews: LayoutSubviews, ideal: [CGSize], cappedTo available: CGFloat) -> [CGSize] {
+        zip(subviews, ideal).map { subview, size in
+            size.width <= available ? size : subview.sizeThatFits(ProposedViewSize(width: available, height: nil))
         }
     }
 

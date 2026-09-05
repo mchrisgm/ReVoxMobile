@@ -11,6 +11,7 @@ final class BenchmarkHostingTests: XCTestCase {
     private var layout: ModelLayout!
     private var settings: SettingsStore!
     private var host: FakeInstallHost!
+    private var verifiedLoads: VerifiedLoadRecord!
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("ReVoxBenchmarkHost-\(UUID().uuidString)", isDirectory: true)
@@ -18,6 +19,7 @@ final class BenchmarkHostingTests: XCTestCase {
         layout = ModelLayout(root: root)
         settings = SettingsStore(fileURL: root.appendingPathComponent(SettingsCodec.fileName))
         host = FakeInstallHost()
+        verifiedLoads = VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxBenchmarkHost-\(UUID().uuidString)")!)
     }
 
     override func tearDownWithError() throws {
@@ -25,8 +27,7 @@ final class BenchmarkHostingTests: XCTestCase {
     }
 
     private func manager(pipelineRunning: Bool = false) -> ModelManager {
-        let installer = ModelInstaller(layout: layout, steps: FakeInstallSteps().steps(layout: layout),
-                                       verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxBenchmarkHost-\(UUID().uuidString)")!))
+        let installer = ModelInstaller(layout: layout, steps: FakeInstallSteps().steps(layout: layout), verifiedLoads: verifiedLoads)
         return ModelManager(layout: layout, installer: installer, isPipelineRunning: { pipelineRunning },
                             availableBytes: { 50_000_000_000 }, host: host)
     }
@@ -60,17 +61,23 @@ final class BenchmarkHostingTests: XCTestCase {
         hostView(NavigationStack { BenchmarkView(model: refused) })
         hostView(NavigationStack { BenchmarkView(model: withResults) }.environment(\.dynamicTypeSize, .accessibility5))
 
+        // Files plus the verified-load record: `isWhisperReady` needs both, and without the record the run refused
+        // itself before the first seam was touched (M11 review), so the "running" hosting never saw a run.
         try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        verifiedLoads.record(.whisper(.tiny))
         let seams = FakeBenchmarkSeams()
-        seams.hold = true
+        seams.holdTranslate(of: .tiny)
         let running = try benchmark(seams: seams)
         running.start()
         XCTAssertEqual(running.state, .running(BenchmarkViewModel.synthesisingText))
         hostView(NavigationStack { BenchmarkView(model: running) })                               // progress row + Cancel
+        await waitFor("tiny's translate") { seams.events.value.contains("translate tiny") }
+        XCTAssertNil(running.refusedAlert, "the run really started")
         running.cancel()
         hostView(NavigationStack { BenchmarkView(model: running) })                               // "Stopping…"
-        seams.hold = false
+        seams.releaseTranslate(of: .tiny)
         await waitUntil("run finished", timeout: 5) { running.state == .idle }
+        XCTAssertTrue(seams.events.value.contains("load tiny"))
 
         for row in BenchmarkViewModel.rows(for: .sample()) {
             hostView(List { BenchmarkRowView(row: row) })

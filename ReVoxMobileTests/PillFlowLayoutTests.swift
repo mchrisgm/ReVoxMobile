@@ -73,6 +73,17 @@ final class PillFlowLayoutTests: XCTestCase {
         XCTAssertEqual(rows.map(\.items), [[0, 1]], "measured \(pair.map(\.width))")
     }
 
+    /// M11 review: at the largest accessibility size a pair pill is wider than any iPhone on one line, so it wraps
+    /// inside its capsule (the layout re-measures it at the row's width) instead of running off the screen edge.
+    @MainActor func testAPairPillWrapsInsideThePhoneWidthAtTheLargestType() {
+        let pill = LiveControlPill(systemImage: nil, title: LiveControlStrip.theySpeakTitle, value: "Spanish")
+            .dynamicTypeSize(.accessibility5)
+        let controller = UIHostingController(rootView: pill)
+        let size = controller.sizeThatFits(in: CGSize(width: Self.phone, height: .greatestFiniteMagnitude))
+        XCTAssertLessThanOrEqual(size.width.rounded(.up), Self.phone, "measured \(size)")
+        XCTAssertGreaterThan(size.height, LiveControlPill.minimumHeight, "two lines, not one clipped one")
+    }
+
     /// On a 320 pt phone a group wraps inside itself: the ⓘ drops under Listen, the pair becomes two lines.
     func testAGroupWrapsOnlyInsideItselfOnAThreeTwentyPointPhone() {
         let listen = [size(72), size(66), size(108), size(44)]

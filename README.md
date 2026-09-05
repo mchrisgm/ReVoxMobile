@@ -284,15 +284,15 @@ What each of these was measured to do on real devices is recorded in [docs/measu
 
 ### Which model?
 
-What to expect, from Argmax's published WhisperKit runs on iPhones — 10-minute files transcribed offline, so a speed factor rather than a per-phrase latency; iPhone 12 mini to iPhone 17 Pro, iOS 17 to 26, dashboard last updated 2025-10-17 — until your own benchmark replaces them:
+What to expect, from Argmax's published WhisperKit runs on iPhones — 10-minute files transcribed offline, so a speed factor rather than a per-phrase latency; iPhone 13 to iPhone 16 Pro, iOS 18 to 26, dashboard last updated 2025-10-17 — until your own benchmark replaces them:
 
 | Model | Published speed (× real time, slowest to fastest iPhone) | Published word error rate (mean of two test sets) | Notes |
 |---|---|---|---|
-| tiny | 27–94× | ≈ 16–18 % | The quickest and the roughest. |
-| base | 15–61× | ≈ 12–13 % | The recommendation below 4 GB. |
-| small | 7–21× | ≈ 8.7–9.1 % | The default; flagged with a warning on the iPhone 12 family. |
+| tiny | 41–92× | ≈ 16–18 % | The quickest and the roughest. |
+| base | 30–58× | ≈ 12–13 % | The recommendation below 4 GB. |
+| small | 10–19× | ≈ 8.7–9.0 % | The default; flagged with a warning on the iPhone 12 family. |
 | medium | not published | not published | No published iPhone run exists; the benchmark is the only number. |
-| large-v3 (the 947 MB build ReVox installs) | 1.4–2.3× | ≈ 24–29 % on long recordings, 4.6–4.9 % on clean read speech | A15 and later; the slowest and hottest. |
+| large-v3 (the 947 MB build ReVox installs) | 1.4–2.3× | ≈ 26–29 % on long recordings, 4.6–4.8 % on clean read speech | A15 and later; the slowest and hottest. |
 
 Source: the WhisperKit Benchmarks dashboard on Hugging Face ([`argmaxinc/whisperkit-benchmarks`](https://huggingface.co/spaces/argmaxinc/whisperkit-benchmarks), `dashboard_data/performance_data.json` and `support_data.csv`); a warm load of an already-compiled model is under a second for small and one to two seconds for large-v3 in those runs, while the first load after an install compiles for the Neural Engine and takes longer. Short phrases in a live conversation carry a per-phrase overhead these batch figures do not show; **Benchmark this iPhone** measures that on your iPhone, and [docs/measurements/m11-model-benchmark.md](docs/measurements/m11-model-benchmark.md) carries the cited reference numbers as expectations, the recommendation thresholds, and the table the owner fills by pasting the app's shared text.
 
