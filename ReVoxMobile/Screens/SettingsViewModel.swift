@@ -13,7 +13,9 @@ final class SettingsViewModel {
     static let duckingHelpText = "While ReVox speaks, iOS lowers other audio by an amount iOS decides. The Windows ducked-level slider has no iOS equivalent; use Voice volume to balance ReVox's own voice."
     static let duckingAppliesOnStartText = "A change to the ducking toggle takes effect the next time you tap Start."
 
-    private let store: SettingsStore
+    /// Internal, not private: the milestone 11 lanes add their own settings in extension files (`SettingsViewModel+Guesses`,
+    /// `SettingsViewModel+Benchmark`) so several lanes can land without editing this file.
+    let store: SettingsStore
     private let mute: PlaybackMute
     private let volume: VoiceVolume
     let languageOptions: [LanguageOption]
