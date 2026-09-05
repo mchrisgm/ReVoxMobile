@@ -237,9 +237,12 @@ capture → Segmenter → segment queue (max 3) → WhisperKitTranslator → tra
 | 7 | Hardening: storage accounting, recovery, thermal and memory pressure | Done |
 | 8 | Two-way conversation, the skipped language, Live screen polish, screenshots | Done |
 | 9 | Keep my model when hot, quick controls, Very fast, merging sessions, Learning mode, how-long-ago, setting examples, the pocket-tts click | Done |
-| 10 | UI compaction, full review, README, first-run tutorial | **Current** |
+| 10 | UI compaction, full review, README, first-run tutorial | Done |
+| 11 | Grouped Live controls, You speak / They speak, tappable words, unsure phrases, the History bar, on-device benchmark, tutorial refresh | **Current** |
 
 Milestone 9 was the owner's second round of fixes and improvements: the model stays through a hot iPhone when asked, the settings a conversation reaches for sit on the Live screen, sessions merge in History, Learning mode shows the words as spoken (and how they sound), rows say how long ago rather than when, every setting shows an example, the selected model is highlighted as a whole row, and the click before every pocket-tts phrase is gated out of the clip.
+
+Milestone 11 is the owner's third round: the Live pills sit in three captioned rows, the two-way pair is named by the two people, a word in Learning mode opens its pronunciation and meaning, a phrase ReVox is unsure about stays greyed instead of vanishing, the Merge / Delete bar sits above the tab bar, **Benchmark this iPhone** measures the models on the phone in your hand, and the tutorial hosts the real controls.
 
 What each milestone was measured to do on real devices is recorded row by row in [`docs/measurements/`](docs/measurements/); a row that has not yet been measured on an iPhone says `pending`, and this README says "pending device measurement" wherever it leans on one.
 
