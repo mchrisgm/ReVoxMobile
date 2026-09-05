@@ -20,7 +20,9 @@ final class OnboardingViewModel {
     /// again after `reset()`, false once finished or skipped.
     var shouldShowNow: Bool
 
-    // The demos. Each page's control is bound to one of these, and `reset()` puts them back.
+    // The demos. The strip's model is `controls` (M11 §6); the rest are bound to one page each, and `reset()`
+    // puts them all back.
+    let controls: OnboardingLiveControls
     var demoSource: CaptureMode = .microphone
     var demoTwoWay = false
     var demoLearning = false
@@ -35,6 +37,7 @@ final class OnboardingViewModel {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.controls = OnboardingLiveControls()
         self.shouldShowNow = Self.shouldShow(defaults: defaults)
     }
 

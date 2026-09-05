@@ -114,6 +114,44 @@ final class OnboardingTests: XCTestCase {
         XCTAssertFalse(OnboardingViewModel.shouldShow(defaults: defaults), "a newer record (a downgrade) does not nag")
     }
 
+    // MARK: The demo strip model
+
+    func testTheControlsDemoIsTheStripsOwnModel() {
+        let model = OnboardingViewModel(defaults: defaults)
+        let controls: any LiveControlsModel = model.controls   // the conformance is the compile
+        XCTAssertEqual(controls.captureMode, .microphone)
+        XCTAssertEqual(controls.latencyMode, .balanced)
+        XCTAssertEqual(controls.ignoredLanguage, "en")
+        XCTAssertEqual(controls.theySpeak, "es")
+        XCTAssertTrue(controls.canChooseYourLanguage)
+        XCTAssertNil(controls.pinnedSourceNote)
+        XCTAssertNil(controls.twoWayVoiceNote, "no voice walk at init: the tutorial is built on every launch")
+        XCTAssertFalse(LiveControlStrip.locksControls(in: controls.state))
+        XCTAssertFalse(model.controls.isRunning)
+
+        model.controls.start()
+        XCTAssertEqual(model.controls.state, .running)
+        XCTAssertTrue(model.controls.isRunning)
+        XCTAssertTrue(LiveControlStrip.locksControls(in: controls.state), "Start locks the pills as a session does")
+        model.controls.stop()
+        XCTAssertEqual(model.controls.state, .idle)
+        XCTAssertFalse(LiveControlStrip.locksControls(in: controls.state))
+
+        model.controls.theySpeak = "zz"
+        XCTAssertEqual(model.controls.theySpeak, "zz")
+        XCTAssertEqual(model.controls.twoWayVoiceNote, LiveViewModel.voiceNote(for: "zz"), "the setter refreshes the note")
+        XCTAssertNotNil(model.controls.twoWayVoiceNote)
+        model.controls.theySpeak = "en"
+        XCTAssertNil(model.controls.twoWayVoiceNote, "every iPhone has an English voice")
+
+        model.controls.theySpeak = "zz"
+        model.controls.reset()
+        XCTAssertEqual(model.controls.theySpeak, OnboardingDemo.twoWayTarget)
+        XCTAssertEqual(model.controls.twoWayVoiceNote, LiveViewModel.voiceNote(for: OnboardingDemo.twoWayTarget), "reset refreshes the note for the default language")
+        model.controls.refreshVoiceNote()
+        XCTAssertEqual(model.controls.twoWayVoiceNote, LiveViewModel.voiceNote(for: OnboardingDemo.twoWayTarget))
+    }
+
     // MARK: The transcript demo
 
     func testDemoRowsFollowTheScriptAndStopAtItsEnd() {
