@@ -112,6 +112,8 @@ final class TwoWayLiveTests: XCTestCase {
         XCTAssertNil(LiveViewModel.voiceNote(for: nil))
         XCTAssertNotNil(LiveViewModel.voiceNote(for: "zz"), "no iPhone ships a voice for a code that is not a language")
         XCTAssertNil(LiveViewModel.voiceNote(for: "en"), "every iPhone speaks English")
+        let note = LiveViewModel.voiceNote(for: "zz")
+        XCTAssertEqual(note, "This iPhone has no zz voice, so what you say to them stays in the transcript. Add one in Settings › Accessibility › Spoken Content › Voices.")
         let live = liveModel(store())
         XCTAssertNil(live.twoWayVoiceNote)
         live.twoWayLanguage = "zz"

@@ -183,13 +183,14 @@ final class LiveViewModel {
 
     // MARK: Two-way conversation (§8.2, M8)
 
-    /// The language ReVox leaves alone. nil = every language is translated, the pre-M8 behaviour.
+    /// The language you speak (Settings › Your language, the Live "You speak" pill): neither translated nor transcribed on
+    /// its own; with Two-way on, spoken to the other person in theirs. nil = everything is translated, the pre-M8 behaviour.
     var ignoredLanguage: String? {
         get { settings.settings.ignored }
         set { settings.update { $0.ignoredLanguage = newValue } }
     }
 
-    /// Whether that language is spoken back in `twoWayLanguage` instead of being dropped.
+    /// Two-way conversation: what you say is spoken to the other person in `theySpeak` instead of being dropped.
     var isTwoWay: Bool {
         get { settings.settings.twoWay }
         set { settings.update { $0.twoWay = newValue } }
@@ -203,6 +204,33 @@ final class LiveViewModel {
         }
     }
 
+    /// The "They speak" pill's value: the stored code, or "en" while nothing is stored (that is what runs). Stores
+    /// nil for English through `twoWayLanguage`, so the JSON stays as it was and the voice note refreshes.
+    var theySpeak: String {
+        get {
+            let code = settings.settings.twoWayLanguage ?? ""
+            return code.isEmpty ? "en" : code
+        }
+        set { twoWayLanguage = newValue == "en" ? nil : newValue }
+    }
+
+    /// The You-speak pill is live only while Source language is Auto-detect: a pinned language is never detected.
+    var canChooseYourLanguage: Bool { settings.settings.language == nil }
+
+    /// Why the You-speak pill is disabled — its hint and a details-panel line; nil while nothing is pinned.
+    var pinnedSourceNote: String? {
+        guard let pinned = settings.settings.language else { return nil }
+        return Self.pinnedSourceNote(pinned: LanguageCatalog.displayName(pinned, whenNil: ""),
+                                     you: ignoredLanguage.map { LanguageCatalog.displayName($0, whenNil: LiveView.noLanguageTitle) })
+    }
+
+    static func pinnedSourceNote(pinned: String, you: String?) -> String {
+        if let you {
+            return "Source language is pinned to \(pinned) in Settings, so nothing is heard as \(you). Set it to Auto-detect for Two-way to work."
+        }
+        return "Source language is pinned to \(pinned) in Settings, so the language you speak cannot be chosen here. Set it to Auto-detect for Two-way to work."
+    }
+
     /// iOS speaks the second direction with its own voice, so a language it has no voice for is silence. Said
     /// while the language is being chosen rather than discovered mid-conversation — and held here rather than
     /// computed in the view body, because reading the installed voices walks them and the body runs on every row.
@@ -214,8 +242,8 @@ final class LiveViewModel {
 
     static func voiceNote(for target: String?) -> String? {
         guard let target, !target.isEmpty, !SystemSpeaker.hasVoice(for: target) else { return nil }
-        let name = LanguageCatalog.displayName(target, whenNil: "None")
-        return "This iPhone has no \(name) voice, so replies stay in the transcript. Add one in Settings › Accessibility › Spoken Content › Voices."
+        let name = LanguageCatalog.displayName(target, whenNil: LiveView.noLanguageTitle)
+        return "This iPhone has no \(name) voice, so what you say to them stays in the transcript. Add one in Settings › Accessibility › Spoken Content › Voices."
     }
 
     /// The pair the second direction needs, for the screen to hand to Apple's translator. nil whenever two-way is

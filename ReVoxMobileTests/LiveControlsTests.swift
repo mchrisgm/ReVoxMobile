@@ -128,4 +128,44 @@ final class LiveControlsTests: XCTestCase {
         XCTAssertNil(LiveView.duckingBadge(isDucked: false, status: nil))
         XCTAssertEqual(LiveView.duckingBadge(isDucked: true, status: LiveViewModel.duckingText), LiveViewModel.duckingText)
     }
+
+    // MARK: M11 — You speak / They speak
+
+    func testTheySpeakShowsEnglishUntilOneIsStored() {
+        let settings = store()
+        let live = liveModel(settings)
+        XCTAssertEqual(live.theySpeak, "en")
+        XCTAssertNil(settings.settings.twoWayLanguage, "English is the stored nil, as on Windows")
+        live.ignoredLanguage = "en"
+        live.isTwoWay = true
+        live.theySpeak = "es"
+        XCTAssertEqual(settings.settings.twoWayLanguage, "es")
+        XCTAssertEqual(live.twoWayPair?.source, "en")
+        XCTAssertEqual(live.twoWayPair?.target, "es")
+        live.theySpeak = "en"
+        XCTAssertNil(settings.settings.twoWayLanguage, "choosing English stores nil")
+        XCTAssertNil(live.twoWayPair)
+        live.theySpeak = "zz"
+        XCTAssertNotNil(live.twoWayVoiceNote, "the setter went through twoWayLanguage, so the voice note refreshed")
+        live.theySpeak = "en"
+        XCTAssertNil(live.twoWayVoiceNote)
+    }
+
+    func testYourLanguageCanBeChosenOnLiveOnlyWithAutoDetect() {
+        let settings = store()
+        let live = liveModel(settings)
+        XCTAssertTrue(live.canChooseYourLanguage)
+        XCTAssertNil(live.pinnedSourceNote)
+        settings.update { $0.language = "fr" }
+        XCTAssertFalse(live.canChooseYourLanguage)
+        XCTAssertEqual(live.pinnedSourceNote,
+                       "Source language is pinned to French in Settings, so the language you speak cannot be chosen here. Set it to Auto-detect for Two-way to work.")
+        live.ignoredLanguage = "en"
+        XCTAssertEqual(live.pinnedSourceNote,
+                       "Source language is pinned to French in Settings, so nothing is heard as English. Set it to Auto-detect for Two-way to work.")
+        XCTAssertEqual(live.pinnedSourceNote, LiveViewModel.pinnedSourceNote(pinned: "French", you: "English"))
+        settings.update { $0.language = nil }
+        XCTAssertTrue(live.canChooseYourLanguage)
+        XCTAssertNil(live.pinnedSourceNote)
+    }
 }
