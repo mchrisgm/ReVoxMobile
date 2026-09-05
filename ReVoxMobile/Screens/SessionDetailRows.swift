@@ -8,7 +8,9 @@ enum SessionDetailRows {
     }
 
     static func row(for entry: Entry) -> LiveTranscriptRow {
-        LiveTranscriptRow(time: entry.timestamp, kind: entry.isDropMarker ? .dropMarker : .entry(language: entry.language, original: entry.original, english: entry.english))
+        LiveTranscriptRow(time: entry.timestamp,
+                          kind: entry.isDropMarker ? .dropMarker : .entry(language: entry.language, original: entry.original, english: entry.english),
+                          isGuess: entry.isGuess)   // M11: History greys a guess exactly as Live did
     }
 
     static func languagePinText(_ pin: String?) -> String {

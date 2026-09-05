@@ -16,19 +16,20 @@ struct SearchResult: Equatable {
     var usedFallback: Bool
 }
 
-/// History search (§6.10, §8.6): entries whose English text contains the query, grouped by session.
+/// History search (§6.10, §8.6): entries whose English text contains the query, grouped by session. M11: a guess
+/// is never a hit — a hit is shown out of context as plain text, and a guess is text ReVox does not vouch for.
 enum TranscriptSearch {
     /// Case- and diacritic-insensitive; whether the SwiftData store translates it is measured in M6 (§10.4, §13 Q12).
     static func primaryPredicate(query: String) -> Predicate<Entry> {
         #Predicate<Entry> { entry in
-            !entry.isDropMarker && entry.english.localizedStandardContains(query)
+            !entry.isDropMarker && !entry.isGuess && entry.english.localizedStandardContains(query)
         }
     }
 
     /// The fallback the spec names for a store that rejects the primary predicate (case-sensitive).
     static func fallbackPredicate(query: String) -> Predicate<Entry> {
         #Predicate<Entry> { entry in
-            !entry.isDropMarker && entry.english.contains(query)
+            !entry.isDropMarker && !entry.isGuess && entry.english.contains(query)
         }
     }
 

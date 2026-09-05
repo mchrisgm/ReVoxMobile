@@ -93,6 +93,9 @@ public struct PipelineConfiguration: Sendable, Equatable {
     public var twoWayLanguage: String?
     /// M9 Learning mode: also transcribe every translated phrase so the words as spoken reach the transcript.
     public var wantsOriginal: Bool = false
+    /// M11: write guesses to the transcript sink as well as showing them live. Rebuilt at every Start from
+    /// `Settings.keepGuesses`, so a cached pipeline still honours the current value.
+    public var keepsGuesses: Bool = true
 
     public init(captureMode: CaptureMode,
                 preset: SegmenterPreset,
@@ -105,9 +108,11 @@ public struct PipelineConfiguration: Sendable, Equatable {
                 ignoredLanguage: String? = nil,
                 twoWay: Bool = false,
                 twoWayLanguage: String? = nil,
-                wantsOriginal: Bool = false) {
+                wantsOriginal: Bool = false,
+                keepsGuesses: Bool = true) {
         self.captureMode = captureMode
         self.wantsOriginal = wantsOriginal
+        self.keepsGuesses = keepsGuesses
         self.preset = preset
         self.pinnedLanguage = pinnedLanguage
         self.ignoredLanguage = ignoredLanguage

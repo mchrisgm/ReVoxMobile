@@ -29,6 +29,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var romanize: Bool = false
     /// M9: what a Live row shows next to its text — `TimeDisplay.rawValue`. History always shows the time.
     public var timeDisplay: String = TimeDisplay.age.rawValue
+    /// M11: keep the phrases the gates were unsure about in History and the export. They are always shown on the
+    /// Live screen and never spoken; this only decides whether the session keeps them. Applied at the next Start.
+    public var keepGuesses: Bool = true
 
     public enum TimeDisplay: String, CaseIterable, Sendable {
         case time, age, both
@@ -69,6 +72,7 @@ public struct Settings: Codable, Equatable, Sendable {
         case learning
         case romanize
         case timeDisplay = "time_display"
+        case keepGuesses = "keep_guesses"
     }
 
     /// Missing keys keep their defaults; a wrong type throws, and `SettingsCodec.decode` turns that into `Settings()`.
@@ -89,6 +93,7 @@ public struct Settings: Codable, Equatable, Sendable {
         learning = try container.decodeIfPresent(Bool.self, forKey: .learning) ?? learning
         romanize = try container.decodeIfPresent(Bool.self, forKey: .romanize) ?? romanize
         timeDisplay = try container.decodeIfPresent(String.self, forKey: .timeDisplay) ?? timeDisplay
+        keepGuesses = try container.decodeIfPresent(Bool.self, forKey: .keepGuesses) ?? keepGuesses
     }
 
     /// Writes every key (optionals as `null`, like Windows `json.dumps(dataclasses.asdict(settings))`).
@@ -109,6 +114,7 @@ public struct Settings: Codable, Equatable, Sendable {
         try container.encode(learning, forKey: .learning)
         try container.encode(romanize, forKey: .romanize)
         try container.encode(timeDisplay, forKey: .timeDisplay)
+        try container.encode(keepGuesses, forKey: .keepGuesses)
     }
 }
 

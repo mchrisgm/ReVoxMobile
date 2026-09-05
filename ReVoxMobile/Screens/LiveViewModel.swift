@@ -178,6 +178,7 @@ final class LiveViewModel {
         configuration.twoWay = settings.twoWay
         configuration.twoWayLanguage = settings.twoWayLanguage
         configuration.wantsOriginal = settings.learning           // M9 Learning mode
+        configuration.keepsGuesses = settings.keepGuesses         // M11: applies at the next Start, like Learning
         return configuration
     }
 
@@ -545,8 +546,9 @@ final class LiveViewModel {
             if sessionStatus == Self.pausedByIOSText { sessionStatus = nil }
             isFallingBehind = false
             lagTask?.cancel()
-            detectedLanguage = entry.language
-            rows.append(LiveTranscriptRow(time: entry.timestamp, kind: .entry(language: entry.language, original: entry.original, english: entry.english)))
+            if !entry.isGuess { detectedLanguage = entry.language }   // M11: the language itself may be the doubt
+            rows.append(LiveTranscriptRow(time: entry.timestamp, kind: .entry(language: entry.language, original: entry.original, english: entry.english),
+                                          isGuess: entry.isGuess))
         case .lag:
             isFallingBehind = true
             if rows.last?.kind != .dropMarker {

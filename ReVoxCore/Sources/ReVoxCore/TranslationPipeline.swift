@@ -54,6 +54,8 @@ actor PipelineActor {
 
     private var queue = BoundedSegmentQueue<[Float]>()
     private var captureGate = CaptureGate()
+    /// M11: this run's `PipelineConfiguration.keepsGuesses`; read by `record`.
+    private var keepsGuesses = true
     private var ducking: DuckingCoordinator?
     private var transcript: (any TranscriptSink)?
     private var player: (any AudioPlayer)?
@@ -106,6 +108,7 @@ actor PipelineActor {
         let deps = dependencies
 
         queue = BoundedSegmentQueue(capacity: configuration.maxPending)
+        keepsGuesses = configuration.keepsGuesses
         let segmenter = deps.segmenterFactory(deps.vad, configuration.preset)
         await segmenter.reset()                       // the only VAD reset of the run (R1)
         captureGate = CaptureGate(holdFrames: configuration.captureGateHoldFrames,
@@ -244,18 +247,18 @@ actor PipelineActor {
         return queue.pop()
     }
 
-    func recordTranslation(_ result: Translation, run: Int) async {
-        await record(RoutedTranslation(translation: result, route: .toEnglish, isSpoken: true), run: run)
-    }
-
     /// M8: a phrase the second direction could transcribe but not translate is kept in the transcript and not
     /// spoken, so a two-way conversation still shows both sides even where no engine can reach the target.
+    /// M11: a guess always reaches the `.entry` event (the Live screen shows it), reaches the transcript sink only
+    /// while the run keeps guesses, and is never spoken (`isSpoken` is false for every guess).
     func record(_ routed: RoutedTranslation, run: Int) async {
         guard running, run == runID else { return }
         let result = routed.translation
         let entry = TranscriptEntry(timestamp: dependencies.clock(), language: result.language,
-                                    original: result.original, english: result.english)
-        await transcript?.add(entry)
+                                    original: result.original, english: result.english, isGuess: result.isGuess)
+        if keepsGuesses || !entry.isGuess {
+            await transcript?.add(entry)
+        }
         events.yield(.entry(entry))
         if case .transcribedOnly(let reason) = routed.route {
             events.yield(.transcriptOnly(reason: reason))

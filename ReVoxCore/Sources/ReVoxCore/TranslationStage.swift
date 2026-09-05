@@ -62,7 +62,8 @@ public struct RoutedTranslation: Sendable, Equatable {
 }
 
 /// Binds `LanguageDetector` and `Translator` the way Windows' single `transcribe()` call did, so the Windows STT
-/// tests mirror one-to-one. Deviation W2: when the language-probability gate fails the translator is not called.
+/// tests mirror one-to-one. Deviation W2 (retired in M11 for an unsure language, W8): only a NaN language score
+/// skips the translator; an unsure one is decoded and kept as a guess.
 ///
 /// M8 adds the two-way routing of §8.2 on top, without changing the one-way path: with no ignored language
 /// configured, every phrase takes exactly the route it took before.
@@ -101,15 +102,24 @@ public struct TranslationStage: Sendable {
     /// is not going to speak.
     public func route(_ audio: [Float]) async throws -> RoutedTranslation? {
         var detection: LanguageDetection?
+        var languageIsUnsure = false
         let language: String
         if let pinnedLanguage {
             language = pinnedLanguage
         } else {
             let detected = try await detector.detectLanguage(in: audio)
-            guard SpeechGate.languagePasses(probability: detected.probability) else { return nil }
+            switch SpeechGate.languageOutcome(probability: detected.probability) {
+            case .dropped: return nil                    // NaN: unscorable, never decoded
+            case .unsure: languageIsUnsure = true        // M11 (W8): decoded anyway, kept as an unspoken guess
+            case .confident: break
+            }
             detection = detected
             language = detected.language
         }
+
+        // M11: an unsure detection may be the language the user asked ReVox to leave alone — the M8 promise is
+        // "not translated, not transcribed" — so while one is set the phrase is dropped in both two-way modes.
+        if ignoredLanguage != nil, languageIsUnsure { return nil }
 
         // §8.2: the language the user asked ReVox to leave alone.
         if let ignoredLanguage, language == ignoredLanguage {
@@ -119,9 +129,16 @@ public struct TranslationStage: Sendable {
 
         var candidate = try await translator.translate(audio, language: language)
         candidate.languageProbability = detection?.probability
-        guard var translation = SpeechGate.evaluate(candidate) else { return nil }
-        translation.original = await originalIfWanted(audio, language: language, english: translation.english)
-        return RoutedTranslation(translation: translation, route: .toEnglish, isSpoken: true)
+        switch SpeechGate.classify(candidate) {
+        case .dropped:
+            return nil
+        case .guess(let translation):
+            // No Learning transcribe pass for doubtful audio: the row shows no original, and the voice says nothing.
+            return RoutedTranslation(translation: translation, route: .toEnglish, isSpoken: false)
+        case .confident(var translation):
+            translation.original = await originalIfWanted(audio, language: language, english: translation.english)
+            return RoutedTranslation(translation: translation, route: .toEnglish, isSpoken: true)
+        }
     }
 
     /// M9 Learning mode: the words as spoken. English needs no second decode — the translation *is* the words —

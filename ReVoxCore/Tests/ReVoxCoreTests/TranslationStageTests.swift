@@ -33,14 +33,43 @@ final class TranslationStageTests: XCTestCase {
         XCTAssertEqual(detections, 0)                            // the detector is not called when pinned
     }
 
-    func testRejectsUnsureLanguageWhenAutoDetecting() async throws {
+    /// M11 (W8): an unsure language is decoded and kept as an unspoken guess. Windows dropped it; so did the port
+    /// until M11 (deviation W2, which is retired for this case).
+    func testAnUnsureLanguageIsDecodedAndKeptAsAnUnspokenGuess() async throws {
         let detector = FakeLanguageDetector(language: "es", probability: 0.2)
         let translator = FakeTranslator(segments: [segment("text")])
         let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil)
-        let result = try await stage.translate(audio)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation, Translation(english: "text", language: "es", isGuess: true))
+        XCTAssertEqual(routed?.route, .toEnglish)
+        XCTAssertEqual(routed?.isSpoken, false, "a guess is never spoken")
+        let calls = await translator.calls
+        XCTAssertEqual(calls.count, 1, "the translator runs for an unsure language now")
+        let translation = try await stage.translate(audio)
+        XCTAssertEqual(translation?.isGuess, true)
+    }
+
+    /// The one language score that still skips the decode: a NaN cannot be placed above or below any floor.
+    func testANaNLanguageScoreIsDroppedBeforeTheTranslatorRuns() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: .nan)
+        let translator = FakeTranslator(segments: [segment("text")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil)
+        let result = try await stage.route(audio)
         XCTAssertNil(result)
         let calls = await translator.calls
-        XCTAssertTrue(calls.isEmpty)                             // W2: no encoder pass for a rejected language
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testALowLogProbPhraseIsAnUnspokenGuess() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(segments: [
+            TranslationSegment(text: " maybe", noSpeechProbability: 0.1, averageLogProbability: -2.0),
+        ])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation, Translation(english: "maybe", language: "es", isGuess: true))
+        XCTAssertEqual(routed?.route, .toEnglish)
+        XCTAssertEqual(routed?.isSpoken, false)
     }
 
     func testLowProbabilityAcceptedWithPin() async throws {
@@ -49,6 +78,19 @@ final class TranslationStageTests: XCTestCase {
         let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: "fr")
         let result = try await stage.translate(audio)
         XCTAssertEqual(result, Translation(english: "text", language: "fr"))
+        XCTAssertEqual(result?.isGuess, false)
+    }
+
+    /// A pinned language is never detected, so the detector's doubt cannot make it a guess: the phrase is spoken.
+    func testAPinnedLanguageNeverYieldsALanguageGuess() async throws {
+        let detector = FakeLanguageDetector(language: "de", probability: 0.05)
+        let translator = FakeTranslator(language: "fr", segments: [segment(" Yes.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: "fr")
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation, Translation(english: "Yes.", language: "fr"))
+        XCTAssertEqual(routed?.isSpoken, true)
+        let detections = await detector.calls
+        XCTAssertEqual(detections, 0)
     }
 
     func testGatedSegmentsYieldNil() async throws {
@@ -91,6 +133,51 @@ final class TranslationStageTests: XCTestCase {
         XCTAssertNil(routed, "the ignored language is dropped before anything is translated")
         let languages = await translator.languages
         XCTAssertEqual(languages, [], "the translator is never called for an ignored phrase")
+    }
+
+    /// M11: an unsure detection may be the language the user asked ReVox to leave alone (the detector scored
+    /// English as "de" at 0.3, say), so while a language is ignored it is dropped — with two-way off and on.
+    func testAnUnsureDetectionIsDroppedWhileALanguageIsIgnored() async throws {
+        for twoWay in [false, true] {
+            let detector = FakeLanguageDetector(language: "de", probability: 0.3)
+            let translator = FakeTranslator(language: "de", segments: [segment("must not be decoded")])
+            let transcriber = FakeTranscriber(segments: [segment("must not be decoded either")])
+            let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                         transcriber: transcriber, secondary: FakeSecondary(result: "unused"),
+                                         ignoredLanguage: "en", twoWay: twoWay, targetLanguage: "es")
+            let routed = try await stage.route(audio)
+            XCTAssertNil(routed, "twoWay \(twoWay)")
+            let languages = await translator.languages
+            XCTAssertEqual(languages, [], "twoWay \(twoWay)")
+            let transcribed = await transcriber.calls
+            XCTAssertEqual(transcribed, [], "twoWay \(twoWay)")
+        }
+        // The unsure code equal to the ignored one is dropped too, not handed to the second direction.
+        let detector = FakeLanguageDetector(language: "en", probability: 0.2)
+        let transcriber = FakeTranscriber(segments: [segment(" Good morning.")])
+        let stage = TranslationStage(detector: detector, translator: FakeTranslator(language: "en"), pinnedLanguage: nil,
+                                     transcriber: transcriber, secondary: FakeSecondary(result: "Buenos días."),
+                                     ignoredLanguage: "en", twoWay: true, targetLanguage: "es")
+        let routed = try await stage.route(audio)
+        XCTAssertNil(routed)
+        let transcribed = await transcriber.calls
+        XCTAssertEqual(transcribed, [])
+    }
+
+    /// The second direction keeps using `evaluate`: nothing unsure is ever spoken to the other person.
+    func testTheSecondDirectionNeverProducesAGuess() async throws {
+        let detector = FakeLanguageDetector(language: "en", probability: 0.95)
+        let low = TranslationSegment(text: " Good morning.", noSpeechProbability: 0.1, averageLogProbability: -2.0)
+        let transcriber = FakeTranscriber(segments: [low])
+        let stage = TranslationStage(detector: detector, translator: FakeTranslator(language: "en", segments: [low]), pinnedLanguage: nil,
+                                     transcriber: transcriber, secondary: FakeSecondary(result: "Buenos días."),
+                                     ignoredLanguage: "en", twoWay: true, targetLanguage: "es")
+        let routed = try await stage.route(audio)
+        XCTAssertNil(routed, "a low-log-probability transcription is dropped, not guessed")
+        let intoEnglish = TranslationStage(detector: detector, translator: FakeTranslator(language: "en", segments: [low]), pinnedLanguage: nil,
+                                           ignoredLanguage: "en", twoWay: true, targetLanguage: "en")
+        let english = try await intoEnglish.route(audio)
+        XCTAssertNil(english, "the English target path uses evaluate too")
     }
 
     func testAnotherLanguageIsStillTranslatedWhileALanguageIsIgnored() async throws {
@@ -268,6 +355,32 @@ final class TranslationStageTests: XCTestCase {
         XCTAssertEqual(routed?.translation.original, "")
         let calls = await transcriber.calls
         XCTAssertEqual(calls, [], "learning costs a second decode per phrase, so it is never run unasked")
+    }
+
+    /// Doubtful audio is not decoded a second time: a guess has no original even with Learning on.
+    func testALearningGuessIsNotTranscribedTwice() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.2)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Good morning.")])
+        let transcriber = FakeTranscriber(segments: [segment(" Buenos días.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber, wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation, Translation(english: "Good morning.", language: "es", original: "", isGuess: true))
+        let calls = await transcriber.calls
+        XCTAssertEqual(calls, [])
+    }
+
+    /// The confident path is exactly what it was before M11.
+    func testAConfidentPhraseIsExactlyWhatItWas() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Good morning.")])
+        let transcriber = FakeTranscriber(segments: [segment(" Buenos días.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: transcriber, wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed, RoutedTranslation(translation: Translation(english: "Good morning.", language: "es", spokenLanguage: "en",
+                                                                          original: "Buenos días.", isGuess: false),
+                                                 route: .toEnglish, isSpoken: true))
     }
 
     func testATranscribeFailureCostsOnlyTheOriginal() async throws {
