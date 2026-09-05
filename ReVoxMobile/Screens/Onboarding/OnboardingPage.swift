@@ -82,11 +82,13 @@ enum OnboardingDemo {
     ]
     static let readyFootnote = "ReVox needs a Whisper model before the first translation. The Live tab asks you to download one; you can also find it under Settings › Models."
 
-    /// A scripted conversation for the transcript demo, one row at a time.
+    /// A scripted conversation for the transcript demo, one row at a time. The last line is a guess (M11 §3):
+    /// `LiveTranscriptRowView` greys it and marks it Unsure exactly as on Live.
     struct Line: Equatable, Sendable {
         let language: String
         let original: String
         let english: String
+        var isGuess = false
     }
 
     static let transcriptScript: [Line] = [
@@ -94,11 +96,14 @@ enum OnboardingDemo {
         Line(language: "fr", original: "Le train part à neuf heures.", english: "The train leaves at nine."),
         Line(language: "de", original: "Könnten Sie das wiederholen?", english: "Could you repeat that?"),
         Line(language: "es", original: "Claro, no hay problema.", english: "Of course, no problem."),
+        Line(language: "pt", original: "Até logo, então.", english: "See you later, then.", isGuess: true),
     ]
     /// Seconds between two demo rows: long enough to read one before the next slides in.
     static let rowInterval: TimeInterval = 1.4
     static let transcriptEmptyText = "Tap Start to hear a short conversation."
     static let speakingText = "Speaking the translation aloud"
+    /// Under the rows once the guess has arrived, and after Stop while the greyed row is still there.
+    static let guessText = "The greyed phrase is marked Unsure: ReVox was not sure of it, so it is kept but not spoken."
 
     /// The two-way demo: what they said, translated to English, and your reply, spoken back in Spanish. The
     /// reply row carries the Spanish in its translation column, exactly as the Live screen shows it.

@@ -84,28 +84,48 @@ final class OnboardingTests: XCTestCase {
     func testResetShowsAgainFromTheFirstPageWithFreshDemos() {
         let model = OnboardingViewModel(defaults: defaults)
         model.show(.models)
-        model.demoSource = .broadcast
-        model.demoTwoWay = true
-        model.demoLearning = true
+        model.controls.captureMode = .broadcast
+        model.controls.latencyMode = .veryFast
+        model.controls.ducking = false
+        model.controls.voiceVolume = 0.2
+        model.controls.isTwoWay = true
+        model.controls.isLearning = true
+        model.controls.ignoredLanguage = "fr"
+        model.controls.theySpeak = "de"
+        model.controls.start()
+        model.demoShowsDetails = true
+        model.demoShowsVolumeSlider = true
         model.demoRomanize = true
         model.demoModel = .largeV3
         model.demoKeepModelWhenHot = true
         model.finish()
         XCTAssertFalse(model.shouldShowNow)
+        XCTAssertEqual(model.controls.state, .idle, "finishing stops the demo session")
         model.reset()
         XCTAssertTrue(model.shouldShowNow)
         XCTAssertEqual(model.currentIndex, 0)
         XCTAssertNil(defaults.object(forKey: OnboardingViewModel.storageKey))
         XCTAssertTrue(OnboardingViewModel.shouldShow(defaults: defaults))
-        XCTAssertEqual(model.demoSource, .microphone)
-        XCTAssertFalse(model.demoTwoWay)
-        XCTAssertFalse(model.demoLearning)
+        XCTAssertEqual(model.controls.captureMode, .microphone)
+        XCTAssertEqual(model.controls.latencyMode, .balanced)
+        XCTAssertEqual(model.controls.ducking, Settings().ducking)
+        XCTAssertEqual(model.controls.voiceVolume, Settings().voiceVolume)
+        XCTAssertFalse(model.controls.isTwoWay)
+        XCTAssertFalse(model.controls.isLearning)
+        XCTAssertEqual(model.controls.ignoredLanguage, OnboardingDemo.twoWayIgnored)
+        XCTAssertEqual(model.controls.theySpeak, OnboardingDemo.twoWayTarget)
+        XCTAssertEqual(model.controls.state, .idle)
+        XCTAssertFalse(model.demoShowsDetails)
+        XCTAssertFalse(model.demoShowsVolumeSlider)
         XCTAssertFalse(model.demoRomanize)
         XCTAssertEqual(model.demoModel, .small)
         XCTAssertFalse(model.demoKeepModelWhenHot)
     }
 
     func testANewerVersionShowsAgainAnOlderOneDoesNot() {
+        XCTAssertEqual(OnboardingViewModel.version, 2, "M11 §6: everyone who finished the M10 tutorial sees the refreshed one once")
+        defaults.set(1, forKey: OnboardingViewModel.storageKey)
+        XCTAssertTrue(OnboardingViewModel.shouldShow(defaults: defaults), "finished M10's tutorial: the redesigned pages show once")
         defaults.set(OnboardingViewModel.version - 1, forKey: OnboardingViewModel.storageKey)
         XCTAssertTrue(OnboardingViewModel.shouldShow(defaults: defaults), "an older completed version means the tutorial changed")
         defaults.set(OnboardingViewModel.version, forKey: OnboardingViewModel.storageKey)
@@ -158,6 +178,7 @@ final class OnboardingTests: XCTestCase {
         let model = OnboardingViewModel(defaults: defaults)
         XCTAssertFalse(model.isDemoPlaying)
         XCTAssertTrue(model.demoRows.isEmpty)
+        XCTAssertFalse(model.lastDemoRowIsGuess)
         model.startDemo()
         XCTAssertTrue(model.isDemoPlaying)
         let script = OnboardingDemo.transcriptScript
@@ -167,14 +188,18 @@ final class OnboardingTests: XCTestCase {
             XCTAssertEqual(model.demoRows.count, index + 1)
             XCTAssertEqual(model.demoRows[index].kind, .entry(language: line.language, original: line.original, english: line.english))
             XCTAssertEqual(model.demoRows[index].time, base.addingTimeInterval(Double(index)))
+            XCTAssertEqual(model.demoRows[index].isGuess, line.isGuess)
+            XCTAssertEqual(model.lastDemoRowIsGuess, line.isGuess)
         }
         XCTAssertTrue(model.isDemoComplete)
+        XCTAssertTrue(model.lastDemoRowIsGuess, "the script ends with the guess")
         XCTAssertFalse(model.appendNextDemoRow(), "the script is spent")
         XCTAssertEqual(model.demoRows.count, script.count)
         XCTAssertTrue(model.isDemoPlaying, "the demo keeps running so the ages count up, until Stop")
         model.stopDemo()
         XCTAssertFalse(model.isDemoPlaying)
         XCTAssertEqual(model.demoRows.count, script.count, "Stop keeps the transcript, like the Live screen")
+        XCTAssertTrue(model.lastDemoRowIsGuess, "the greyed row stays after Stop, and so does its caption")
         model.startDemo()
         XCTAssertTrue(model.demoRows.isEmpty, "Start begins the conversation again")
         model.stopDemo()
@@ -196,8 +221,10 @@ final class OnboardingTests: XCTestCase {
         let model = OnboardingViewModel(defaults: defaults)
         model.show(.transcript)
         model.startDemo()
+        model.controls.start()
         model.finish()
         XCTAssertFalse(model.isDemoPlaying)
+        XCTAssertEqual(model.controls.state, .idle, "the demo session is stopped too")
     }
 
     // MARK: Copy
@@ -210,7 +237,11 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(OnboardingTranscriptDemo.buttonTitle(playing: true), "Stop")
         XCTAssertEqual(SettingsView.showTutorialTitle, "Show the tutorial")
         XCTAssertEqual(OnboardingDemo.welcomePoints.count, 4)
-        XCTAssertEqual(OnboardingDemo.transcriptScript.count, 4)
+        XCTAssertEqual(OnboardingDemo.transcriptScript.count, 5)
+        XCTAssertEqual(OnboardingDemo.transcriptScript.filter(\.isGuess).count, 1)
+        XCTAssertEqual(OnboardingDemo.transcriptScript.last?.isGuess, true)
+        XCTAssertEqual(OnboardingDemo.transcriptScript.last?.language, "pt")
+        XCTAssertEqual(OnboardingDemo.guessText, "The greyed phrase is marked Unsure: ReVox was not sure of it, so it is kept but not spoken.")
         XCTAssertEqual(OnboardingDemo.learningText(learning: false, romanize: true), SettingExamples.learning(false))
         XCTAssertEqual(OnboardingDemo.learningText(learning: true, romanize: false), SettingExamples.learning(true))
         XCTAssertEqual(OnboardingDemo.learningText(learning: true, romanize: true), SettingExamples.romanize(true))
