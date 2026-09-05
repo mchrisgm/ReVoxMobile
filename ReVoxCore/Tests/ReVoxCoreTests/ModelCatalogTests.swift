@@ -112,4 +112,19 @@ final class ModelCatalogTests: XCTestCase {
             XCTAssertEqual(descriptor.modelRepo, "argmaxinc/whisperkit-coreml", descriptor.folderName)
         }
     }
+
+    /// `whisper(_:)` force-unwraps the lookup: every id must have a descriptor and a download, now and after a case
+    /// is added.
+    func testEveryModelIDResolvesToADescriptorAndADownload() {
+        for id in WhisperModelID.allCases {
+            XCTAssertEqual(ModelCatalog.whisper(id).id, id)
+            XCTAssertEqual(ModelCatalog.download(for: .whisper(id)).displayName, "Whisper \(id.displayName)")
+            XCTAssertEqual(ModelCatalog.download(for: .whisper(id)).expectedBytes, ModelCatalog.whisper(id).approximateBytes)
+            XCTAssertEqual(ModelCatalog.whisper(id).requiredRelativePaths.count, 7)
+        }
+        XCTAssertEqual(ModelCatalog.download(for: .vad).displayName, "Voice detector")
+        XCTAssertEqual(ModelCatalog.download(for: .pocketTTS).displayName, "pocket-tts voices")
+        XCTAssertEqual(WhisperModelID(rawValue: "large-v3"), .largeV3)
+        XCTAssertNil(WhisperModelID(rawValue: "turbo"))
+    }
 }

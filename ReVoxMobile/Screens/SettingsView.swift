@@ -6,6 +6,8 @@ struct SettingsView: View {
     let models: ModelsViewModel
     let voices: VoicesViewModel
     var diagnostics: BroadcastDiagnosticsModel? = nil
+    /// M10: "Show the tutorial" resets it; the root presents it. nil (tests, previews) hides the row.
+    var onboarding: OnboardingViewModel? = nil
 
     var body: some View {
         Form {
@@ -54,9 +56,10 @@ struct SettingsView: View {
                         Text(option.displayName).tag(option.code)
                     }
                 }
+                .disabled(!model.canIgnoreLanguage)
                 SettingExample(symbol: "hand.raised",
-                               text: model.ignoredLanguage.map { SettingExamples.skipLanguage(LanguageCatalog.displayName($0, whenNil: "")) }
-                                     ?? SettingExamples.skipLanguageNone)
+                               text: SettingExamples.skipLanguageText(ignored: model.ignoredLanguage.map { LanguageCatalog.displayName($0, whenNil: "") },
+                                                                      pinned: model.language.map { LanguageCatalog.displayName($0, whenNil: "") }))
             } header: {
                 Text("Skip a language")
             } footer: {
@@ -75,8 +78,9 @@ struct SettingsView: View {
                 Toggle("Romanize", isOn: $model.romanize)
                     .disabled(!model.learning)
                     .accessibilityHint("Adds how the original sounds in Latin letters")
-                SettingExample(symbol: "character.phonetic", text: SettingExamples.romanize(model.romanize)) {
-                    LiveTranscriptRowView(row: SettingExamples.japaneseRow, showsOriginal: true, romanizes: model.romanize)
+                SettingExample(symbol: "character.phonetic", text: SettingExamples.romanizeText(on: model.romanize, learning: model.learning)) {
+                    // The row shows what the Live screen would show: no original at all while Learning is off.
+                    LiveTranscriptRowView(row: SettingExamples.japaneseRow, showsOriginal: model.learning, romanizes: model.romanize)
                 }
             } header: {
                 Text("Learning")
@@ -150,6 +154,10 @@ struct SettingsView: View {
                 NavigationLink("Models") { ModelsView(model: models) }
                 NavigationLink("Voices") { VoicesView(model: voices) }
                 NavigationLink("About") { AboutView(info: AboutInfo.current()) }
+                if let onboarding {
+                    Button(Self.showTutorialTitle) { onboarding.reset() }
+                        .accessibilityHint("Opens the first-run tutorial again")
+                }
             }
 
             if let diagnostics {
@@ -160,6 +168,8 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
     }
+
+    static let showTutorialTitle = "Show the tutorial"
 
     static func title(for preset: SegmenterPreset) -> String {
         switch preset {

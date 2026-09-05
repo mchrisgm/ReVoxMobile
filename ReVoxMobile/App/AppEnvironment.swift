@@ -32,6 +32,7 @@ final class AppEnvironment {
     let live: LiveViewModel
     let models: ModelsViewModel
     let settingsModel: SettingsViewModel
+    let onboarding: OnboardingViewModel
     private var interruptionTask: Task<Void, Never>?
 
     /// Breaks the manager ↔ live-view-model cycle: the manager asks whether the pipeline is busy through this box.
@@ -48,7 +49,8 @@ final class AppEnvironment {
 
     init(configuration: AppConfiguration, deviceInfo: DeviceInfo, settingsURL: URL, modelRoot: URL, transcriptContainer: ModelContainer,
          sessionSeam: any AudioSessionSeam, installSteps: InstallSteps, installHost: any InstallHost, verifiedLoads: VerifiedLoadRecord,
-         permission: MicrophonePermission, exportDirectory: URL = TranscriptExporter.defaultDirectory()) throws {
+         permission: MicrophonePermission, exportDirectory: URL = TranscriptExporter.defaultDirectory(),
+         onboardingDefaults: UserDefaults = .standard) throws {
         self.configuration = configuration
         self.deviceInfo = deviceInfo
         self.settings = SettingsStore(fileURL: settingsURL)
@@ -122,6 +124,7 @@ final class AppEnvironment {
         // §9 memory row, "or fails next call": the translator reports a spent retry through the assembler's sink.
         assembler.whisperRecovery.set(degradation.recoveryEventHandler())
         self.settingsModel = SettingsViewModel(store: settings, mute: mute, voiceVolume: voiceVolume)
+        self.onboarding = OnboardingViewModel(defaults: onboardingDefaults)
         // Locals, never `self`: these closures are created before initialisation completes.
         let settingsStore = settings
         let assembly = speakerAssembly
@@ -189,6 +192,10 @@ final class AppEnvironment {
             deleteVAD: { _ in },
             setOfflineMode: { _ in }
         )
+        // The tutorial is already "seen" under test: a screen hosted in a test must never present the first-run
+        // cover, and the suite is per root so tests never read the app's own defaults.
+        let onboardingDefaults = UserDefaults(suiteName: "revox-tests-onboarding-\(root.lastPathComponent)")!
+        onboardingDefaults.set(OnboardingViewModel.version, forKey: OnboardingViewModel.storageKey)
         return try AppEnvironment(
             configuration: AppConfiguration(appGroup: "group.test.revox", broadcastExtensionBundleID: "test.revox.broadcast"),
             deviceInfo: DeviceInfo(physicalMemoryBytes: 6 * 1_073_741_824),
@@ -200,7 +207,8 @@ final class AppEnvironment {
             installHost: NoopInstallHost(),
             verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxAppEnvironmentTesting-\(UUID().uuidString)")!),
             permission: .fixed(.granted),
-            exportDirectory: root.appendingPathComponent("Exports", isDirectory: true)
+            exportDirectory: root.appendingPathComponent("Exports", isDirectory: true),
+            onboardingDefaults: onboardingDefaults
         )
     }
 

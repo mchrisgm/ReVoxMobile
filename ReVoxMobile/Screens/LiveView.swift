@@ -15,12 +15,18 @@ struct LiveView: View {
     var secondaryTranslation: TranslationBridge? = nil
     @Environment(\.openURL) private var openURL
     @State private var isAtBottom = true
+    /// M10: the volume slider and the details panel are unfolded per launch only — never a Settings field.
+    @State private var showsVolumeSlider = false
+    @State private var isMoreExpanded = false
 
+    /// M10: one control strip, a one-line status, then the transcript takes every point that is left. The
+    /// three cards this replaced left two rows of transcript on an iPhone 12.
     var body: some View {
-        VStack(spacing: 12) {
-            sourceCard
-            twoWayCard
-            quickControls
+        VStack(spacing: 8) {
+            LiveControlStrip(model: model, showsVolumeSlider: $showsVolumeSlider, isMoreExpanded: $isMoreExpanded)
+            if isMoreExpanded {
+                LiveDetailsPanel(model: model)
+            }
             statusLine
             bannerView
             transcriptOnlyNote
@@ -47,141 +53,6 @@ struct LiveView: View {
         .sensoryFeedback(.impact, trigger: model.state == .running)
     }
 
-    private var isBusy: Bool { model.state == .running || model.state == .preparing }
-
-    /// §8.2: the segmented control alone did not say what either source listens to, or why it stops responding
-    /// mid-run. The card names the choice, describes the selected one, and says what to do about it while busy.
-    private var sourceCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Listen to")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            Picker("Listen to", selection: $model.captureMode) {
-                ForEach(Self.availableSources, id: \.self) { mode in
-                    Text(Self.title(for: mode)).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(isBusy)
-            .accessibilityLabel("Audio source")
-            .accessibilityHint(isBusy ? Self.lockedWhileRunningText : "")
-            Label {
-                Text(isBusy ? Self.lockedWhileRunningText : Self.description(for: model.captureMode))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } icon: {
-                Image(systemName: Self.symbol(for: model.captureMode))
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
-    }
-
-    /// §8.2 (M8): the two-way conversation controls, on the Live screen because they are turned on and off in the
-    /// middle of a conversation. Both pickers are locked while a run is going, like the source: the pipeline reads
-    /// them once, at Start.
-    @ViewBuilder
-    private var twoWayCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $model.isTwoWay) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Two-way").font(.subheadline.weight(.semibold))
-                    Text(Self.twoWaySummary(ignored: model.ignoredLanguage, target: model.twoWayLanguage))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .disabled(isBusy)
-            .accessibilityHint(isBusy ? Self.lockedWhileRunningText : Self.twoWayHintText)
-            if model.isTwoWay {
-                Divider()
-                languageRow(title: "Don't translate", selection: $model.ignoredLanguage)
-                languageRow(title: "Reply in", selection: $model.twoWayLanguage)
-                if let note = model.twoWayVoiceNote {
-                    Label(note, systemImage: "speaker.slash")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
-    }
-
-    /// The label is carried by its own `Text`: a `.menu` picker outside a `Form` renders only its value, which
-    /// left the card showing two bare language names with nothing saying which was which.
-    private func languageRow(title: String, selection: Binding<String?>) -> some View {
-        HStack(spacing: 8) {
-            Text(title).font(.subheadline)
-            Spacer(minLength: 8)
-            Picker(title, selection: selection) {
-                Text(Self.noLanguageTitle).tag(String?.none)
-                ForEach(LanguageCatalog.concrete) { option in
-                    Text(option.displayName).tag(option.code)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-        }
-        .disabled(isBusy)
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-    }
-
-    /// M9 §8.2: the settings a running conversation reaches for, on the screen it is running on. Latency, ducking
-    /// and Learning are read at Start (the pipeline builds its stage once), so they lock while a run is going with
-    /// the same words the source uses; the voice volume is live, because the players read it per clip.
-    private var quickControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Quick controls")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Spacer()
-                if isBusy {
-                    Text(Self.lockedWhileRunningText).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            Picker("Latency", selection: $model.latencyMode) {
-                ForEach(SegmenterPreset.allCases, id: \.self) { preset in
-                    Text(SettingsView.title(for: preset)).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(isBusy)
-            .accessibilityLabel("Latency mode")
-            .accessibilityHint(isBusy ? Self.lockedWhileRunningText : SettingsViewModel.presetDescription(model.latencyMode))
-            HStack(spacing: 16) {
-                Toggle(isOn: $model.ducking) { Text("Ducking").font(.subheadline) }
-                    .disabled(isBusy)
-                    .accessibilityHint("Lowers other apps' audio while ReVox speaks; applies at the next Start")
-                Toggle(isOn: $model.isLearning) { Text("Learning").font(.subheadline) }
-                    .disabled(isBusy)
-                    .accessibilityHint("Shows the words as spoken above the translation; applies at the next Start")
-            }
-            .frame(minHeight: 44)
-            HStack(spacing: 8) {
-                Image(systemName: "speaker.fill").foregroundStyle(.secondary).accessibilityHidden(true)
-                Slider(value: $model.voiceVolume, in: 0...1, step: 0.05) { Text("Voice volume") }
-                    .accessibilityValue("\(Int((model.voiceVolume * 100).rounded())) percent")
-                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).accessibilityHidden(true)
-            }
-            .frame(minHeight: 44)
-        }
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
-    }
-
     /// The one place a transcript-only phrase is explained: it is in the transcript, and nothing said it (§8.2).
     @ViewBuilder
     private var transcriptOnlyNote: some View {
@@ -200,44 +71,54 @@ struct LiveView: View {
         }
     }
 
+    /// M10: one line. The parts that change during a run — the lag badge, the ducking badge, the session and
+    /// broadcast status — keep their full width; the model name yields next; the voice, the longest and least
+    /// urgent part, truncates first. VoiceOver reads the whole sentence whatever was cut. "Ducking off" moved to
+    /// the strip's own pill, so the badge here appears only while other audio is actually being lowered.
     private var statusLine: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Label(model.modelStatusText, systemImage: "cpu")
-                Label(model.voiceStatusText, systemImage: "speaker.wave.2")
+        HStack(spacing: 8) {
+            Label(model.modelStatusText, systemImage: "cpu")
+                .lineLimit(1)
+                .layoutPriority(1)
+            Label(model.voiceStatusText, systemImage: "speaker.wave.2")
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if model.isFallingBehind {
+                statusBadge("Falling behind", tint: .orange)
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                if model.isFallingBehind {
-                    Text("Falling behind")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.2), in: Capsule())
-                }
-                if let ducking = model.duckingStatusText {
-                    Text(ducking)
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background((model.isDucked ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
-                }
-                if let status = model.sessionStatus {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
+            if let ducking = Self.duckingBadge(isDucked: model.isDucked, status: model.duckingStatusText) {
+                statusBadge(ducking, tint: .accentColor)
+            }
+            if let status = model.sessionStatus {
+                Text(status)
+                    .lineLimit(1)
+                    .layoutPriority(2)
             }
             if let broadcastStatus = model.broadcastStatusText {
                 Label(broadcastStatus, systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(2)
             }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(.caption)
+        .foregroundStyle(.secondary)
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(LiveStatusAccessibility.label(modelStatus: model.modelStatusText, voiceStatus: model.voiceStatusText,
-                                                          isFallingBehind: model.isFallingBehind, duckingStatus: model.duckingStatusText,
+                                                          isFallingBehind: model.isFallingBehind,
+                                                          duckingStatus: Self.duckingBadge(isDucked: model.isDucked, status: model.duckingStatusText),
                                                           sessionStatus: model.sessionStatus, broadcastStatus: model.broadcastStatusText))
         .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private func statusBadge(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(tint.opacity(0.18), in: Capsule())
+            .layoutPriority(2)
     }
 
     /// §8.2: the system picker with the Control Center explanation and the side-button footnote (C3).
@@ -450,7 +331,13 @@ struct LiveView: View {
         }
     }
 
-    /// The toggle's subtitle: what two-way will actually do, in the languages chosen, or what is still missing.
+    /// M10: the status line's ducking badge. The strip's pill already says "Duck off", so the line shows the
+    /// state only while other audio is actually lowered — the one moment the pill cannot show.
+    static func duckingBadge(isDucked: Bool, status: String?) -> String? {
+        isDucked ? status : nil
+    }
+
+    /// The details panel's two-way line: what two-way will actually do, in the languages chosen, or what is still missing.
     static func twoWaySummary(ignored: String?, target: String?) -> String {
         guard let ignored else { return "Choose a language to leave alone" }
         let ignoredName = LanguageCatalog.displayName(ignored, whenNil: noLanguageTitle)

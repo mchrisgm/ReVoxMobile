@@ -57,6 +57,11 @@ struct ModelsView: View {
             Text(model.deleteFailureAlert ?? "")
         }
         .onChange(of: model.rows) { _, _ in model.reconcileFailures() }
+        .alert("Can't download now", isPresented: Binding(get: { model.downloadRefusedAlert != nil }, set: { if !$0 { model.downloadRefusedAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.downloadRefusedAlert ?? "")
+        }
         .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

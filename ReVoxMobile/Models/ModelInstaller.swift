@@ -64,7 +64,7 @@ actor ModelInstaller {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch {
-            progress(ModelDownloadState(phase: .failed(String(describing: error)), fraction: nil, bytesExpected: expected))
+            progress(ModelDownloadState(phase: .failed(UserFacingErrorText.describe(error)), fraction: nil, bytesExpected: expected))
             throw error
         }
     }
@@ -93,7 +93,7 @@ actor ModelInstaller {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch {
-            progress(ModelDownloadState(phase: .failed(String(describing: error)), fraction: nil, bytesExpected: expected))
+            progress(ModelDownloadState(phase: .failed(UserFacingErrorText.describe(error)), fraction: nil, bytesExpected: expected))
             throw error
         }
     }
@@ -124,7 +124,7 @@ actor ModelInstaller {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch {
-            progress(ModelDownloadState(phase: .failed(String(describing: error)), fraction: nil, bytesExpected: expected))
+            progress(ModelDownloadState(phase: .failed(UserFacingErrorText.describe(error)), fraction: nil, bytesExpected: expected))
             throw error
         }
     }

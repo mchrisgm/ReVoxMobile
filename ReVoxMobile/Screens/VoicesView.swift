@@ -23,8 +23,9 @@ struct VoicesView: View {
                             .frame(minHeight: 44)
                         }
                         .foregroundStyle(.primary)
-                        .accessibilityLabel(model.selectedPocketVoice == voice ? "\(voice), selected" : voice)
-                        .accessibilityHint("pocket-tts voice")
+                        .accessibilityLabel(voice)
+                        .accessibilityAddTraits(model.selectedPocketVoice == voice ? .isSelected : [])   // M10: the trait, not the word
+                        .accessibilityHint("Speaks English with this pocket-tts voice")
                     }
                     sampleRow
                 } else {
@@ -59,8 +60,9 @@ struct VoicesView: View {
                         .frame(minHeight: 44)
                     }
                     .foregroundStyle(.primary)
-                    .accessibilityLabel(model.selectedSystemVoiceIdentifier == option.id ? "\(option.name), \(option.qualityLabel), selected" : "\(option.name), \(option.qualityLabel)")
-                    .accessibilityHint("System voice")
+                    .accessibilityLabel("\(option.name), \(option.qualityLabel)")
+                    .accessibilityAddTraits(model.selectedSystemVoiceIdentifier == option.id ? .isSelected : [])
+                    .accessibilityHint("Speaks English with this system voice")
                 }
             } header: {
                 Text("System voices")
@@ -89,6 +91,11 @@ struct VoicesView: View {
             Text(model.deleteFailureAlert ?? "")
         }
         .onChange(of: model.pocketTTSState) { _, _ in model.reconcileFailures() }
+        .alert("Can't download now", isPresented: Binding(get: { model.downloadRefusedAlert != nil }, set: { if !$0 { model.downloadRefusedAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.downloadRefusedAlert ?? "")
+        }
         .alert("Download failed", isPresented: Binding(get: { model.downloadFailureAlert != nil }, set: { if !$0 { model.downloadFailureAlert = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -136,8 +143,12 @@ struct VoicesView: View {
                         .accessibilityHint("Tries pocket-tts again")
                 }
             }
+            if let reason = model.sampleUnavailableReason {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+            }
             if let error = model.sampleError {
-                Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
+                // Primary, not secondary: this is the only place a sample failure is shown (no alert twin, M10 audit).
+                Label(error, systemImage: "exclamationmark.triangle").font(.caption)
             }
         }
     }
@@ -156,7 +167,7 @@ private struct PocketTTSDownloadRow: View {
                 Spacer()
                 Text(VoicesViewModel.pocketTTSSizeText).font(.subheadline).foregroundStyle(.secondary)
             }
-            Text("Voices alba, azelma, cosette and javert. Downloaded on demand; the system voice is used until then.")
+            Text(VoicesViewModel.downloadRowDescription)
                 .font(.caption).foregroundStyle(.secondary)
             stateView
         }

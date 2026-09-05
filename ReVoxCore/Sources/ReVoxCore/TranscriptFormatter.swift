@@ -4,7 +4,7 @@ import Foundation
 public struct TranscriptEntry: Sendable, Equatable, Codable {
     public var timestamp: Date
     public var language: String
-    public var original: String          // always "" on both platforms
+    public var original: String          // "" unless Learning mode kept the words as spoken (M9; "" on Windows)
     public var english: String
 
     public init(timestamp: Date, language: String, original: String, english: String) {

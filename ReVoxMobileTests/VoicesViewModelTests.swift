@@ -213,6 +213,25 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertEqual(sample.texts.count, 2, "idle only")
     }
 
+    /// M10: a disabled Play sample says why. While translation runs the caption names it; while a sample plays the
+    /// spinner is the reason, so there is no caption to double it.
+    func testSampleUnavailableReasonNamesTheRunningTranslation() async {
+        let model = makeModel()
+        XCTAssertNil(model.sampleUnavailableReason)
+        pipelineRunning = true
+        XCTAssertFalse(model.canPlaySample)
+        XCTAssertEqual(model.sampleUnavailableReason, VoicesViewModel.stopToPlaySampleText)
+        XCTAssertEqual(VoicesViewModel.stopToPlaySampleText, "Stop translation to play a sample")
+        pipelineRunning = false
+        sample.hold = true
+        let task = Task { await model.playSample() }
+        await waitUntil("playing") { model.isPlayingSample }
+        XCTAssertFalse(model.canPlaySample)
+        XCTAssertNil(model.sampleUnavailableReason, "the spinner is the reason while a sample plays")
+        sample.hold = false
+        await task.value
+    }
+
     func testSampleFailureIsReportedAndClearsOnTheNextSample() async {
         let model = makeModel()
         sample.fail = true
@@ -257,6 +276,17 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertFalse(installed.contains { !$0.language.hasPrefix("en") })
         XCTAssertFalse(raw.contains { $0.voiceTraits.contains(.isNoveltyVoice) && installed.map(\.id).contains($0.identifier) })
         XCTAssertEqual(installed, SystemVoiceOption.sorted(installed))
+    }
+
+    /// M10: the download row names the voices from the catalog, so a catalog change can never leave a stale list.
+    func testTheDownloadRowNamesTheCatalogVoices() {
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "azelma", "cosette", "javert"]), "Voices alba, azelma, cosette and javert.")
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "javert"]), "Voices alba and javert.")
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba"]), "Voice alba.")
+        XCTAssertEqual(VoicesViewModel.voiceListText([]), "No voices.")
+        XCTAssertEqual(VoicesViewModel.downloadRowDescription,
+                       "Voices alba, azelma, cosette and javert. Downloaded on demand; the system voice is used until then.")
+        XCTAssertTrue(VoicesViewModel.downloadRowDescription.hasPrefix(VoicesViewModel.voiceListText(ModelCatalog.pocketTTS.offeredVoices)))
     }
 
     func testTexts() {
@@ -320,7 +350,9 @@ final class VoicesViewModelTests: XCTestCase {
         pipelineRunning = true
         XCTAssertFalse(model.canDelete)
         model.deleteConfirmed()
-        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete models")
+        XCTAssertEqual(model.deleteFailureAlert, "Stop translation to delete voices",
+                       "M10: the alert says what the footer of the same screen says, not the manager's Models wording")
+        XCTAssertEqual(model.deleteFailureAlert, VoicesViewModel.stopToDeleteText)
         XCTAssertNil(model.lowStorageAlert)
         XCTAssertTrue(model.isPocketTTSInstalled)
 
@@ -328,6 +360,13 @@ final class VoicesViewModelTests: XCTestCase {
         model.deleteConfirmed()
         XCTAssertNil(model.deleteFailureAlert)
         XCTAssertFalse(model.isPocketTTSInstalled)
+    }
+
+    /// Only the running-pipeline refusal is reworded for this screen; any other error still prints itself.
+    func testDeleteFailureTextRewordsOnlyTheRunningRefusal() {
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(ModelManagerError.pipelineRunning), "Stop translation to delete voices")
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(ModelManagerError.notEnoughSpace("no room")), "no room")
+        XCTAssertEqual(VoicesViewModel.deleteFailureText(SpeakerError.noVoice), String(describing: SpeakerError.noVoice))
     }
 
     // MARK: Upstream-change caption (M7 Task 90)
@@ -338,5 +377,25 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertNil(makeModel().pocketTTSNoticeText)
         record.record(.pocketTTS, files: ["v2.1/english/constants_bin/gone.bin": 4])
         XCTAssertEqual(makeModel(fileRecord: record).pocketTTSNoticeText, ModelManager.upstreamChangedText)
+    }
+
+    /// M10: verifying pocket-tts loads it, so the download is refused while a session runs (§9).
+    func testDownloadRefusedWhileRunningAndAllowedWhenIdle() async {
+        let model = makeModel()
+        pipelineRunning = true
+        XCTAssertFalse(model.canDownload)
+        model.download()
+        XCTAssertEqual(model.downloadRefusedAlert, "Stop translation to download voices")
+        XCTAssertNil(model.lowStorageAlert)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.pocketTTSDownloads, 0)
+        XCTAssertEqual(model.pocketTTSState.phase, .idle)
+
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+        XCTAssertTrue(model.canDownload)
+        model.download()
+        XCTAssertNil(model.downloadRefusedAlert)
+        await waitUntil { model.pocketTTSState.phase == .installed }
     }
 }

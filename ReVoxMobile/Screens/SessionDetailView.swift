@@ -29,6 +29,9 @@ struct SessionDetailView: View {
                 headerRow("Model", value: session.modelID)
                 headerRow("Voice", value: session.voice)
                 headerRow("Source language", value: SessionDetailRows.languagePinText(session.pinnedLanguage))
+                if let skipped = summary.dropCountText {
+                    headerRow("Skipped", value: skipped)   // M10: explains the "… skipped" rows below
+                }
                 if session.joinedInProgress {
                     Text("Joined a broadcast already in progress").font(.caption).foregroundStyle(.secondary)
                 }
@@ -38,7 +41,10 @@ struct SessionDetailView: View {
                     ContentUnavailableView(Self.emptyTitle, systemImage: "text.bubble", description: Text(Self.emptyDescription))
                 } else {
                     ForEach(rows) { row in
-                        LiveTranscriptRowView(row: row)
+                        // M10: a session recorded with Learning on keeps the words as spoken (the export prints
+                        // them too); the row view shows them only where they exist and differ from the English.
+                        // Romanization is a reading aid, not a record, so it follows the Live setting's absence here.
+                        LiveTranscriptRowView(row: row, showsOriginal: true)
                     }
                 }
             }
@@ -58,6 +64,7 @@ struct SessionDetailView: View {
                     Label("Delete", systemImage: "trash")
                 }
                 .accessibilityLabel("Delete session")
+                .accessibilityHint("Deletes this session after a confirmation")
             }
         }
         .task(id: session.entries.count) {

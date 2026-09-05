@@ -163,4 +163,45 @@ final class DuckingCoordinatorTests: XCTestCase {
         let isDucked = await coordinator.isDucked
         XCTAssertFalse(isDucked)
     }
+
+    func testReEnablingDucksOnTheNextSpeakingEdge() async {
+        let (coordinator, ducker, _) = makeCoordinator()
+        await coordinator.setEnabled(false)
+        await coordinator.speakingChanged(true)
+        let duckedWhileOff = await ducker.ducked
+        XCTAssertEqual(duckedWhileOff, 0)
+        await coordinator.setEnabled(true)
+        await coordinator.speakingChanged(true)
+        let ducked = await ducker.ducked
+        XCTAssertEqual(ducked, 1)
+        let isDucked = await coordinator.isDucked
+        XCTAssertTrue(isDucked)
+    }
+
+    func testAFalseEdgeWithoutADuckStartsNoHold() async {
+        let (coordinator, ducker, sleep) = makeCoordinator()
+        await coordinator.speakingChanged(false)
+        XCTAssertTrue(sleep.requested.isEmpty)
+        let restored = await ducker.restored
+        XCTAssertEqual(restored, 0)
+        let isDucked = await coordinator.isDucked
+        XCTAssertFalse(isDucked)
+    }
+
+    func testACustomHoldIsWhatIsSlept() async {
+        let ducker = FakeDucker()
+        let sleep = FakeSleep()
+        let coordinator = DuckingCoordinator(ducker: ducker, enabled: true, hold: 1_000, sleep: sleep.sleep)
+        await coordinator.speakingChanged(true)
+        await coordinator.speakingChanged(false)
+        // The fake records the duration before it registers the continuation, so wait for the sleeper to be
+        // pending before resuming, or `resumeAll()` can run between the two and the hold never elapses (this test
+        // failed once in six local runs when it waited on `requested` alone).
+        let pending = await eventually { sleep.pendingCount == 1 }
+        XCTAssertTrue(pending)
+        XCTAssertEqual(sleep.requested, [1_000])
+        sleep.resumeAll()
+        let restored = await eventually { await ducker.restored == 1 }
+        XCTAssertTrue(restored)
+    }
 }

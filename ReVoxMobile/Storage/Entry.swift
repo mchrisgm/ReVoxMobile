@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
 
-/// One transcript line or one drop marker (§6.10). `original` is always "" (P5).
+/// One transcript line or one drop marker (§6.10). `original` is "" unless Learning mode recorded the words as
+/// spoken (M9); History and the export show it when present.
 @Model
 final class Entry {
     var timestamp: Date

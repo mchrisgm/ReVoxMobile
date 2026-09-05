@@ -125,4 +125,34 @@ final class PlaybackQueueTests: XCTestCase {
         XCTAssertTrue(speaking)
         await queue.stop()
     }
+
+    /// `clear()` is a mute that does not stick: the queue is discarded and speaking ends, and the next clip plays.
+    func testClearDiscardsOutstandingAndEndsSpeakingButKeepsPlaying() async {
+        let (queue, sink, events) = makeQueue()
+        await queue.enqueue(clip(100))
+        await queue.enqueue(clip(100))
+        await queue.clear()
+        XCTAssertEqual(sink.stopCount, 1)
+        XCTAssertEqual(events.value, [true, false])
+        let speaking = await queue.isSpeaking
+        XCTAssertFalse(speaking)
+        let muted = await queue.isMuted
+        XCTAssertFalse(muted)
+        await queue.enqueue(clip(10))
+        XCTAssertEqual(sink.scheduled.count, 3)
+        XCTAssertEqual(events.value, [true, false, true])
+        await queue.stop()
+    }
+
+    func testClearAndUnmuteWithNothingOutstandingTouchNothing() async {
+        let (queue, sink, events) = makeQueue()
+        await queue.clear()
+        await queue.setMuted(false)
+        XCTAssertEqual(sink.stopCount, 0)
+        XCTAssertTrue(events.value.isEmpty)
+        await queue.setMuted(true)                            // muted with nothing playing: no stop either
+        XCTAssertEqual(sink.stopCount, 0)
+        XCTAssertTrue(events.value.isEmpty)
+        await queue.stop()
+    }
 }

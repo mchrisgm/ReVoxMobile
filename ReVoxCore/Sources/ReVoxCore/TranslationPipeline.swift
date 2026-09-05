@@ -61,6 +61,8 @@ actor PipelineActor {
     private var texts: AsyncStream<SpokenPhrase>.Continuation?
     private var edges: AsyncStream<Bool>.Continuation?
     private var tasks: [Task<Void, Never>] = []
+    /// The most recent `start`/`stop` transition; the next one awaits it first (see `serialized(_:)`).
+    private var lastTransition: Task<Void, Never>?
 
     init(dependencies: PipelineDependencies, events: AsyncStream<PipelineEvent>.Continuation) {
         self.dependencies = dependencies
@@ -72,7 +74,30 @@ actor PipelineActor {
 
     // MARK: start / stop
 
+    /// `start` and `stop` run one at a time, in call order. The actor is re-entrant at every `await` inside them,
+    /// and a `stop()` that landed while `start()` was suspended in `source.start` or `player.start` retired the run,
+    /// finished its streams and stopped its player — after which the resumed `start()` set `running = true` and
+    /// reported `.running` over a run whose streams were already finished. `start()` is a no-op while running, so
+    /// only another `stop()` could bring the pipeline back. Here the start completes and then the stop tears it down.
     func start(_ configuration: PipelineConfiguration) async {
+        await serialized { await self.performStart(configuration) }
+    }
+
+    func stop() async {
+        await serialized { await self.performStop() }
+    }
+
+    private func serialized(_ transition: @escaping @Sendable () async -> Void) async {
+        let previous = lastTransition
+        let task = Task {
+            await previous?.value
+            await transition()
+        }
+        lastTransition = task
+        await task.value
+    }
+
+    private func performStart(_ configuration: PipelineConfiguration) async {
         guard !running else { return }
         // Claim this run's generation before any per-run state is replaced, so a stage task abandoned by the
         // previous `stop()` cannot touch the queue, gate, transcript sink or player built below.
@@ -141,7 +166,7 @@ actor PipelineActor {
         setState(.running)
     }
 
-    func stop() async {
+    private func performStop() async {
         let wasRunning = running || state == .error
         running = false
         // Retire this run's generation: the join below is bounded, so a stage task can outlive `stop()`.
@@ -242,6 +267,9 @@ actor PipelineActor {
     func applySpeakingEdge(_ speaking: Bool, run: Int, ducking: DuckingCoordinator) async {
         guard run == runID else { return }
         let position = await dependencies.source.capturePosition()
+        // Re-checked after the await: `stop()`'s join is bounded, so an edge can resume after its run was retired
+        // and a new one started — and `captureGate` would by then be the new run's.
+        guard run == runID else { return }
         captureGate.speakingChanged(speaking, atPosition: position)
         await ducking.speakingChanged(speaking)
         events.yield(.speaking(speaking))

@@ -20,6 +20,7 @@ struct HistoryView: View {
     @State private var searchError: String?
     @State private var confirmingClearAll = false
     @State private var confirmingMerge = false
+    @State private var confirmingDeleteSelected = false
     @State private var actionError: String?
     @State private var selection = Set<PersistentIdentifier>()
     @State private var editMode: EditMode
@@ -61,13 +62,16 @@ struct HistoryView: View {
                     .accessibilityHint("Deletes every session after a confirmation")
             }
             ToolbarItemGroup(placement: .bottomBar) {
-                if editMode.isEditing {
+                // Hidden while searching: the results list has no selection, so the bar would act on rows the
+                // reader cannot see.
+                if editMode.isEditing && !isSearching {
                     Button(Self.mergeButtonTitle(count: selection.count)) { confirmingMerge = true }
                         .disabled(selection.count < 2)
                         .accessibilityHint("Combines the selected sessions into one, in time order")
                     Spacer()
-                    Button(Self.deleteButtonTitle(count: selection.count), role: .destructive) { deleteSelected() }
+                    Button(Self.deleteButtonTitle(count: selection.count), role: .destructive) { confirmingDeleteSelected = true }
                         .disabled(selection.isEmpty)
+                        .accessibilityHint("Deletes the selected sessions after a confirmation")
                 }
             }
         }
@@ -76,6 +80,13 @@ struct HistoryView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(HistoryActions.mergeMessage)
+        }
+        // M10: a bulk delete is confirmed like Clear All is; only the single-row swipe stays unconfirmed (§8.6).
+        .confirmationDialog(HistoryActions.clearAllConfirmationTitle(count: selection.count), isPresented: $confirmingDeleteSelected, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deleteSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(Self.deleteSelectedMessage(count: selection.count))
         }
         .confirmationDialog(HistoryActions.clearAllConfirmationTitle(count: sessions.count), isPresented: $confirmingClearAll, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { clearAll() }
@@ -109,6 +120,12 @@ struct HistoryView: View {
 
     static func mergeButtonTitle(count: Int) -> String { count > 0 ? "Merge (\(count))" : "Merge" }
     static func deleteButtonTitle(count: Int) -> String { count > 0 ? "Delete (\(count))" : "Delete" }
+
+    static func deleteSelectedMessage(count: Int) -> String {
+        count == 1
+            ? "The selected session and its transcript will be deleted. You cannot undo this action."
+            : "The \(count) selected sessions and their transcripts will be deleted. You cannot undo this action."
+    }
 
     @ViewBuilder
     private var searchResults: some View {
@@ -154,9 +171,10 @@ struct HistoryView: View {
 
     private func deleteRows(at offsets: IndexSet) {
         let actions = HistoryActions(context: context)
-        for index in offsets {
+        let targets = offsets.map { sessions[$0] }   // resolved before the first save re-orders the query
+        for session in targets {
             do {
-                try actions.delete(sessions[index])
+                try actions.delete(session)
             } catch {
                 actionError = String(describing: error)
             }

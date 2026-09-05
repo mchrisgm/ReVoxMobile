@@ -43,6 +43,42 @@ final class KeepAliveMonitorTests: XCTestCase {
         XCTAssertTrue(lines.last?.hasPrefix("heartbeat position=\(3_604 * 16_000)") ?? false)
     }
 
+    /// docs/security-review-m5.md finding 7: ~40 bytes per translated second is ~3.4 MB a day of use, so the file is
+    /// capped — once it passes `logByteCap` the next heartbeat starts it over — and the in-memory ring is not.
+    func testTheLogFileStartsOverOnceItPassesTheByteCap() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("keepalive-cap-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(KeepAliveMonitor.logByteCap, 512 * 1_024)
+        let now = LockedBox<Double>(0)
+        let monitor = KeepAliveMonitor(clock: { now.value }, logURL: url)
+        let lineBytes = "heartbeat position=0 at=0.000\n".utf8.count
+        let ticks = KeepAliveMonitor.logByteCap / lineBytes + 200          // well past one cap
+        for tick in 0 ..< ticks {
+            now.mutate { $0 = Double(tick % 10) }                          // short, constant-width lines
+            _ = monitor.record(position: 0)
+        }
+        let size = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        XCTAssertGreaterThan(size, 0)
+        XCTAssertLessThan(size, KeepAliveMonitor.logByteCap / 2, "the file was started over, not merely trimmed")
+        XCTAssertEqual(monitor.heartbeats.count, KeepAliveMonitor.logRingCapacity, "the ring keeps its own cap")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.hasPrefix("heartbeat position=0 at="), "a whole line, not the tail of a torn one")
+        XCTAssertTrue(text.hasSuffix("\n"))
+    }
+
+    func testResetTruncatesTheLogAndTheNextHeartbeatStartsItAgain() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("keepalive-reset-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = LockedBox<Double>(5)
+        let monitor = KeepAliveMonitor(clock: { now.value }, logURL: url)
+        _ = monitor.record(position: 16_000)
+        _ = monitor.record(position: 32_000)
+        monitor.reset()
+        XCTAssertEqual(try Data(contentsOf: url).count, 0, "a new session starts a new log")
+        _ = monitor.record(position: 48_000)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "heartbeat position=48000 at=5.000\n")
+    }
+
     func testStartTicksAtTheIntervalAndOnGapCallsTheHandler() async {
         let now = LockedBox<Double>(100)
         let monitor = KeepAliveMonitor(clock: { now.value }, interval: 20_000_000)   // 20 ms ticks for the test

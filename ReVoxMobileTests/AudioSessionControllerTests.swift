@@ -117,6 +117,131 @@ final class AudioSessionControllerTests: XCTestCase {
         XCTAssertTrue(seam.lastEngine?.isRunning ?? false)
     }
 
+    /// The session is never deactivated by a stop (`.mixWithOthers`, §6.8), so iOS keeps delivering interruptions to
+    /// an idle ReVox. One that lands while nothing runs must neither start the engine — a `.playAndRecord` engine
+    /// pulling the input lights the microphone indicator with no run in progress — nor tell the Live screen that a
+    /// translation was paused.
+    func testInterruptionWhileNothingRunsTouchesNeitherTheEngineNorTheScreen() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        let hookCalls = Counter()
+        await controller.setPlayHook { hookCalls.increment() }
+        try await controller.configure(for: .microphone)
+        let engine = try XCTUnwrap(seam.lastEngine)
+        var iterator = controller.events.makeAsyncIterator()
+        let callsBefore = seam.calls.count
+
+        await controller.handle(.began)
+        await controller.handle(.ended(shouldResume: true))
+        XCTAssertEqual(engine.startCount, 0, "no run was in progress: the engine stays down")
+        XCTAssertEqual(hookCalls.value, 0)
+        XCTAssertEqual(seam.calls.count, callsBefore, "the session is not reactivated either")
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event, "nothing is paused, so nothing is reported")
+    }
+
+    /// The same after a run: `AudioPlayer.stop()` stops the engine, and an interruption that follows is not a reason
+    /// to bring it back.
+    func testInterruptionAfterStopEngineDoesNotRestartIt() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        try await controller.startEngine()
+        await controller.stopEngine()
+        let engine = try XCTUnwrap(seam.lastEngine)
+        var iterator = controller.events.makeAsyncIterator()
+
+        await controller.handle(.began)
+        await controller.handle(.ended(shouldResume: true))
+        XCTAssertEqual(engine.startCount, 1, "only the run's own start")
+        XCTAssertFalse(engine.isRunning)
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event)
+    }
+
+    /// A media-services reset while idle still rebuilds the engine and re-applies the resident mask (the next run
+    /// needs both), but the rebuilt engine is left stopped and the screen is not told that audio restarted.
+    func testMediaServicesResetWhileIdleRebuildsWithoutStartingTheEngine() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let controller = AudioSessionController(session: seam)
+        try await controller.configure(for: .microphone)
+        var iterator = controller.events.makeAsyncIterator()
+
+        await controller.handle(.mediaServicesReset)
+        XCTAssertEqual(seam.engines.count, 2)
+        XCTAssertEqual(seam.calls.suffix(3), ["makeEngine", "setCategory", "setActive(true)"])
+        XCTAssertEqual(seam.lastEngine?.startCount, 0, "idle: the rebuilt engine is not started")
+        XCTAssertFalse(seam.lastEngine?.isRunning ?? true)
+        let event = await withTimeout(seconds: 0.3) { await iterator.next() }
+        XCTAssertNil(event, "no run to restart, nothing to show")
+    }
+
+    // MARK: AVAudioEngineConfigurationChange (§6.8, §9 "Route change")
+
+    /// When the output hardware's format changes (speaker ↔ headphones) `AVAudioEngine` stops itself and posts
+    /// `AVAudioEngineConfigurationChange`. In microphone mode `MicrophoneCapture` rebuilds its tap and restarts the
+    /// engine; in broadcast mode there is no tap and nobody did, so every later clip was scheduled into a stopped
+    /// engine, `.dataPlayedBack` never fired, `isSpeaking` stayed true and the self-capture gate dropped the rest
+    /// of the session's audio. The controller owns the engine in that mode, so it restarts it.
+    func testBroadcastEngineIsRestartedAfterAConfigurationChange() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let center = NotificationCenter()
+        let controller = AudioSessionController(session: seam, center: center)
+        let hookCalls = Counter()
+        await controller.setPlayHook { hookCalls.increment() }
+        try await controller.configure(for: .broadcast)
+        try await controller.startEngine()
+        let engine = try XCTUnwrap(seam.lastEngine)
+        XCTAssertEqual(engine.startCount, 1)
+        XCTAssertEqual(hookCalls.value, 1)
+
+        engine.isRunning = false                              // what the engine does before it posts the notification
+        center.post(name: Notification.Name.AVAudioEngineConfigurationChange, object: nil)
+        await waitFor("the engine restart") { engine.startCount == 2 }
+        XCTAssertEqual(engine.startCount, 2)
+        XCTAssertTrue(engine.isRunning)
+        await waitFor("the guarded play after the restart") { hookCalls.value == 2 }
+        XCTAssertEqual(hookCalls.value, 2, "the player node is re-played on the restarted engine (§6.7)")
+    }
+
+    /// Microphone mode keeps the existing owner: the tap must be re-seated on the new hardware format before the
+    /// engine starts (§6.1), which `MicrophoneCapture` does, so the controller leaves the notification alone.
+    func testMicrophoneEngineConfigurationChangeIsLeftToTheCapture() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let center = NotificationCenter()
+        let controller = AudioSessionController(session: seam, center: center)
+        try await controller.configure(for: .microphone)
+        try await controller.startEngine()
+        let engine = try XCTUnwrap(seam.lastEngine)
+
+        engine.isRunning = false
+        center.post(name: Notification.Name.AVAudioEngineConfigurationChange, object: nil)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(engine.startCount, 1, "the tap owner restarts it, after the rebuild")
+    }
+
+    /// The same rule as for interruptions: with no run wanting the engine, a configuration change starts nothing;
+    /// and a torn-down engine's notification never reaches the controller at all.
+    func testConfigurationChangeWithoutARunOrAfterATeardownStartsNothing() async throws {
+        let seam = RecordingAudioSessionSeam()
+        let center = NotificationCenter()
+        let controller = AudioSessionController(session: seam, center: center)
+        try await controller.configure(for: .broadcast)
+        let first = try XCTUnwrap(seam.lastEngine)
+        center.post(name: Notification.Name.AVAudioEngineConfigurationChange, object: nil)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(first.startCount, 0, "idle: nothing to restart")
+
+        try await controller.startEngine()
+        try await controller.configure(for: .microphone)      // a mode switch tears the broadcast engine down
+        let second = try XCTUnwrap(seam.lastEngine)
+        XCTAssertFalse(first === second)
+        center.post(name: Notification.Name.AVAudioEngineConfigurationChange, object: nil)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(first.startCount, 1, "the old engine is not started again")
+        XCTAssertEqual(second.startCount, 0)
+    }
+
     func testRouteChangesReachTheTapHandlerAndTheEventStreamWithoutSessionCalls() async throws {
         let seam = RecordingAudioSessionSeam()
         let controller = AudioSessionController(session: seam)

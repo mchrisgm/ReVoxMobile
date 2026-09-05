@@ -65,6 +65,26 @@ final class SettingsViewModelTests: XCTestCase {
     func testPresetDescriptionsAreTheWindowsValues() {
         XCTAssertEqual(SettingsViewModel.presetDescription(.balanced), "Silence 500 ms, max 10 s")
         XCTAssertEqual(SettingsViewModel.presetDescription(.fast), "Silence 300 ms, max 4 s")
+        XCTAssertEqual(SettingsViewModel.presetDescription(.veryFast), "Silence 200 ms, max 3 s")
+    }
+
+    /// Every preset and every time mode has a title (07d1eed shipped a switch that did not know Very fast).
+    func testEveryPresetAndTimeModeHasATitle() {
+        XCTAssertEqual(SegmenterPreset.allCases.map(SettingsView.title(for:)), ["Balanced", "Fast", "Very fast"])
+        XCTAssertEqual(Settings.TimeDisplay.allCases.map(SettingsView.title(for:)), ["Time", "How long ago", "Both"])
+        XCTAssertEqual(Settings.TimeDisplay.allCases.map(SettingsViewModel.timeDisplayTitle), ["Time", "How long ago", "Both"])
+        XCTAssertEqual(Set(SegmenterPreset.allCases.map(SettingsView.title(for:))).count, SegmenterPreset.allCases.count, "no two presets share a title")
+    }
+
+    func testLanguageDisplayNameFallsBackToTheCodeAndTheCallersNilWord() {
+        XCTAssertEqual(LanguageCatalog.displayName(nil, whenNil: "Auto-detect"), "Auto-detect")
+        XCTAssertEqual(LanguageCatalog.displayName(nil, whenNil: "None"), "None")
+        XCTAssertNotEqual(LanguageCatalog.displayName("es", whenNil: ""), "es", "a code the locale knows is named")
+        XCTAssertFalse(LanguageCatalog.displayName("es", whenNil: "").isEmpty)
+        XCTAssertEqual(LanguageCatalog.displayName("zz", whenNil: ""), "zz", "a code Whisper does not know is shown as it is")
+        XCTAssertEqual(LanguageCatalog.concrete.count, LanguageCatalog.options.count - 1, "the two-way lists drop only Auto-detect")
+        XCTAssertFalse(LanguageCatalog.concrete.contains { $0.code == nil })
+        XCTAssertEqual(LanguageCatalog.options.first?.displayName, LanguageCatalog.autoDetectTitle)
     }
 
     // MARK: ducking toggle, voice volume, help text (§8.5, C1)
@@ -137,5 +157,44 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(SettingExamples.sampleRow().kind, .entry(language: "es", original: "", english: SettingExamples.spanishEnglish))
         XCTAssertEqual(Romanizer.romanize(SettingExamples.japaneseOriginal), "ohayou",
                        "the example is kana on purpose: ICU reads kanji by their Chinese readings")
+    }
+
+    /// M10: the skip example must say what actually happens while Source language is pinned. The core never detects
+    /// a pinned language, so nothing is skipped — unless the pinned language *is* the skipped one, when every
+    /// phrase is left alone. The old example promised a skip in both cases.
+    func testTheSkipLanguageExampleFollowsThePinnedSourceLanguage() {
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: nil, pinned: nil), SettingExamples.skipLanguageNone)
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: nil, pinned: "French"), SettingExamples.skipLanguageNone)
+        XCTAssertEqual(SettingExamples.skipLanguageText(ignored: "English", pinned: nil), SettingExamples.skipLanguage("English"))
+        let pinnedElsewhere = SettingExamples.skipLanguageText(ignored: "English", pinned: "French")
+        XCTAssertEqual(pinnedElsewhere, SettingExamples.skipLanguageWhilePinned(ignored: "English", pinned: "French"))
+        XCTAssertTrue(pinnedElsewhere.contains("French"))
+        XCTAssertTrue(pinnedElsewhere.contains("English"))
+        XCTAssertTrue(pinnedElsewhere.contains("Auto-detect"), "the way out is named")
+        XCTAssertFalse(pinnedElsewhere.contains("left alone"), "nothing is skipped while the source language is pinned elsewhere")
+        let pinnedToItself = SettingExamples.skipLanguageText(ignored: "English", pinned: "English")
+        XCTAssertTrue(pinnedToItself.contains("every phrase"))
+        XCTAssertNotEqual(pinnedToItself, pinnedElsewhere)
+    }
+
+    /// M10: with Learning off no original is shown at all, so the Romanize example cannot claim "the original is
+    /// shown in its own script"; it says what to turn on instead, next to the disabled toggle.
+    func testTheRomanizeExampleNeedsLearning() {
+        XCTAssertEqual(SettingExamples.romanizeText(on: true, learning: true), SettingExamples.romanize(true))
+        XCTAssertEqual(SettingExamples.romanizeText(on: false, learning: true), SettingExamples.romanize(false))
+        XCTAssertEqual(SettingExamples.romanizeText(on: true, learning: false), SettingExamples.romanizeNeedsLearning)
+        XCTAssertEqual(SettingExamples.romanizeText(on: false, learning: false), SettingExamples.romanizeNeedsLearning)
+        XCTAssertTrue(SettingExamples.romanizeNeedsLearning.contains("Learning"))
+    }
+
+    /// M10: the skip picker is disabled while a source language is pinned (a pinned language is never detected).
+    func testTheSkipPickerNeedsAutoDetect() {
+        let store = makeStore()
+        let model = SettingsViewModel(store: store, mute: PlaybackMute())
+        XCTAssertTrue(model.canIgnoreLanguage)
+        model.language = "es"
+        XCTAssertFalse(model.canIgnoreLanguage)
+        model.language = nil
+        XCTAssertTrue(model.canIgnoreLanguage)
     }
 }

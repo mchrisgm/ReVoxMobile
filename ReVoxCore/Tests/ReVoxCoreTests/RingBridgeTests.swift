@@ -168,4 +168,57 @@ final class RingBridgeTests: XCTestCase {
         XCTAssertEqual(data.load(fromByteOffset: 100 * 4, as: Float.self), 100)        // physical 100 = absolute 100
         XCTAssertEqual(data.load(fromByteOffset: 0, as: Float.self), 960_000)          // physical 0 = absolute 960 000
     }
+
+    func testAnEmptyWriteOnlyTouchesTheHeartbeat() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 0, asbd: RingHeader.ASBD(), pid: 1)
+        let cursor = [Float]().withUnsafeBufferPointer { writer.write($0, at: 9, pts: RingHeader.PTS(value: 3, timescale: 1, flags: 0)) }
+        XCTAssertEqual(cursor, 0)
+        let header = try XCTUnwrap(RingHeader.read(from: storage))
+        XCTAssertEqual(header.writeCursor, 0)
+        XCTAssertEqual(header.lastWriteAt, 9)
+        XCTAssertEqual(header.lastPTS.value, 3)
+    }
+
+    func testNegativeDroppedInputIsIgnored() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 0, asbd: RingHeader.ASBD(), pid: 1)
+        writer.noteDroppedInput(frames: -5)
+        XCTAssertEqual(RingHeader.read(from: storage)?.droppedInputFrames, 0)
+        writer.noteDroppedInput(frames: 2)
+        XCTAssertEqual(RingHeader.read(from: storage)?.droppedInputFrames, 2)
+    }
+
+    func testBeginResetsTheCountersOfThePreviousGeneration() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        let writer = try RingWriter(storage: storage)
+        writer.begin(generation: 1, startedAt: 0, asbd: RingHeader.ASBD(), pid: 1)
+        writer.noteDroppedInput(frames: 7)
+        writer.noteMicBuffer()
+        [Float](repeating: 0, count: 512).withUnsafeBufferPointer { _ = writer.write($0, at: 1, pts: RingHeader.PTS()) }
+        writer.begin(generation: 2, startedAt: 5, asbd: RingHeader.ASBD(), pid: 1)
+        let header = try XCTUnwrap(RingHeader.read(from: storage))
+        XCTAssertEqual(header.generation, 2)
+        XCTAssertEqual(header.writeCursor, 0)
+        XCTAssertEqual(header.droppedInputFrames, 0)
+        XCTAssertEqual(header.micBuffersSeen, 0)
+        XCTAssertEqual(writer.writeCursor, 0)
+    }
+
+    func testAZeroByteStorageIsSafe() {
+        let storage = HeapRingStorage(bytes: 0)
+        XCTAssertEqual(storage.count, 0)
+        XCTAssertNil(RingHeader.read(from: storage))
+        XCTAssertThrowsError(try RingWriter(storage: storage)) { XCTAssertEqual($0 as? RingError, .tooSmall) }
+        XCTAssertThrowsError(try RingReader(storage: storage)) { XCTAssertEqual($0 as? RingError, .tooSmall) }
+    }
+
+    func testAnUnknownStateReadsAsFailed() throws {
+        let storage = HeapRingStorage(layout: .v1)
+        sampleHeader().write(to: storage)
+        storage.base.storeUInt32(99, RingHeader.Offset.state)
+        XCTAssertEqual(RingHeader.read(from: storage)?.state, .failed)
+    }
 }

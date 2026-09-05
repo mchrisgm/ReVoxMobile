@@ -125,7 +125,8 @@ final class ScreenshotTests: XCTestCase {
         let mute = PlaybackMute()
         let hosting = ScreenHostingSupport(layout: layout, store: store)
 
-        // Live, idle, with the two-way card expanded (§8.2).
+        // Live, idle: the M10 control strip with two-way on, so its language row is in the picture (§8.2), and the
+        // "Ready to translate" placeholder holding the transcript's height.
         let live = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
                                  supplier: { _, _ in FakeLivePipeline() })
         live.ignoredLanguage = "en"
@@ -136,7 +137,8 @@ final class ScreenshotTests: XCTestCase {
         })
 
         // Live, running, with translated phrases: Learning on for the first (original above the translation) and
-        // ages rather than times, so the README shows both M9 surfaces on the screen they live on.
+        // ages rather than times, so the README shows both M9 surfaces on the screen they live on — and (M10) the
+        // strip locked behind its one "Stop to change" pill while the transcript takes the rest of the screen.
         let pipeline = FakeLivePipeline()
         let running = LiveViewModel(settings: store, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
                                     supplier: { _, _ in pipeline })

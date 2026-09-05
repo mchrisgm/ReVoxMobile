@@ -14,20 +14,45 @@ final class FakeAudioSource: AudioSource, @unchecked Sendable {
     private var startedModes: [CaptureMode] = []
     /// Set by the ordering test; see `StartOrderLog`.
     nonisolated(unsafe) var startOrder: StartOrderLog?
+    /// When set, `start(_:)` records the attempt and then throws it (a denied microphone, a failed engine).
+    nonisolated(unsafe) var startError: (any Error)?
     private var stopCount = 0
+    private let bufferLimit: Int?
+    private var droppedFeedCount = 0
+    private var terminatedStreamCount = 0
+
+    /// `bufferLimit` makes every stream `bufferingOldest(limit)`, so a feed that nobody is reading is reported in
+    /// `droppedFeeds` instead of piling up silently as it would in the unbounded default.
+    init(bufferLimit: Int? = nil) {
+        self.bufferLimit = bufferLimit
+    }
 
     var framesCalls: Int { synced { framesCallCount } }
+    /// Feeds the stream refused because its bounded buffer was full (`bufferLimit` only).
+    var droppedFeeds: Int { synced { droppedFeedCount } }
+    /// Streams from `frames()` that were terminated — finished by `stop()`, or cancelled because their last iterator
+    /// was dropped (an `AsyncStream` whose consumer went away cancels itself and refuses further yields).
+    var terminatedStreams: Int { synced { terminatedStreamCount } }
     var started: [CaptureMode] { synced { startedModes } }
     var stopped: Bool { synced { stopCount > 0 } }
 
+    /// `finish()` runs `onTermination` synchronously on the calling thread, and that hook takes the lock, so the
+    /// previous continuation is finished *outside* `synced` here and in `stop()` — `NSLock` is not recursive.
     func frames() -> AsyncStream<CapturedAudio> {
-        synced {
-            continuation?.finish()
-            let (stream, newContinuation) = AsyncStream.makeStream(of: CapturedAudio.self)
+        let (stream, previous) = synced { () -> (AsyncStream<CapturedAudio>, AsyncStream<CapturedAudio>.Continuation?) in
+            let previous = continuation
+            let policy: AsyncStream<CapturedAudio>.Continuation.BufferingPolicy =
+                bufferLimit.map { .bufferingOldest($0) } ?? .unbounded
+            let (stream, newContinuation) = AsyncStream.makeStream(of: CapturedAudio.self, bufferingPolicy: policy)
+            newContinuation.onTermination = { [weak self] _ in
+                self?.synced { self?.terminatedStreamCount += 1 }
+            }
             continuation = newContinuation
             framesCallCount += 1
-            return stream
+            return (stream, previous)
         }
+        previous?.finish()
+        return stream
     }
 
     func capturePosition() async -> Int64 {
@@ -37,14 +62,19 @@ final class FakeAudioSource: AudioSource, @unchecked Sendable {
     func start(_ mode: CaptureMode) async throws {
         startOrder?.record("source")
         synced { startedModes.append(mode) }
+        if let startError {
+            throw startError
+        }
     }
 
     func stop() async {
-        synced {
+        let current = synced { () -> AsyncStream<CapturedAudio>.Continuation? in
             stopCount += 1
-            continuation?.finish()
+            let current = continuation
             continuation = nil
+            return current
         }
+        current?.finish()
     }
 
     /// Mic semantics: positions continue from the last fed sample and `capturePosition` follows.
@@ -58,7 +88,9 @@ final class FakeAudioSource: AudioSource, @unchecked Sendable {
         synced {
             nextPosition = end
             position = max(position, end)
-            continuation?.yield(CapturedAudio(samples: samples, endPosition: end))
+            if case .dropped = continuation?.yield(CapturedAudio(samples: samples, endPosition: end)) {
+                droppedFeedCount += 1
+            }
         }
     }
 

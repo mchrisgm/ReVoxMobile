@@ -191,6 +191,39 @@ final class TranslationStageTests: XCTestCase {
         XCTAssertEqual(routed?.translation.english, "Buenos días.")
     }
 
+    /// A host without a transcribe seam falls back to Whisper's translate task for the second direction, whose
+    /// output is English whatever was spoken. That English used to be handed to the secondary engine labelled as
+    /// the ignored language ("de" here), so an engine that trusts the source code — Apple's does — translated
+    /// English as if it were German. The fallback must say what it produced.
+    func testWithoutATranscriberTheFallbackHandsTheSecondaryEnglishAndSaysSo() async throws {
+        let detector = FakeLanguageDetector(language: "de", probability: 0.95)
+        let translator = FakeTranslator(language: "de", segments: [segment(" Good morning.")])
+        let secondary = FakeSecondary(result: "Bonjour.")
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: nil, secondary: secondary,
+                                     ignoredLanguage: "de", twoWay: true, targetLanguage: "fr", wantsOriginal: true)
+        let routed = try await stage.route(audio)
+        let secondaryCalls = await secondary.calls
+        XCTAssertEqual(secondaryCalls, ["en->fr: Good morning."], "the translate task produced English")
+        XCTAssertEqual(routed?.translation, Translation(english: "Bonjour.", language: "fr", spokenLanguage: "fr", original: ""),
+                       "the fallback never had the words as spoken, so Learning mode gets no original from it")
+        XCTAssertEqual(routed?.route, .toTarget("fr"))
+    }
+
+    /// The same fallback with no engine at all: the transcript-only row holds English text, so it is tagged as
+    /// English — a `[de]` badge over "Good morning." would be a lie about what the row says.
+    func testWithoutATranscriberOrAnEngineTheTranscriptOnlyRowIsTaggedAsTheEnglishItHolds() async throws {
+        let detector = FakeLanguageDetector(language: "de", probability: 0.95)
+        let translator = FakeTranslator(language: "de", segments: [segment(" Good morning.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil,
+                                     transcriber: nil, secondary: nil,
+                                     ignoredLanguage: "de", twoWay: true, targetLanguage: "fr")
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(routed?.translation, Translation(english: "Good morning.", language: "en", spokenLanguage: "en"))
+        XCTAssertEqual(routed?.route, .transcribedOnly(reason: TranslationStage.noEngineReason))
+        XCTAssertEqual(routed?.isSpoken, false)
+    }
+
     // MARK: Learning mode (M9)
 
     private actor FailingTranscriber: Transcriber {
@@ -260,5 +293,36 @@ final class TranslationStageTests: XCTestCase {
         XCTAssertEqual(routed?.translation.english, "Buenos días.")
         let calls = await transcriber.calls
         XCTAssertEqual(calls, ["en"], "one transcribe serves both the reply and Learning mode")
+    }
+
+    // MARK: the public `translate` wrapper and a degenerate configuration
+
+    func testTranslateIsTheRoutedTranslationWithoutTheRoute() async throws {
+        let detector = FakeLanguageDetector(language: "es", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment(" Hola.")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil)
+        let translation = try await stage.translate(audio)
+        let routed = try await stage.route(audio)
+        XCTAssertEqual(translation, routed?.translation)
+        XCTAssertEqual(translation, Translation(english: "Hola.", language: "es"))
+
+        let ignoring = TranslationStage(detector: detector, translator: translator, pinnedLanguage: nil, ignoredLanguage: "es")
+        let dropped = try await ignoring.translate(audio)
+        XCTAssertNil(dropped)
+    }
+
+    /// Pinning the very language that is ignored, with two-way off, drops every phrase before any engine runs:
+    /// the configuration is self-defeating and the settings screen should refuse it, but the stage stays honest.
+    func testAPinnedLanguageThatIsAlsoIgnoredDropsEveryPhraseWithTwoWayOff() async throws {
+        let detector = FakeLanguageDetector(language: "fr", probability: 0.95)
+        let translator = FakeTranslator(language: "es", segments: [segment("never")])
+        let stage = TranslationStage(detector: detector, translator: translator, pinnedLanguage: "es",
+                                     ignoredLanguage: "es", twoWay: false)
+        let routed = try await stage.route(audio)
+        XCTAssertNil(routed)
+        let detections = await detector.calls
+        XCTAssertEqual(detections, 0)
+        let translations = await translator.calls
+        XCTAssertTrue(translations.isEmpty)
     }
 }

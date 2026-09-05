@@ -45,9 +45,15 @@ struct ModelRowView: View {
         }
         .listRowBackground(row.isSelected ? Color.accentColor.opacity(0.12) : nil)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityLabel(Self.accessibilityText(for: row))
         .accessibilityAddTraits(row.isSelected ? .isSelected : [])
-        .accessibilityHint(row.state.phase == .installed && !row.isSelected ? "Double tap to use this model" : "")
+        .accessibilityHint(Self.selectHint(for: row) ?? "")
+    }
+
+    /// M10 (HIG audit): the hint says what a tap does, not how to tap — VoiceOver adds "double tap to activate"
+    /// itself. nil where a tap does nothing (not installed, or already in use).
+    static func selectHint(for row: ModelRow) -> String? {
+        row.state.phase == .installed && !row.isSelected ? "Uses this model for the next session" : nil
     }
 
     @ViewBuilder
@@ -95,12 +101,14 @@ struct ModelRowView: View {
         }
     }
 
-    private var accessibilityText: String {
+    /// The row's one VoiceOver sentence. Selection is left to the `.isSelected` trait (M10: the label said
+    /// "Selected" and the trait said it again), and the percentage is the same clamped, floored value the
+    /// progress bar speaks.
+    static func accessibilityText(for row: ModelRow) -> String {
         var parts = ["Model \(row.name)", row.sizeText, ModelsViewModel.phaseText(row.state.phase)]
         if row.isRecommended { parts.append("Recommended") }
         if !row.isSuitable { parts.append(ModelsViewModel.notRecommendedText) }
-        if row.isSelected { parts.append("Selected") }
-        if let fraction = row.state.fraction, row.state.phase.isActive { parts.append("\(Int(fraction * 100)) percent") }
+        if let fraction = row.state.fraction, row.state.phase.isActive { parts.append(LiveStatusAccessibility.percentText(fraction)) }
         return parts.joined(separator: ". ")
     }
 }
