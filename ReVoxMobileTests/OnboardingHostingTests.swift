@@ -45,10 +45,16 @@ final class OnboardingHostingTests: XCTestCase {
         for (index, page) in model.pages.enumerated() {
             host(OnboardingPageView(page: page, index: index, count: count, model: model))
         }
-        // Every demo switched on.
-        model.demoSource = .broadcast
-        model.demoTwoWay = true
-        model.demoLearning = true
+        // Every demo switched on: the strip with Other apps, Very fast, Duck off, a low volume, Two-way and Learn on
+        // (the pair line shows), the details panel unfolded and the slider out.
+        model.controls.captureMode = .broadcast
+        model.controls.latencyMode = .veryFast
+        model.controls.ducking = false
+        model.controls.voiceVolume = 0.3
+        model.controls.isTwoWay = true
+        model.controls.isLearning = true
+        model.demoShowsDetails = true
+        model.demoShowsVolumeSlider = true
         model.demoRomanize = true
         model.demoModel = .largeV3
         model.demoKeepModelWhenHot = true
@@ -60,6 +66,8 @@ final class OnboardingHostingTests: XCTestCase {
             model.demoModel = id
             host(OnboardingPageView(page: .models, index: 5, count: count, model: model))
         }
+        model.reset()
+        XCTAssertFalse(model.controls.isTwoWay, "reset between passes: the demo model is shared")
     }
 
     func testTranscriptDemoHostsEmptyPlayingAndStopped() {

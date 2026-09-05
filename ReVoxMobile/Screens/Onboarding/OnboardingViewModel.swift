@@ -28,9 +28,6 @@ final class OnboardingViewModel {
     /// test can render both.
     var demoShowsDetails = false
     var demoShowsVolumeSlider = false
-    var demoSource: CaptureMode = .microphone
-    var demoTwoWay = false
-    var demoLearning = false
     var demoRomanize = false
     var demoModel: WhisperModelID = OnboardingDemo.recommendedModel
     var demoKeepModelWhenHot = false
@@ -91,9 +88,6 @@ final class OnboardingViewModel {
         controls.reset()
         demoShowsDetails = false
         demoShowsVolumeSlider = false
-        demoSource = .microphone
-        demoTwoWay = false
-        demoLearning = false
         demoRomanize = false
         demoModel = OnboardingDemo.recommendedModel
         demoKeepModelWhenHot = false

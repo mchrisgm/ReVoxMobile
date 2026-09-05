@@ -20,8 +20,10 @@ final class OnboardingTests: XCTestCase {
 
     func testPagesAreTheSevenInOrder() {
         let model = OnboardingViewModel(defaults: defaults)
-        XCTAssertEqual(model.pages, [.welcome, .source, .transcript, .twoWay, .learning, .models, .ready])
+        XCTAssertEqual(model.pages, [.welcome, .controls, .transcript, .twoWay, .learning, .models, .ready])
         XCTAssertEqual(OnboardingPage.ordered, OnboardingPage.allCases)
+        XCTAssertEqual(OnboardingPage.controls.title, "The Live controls")
+        XCTAssertEqual(OnboardingPage.controls.symbol, "slider.horizontal.3")
         XCTAssertEqual(model.currentIndex, 0)
         XCTAssertEqual(model.page, .welcome)
         XCTAssertTrue(model.isFirstPage)
@@ -260,12 +262,65 @@ final class OnboardingTests: XCTestCase {
         for id in WhisperModelID.allCases {
             XCTAssertFalse(OnboardingDemo.modelNote(id).isEmpty)
         }
-        XCTAssertEqual(OnboardingDemo.recommendedModel, .small)
+        XCTAssertEqual(OnboardingDemo.recommendedModel, ModelCatalog.defaultWhisperModel)
+        XCTAssertEqual(OnboardingDemo.benchmarkText, "Settings › Models › Benchmark this iPhone measures them on your iPhone.")
+        XCTAssertEqual(OnboardingDemo.wordTapText, "Tap any word for its pronunciation and meaning.")
+        XCTAssertEqual(OnboardingControlsDemo.tipText,
+                       "The volume applies at once; everything else is read when a session starts. This Start is a demo — nothing is recorded.")
+        XCTAssertEqual(OnboardingControlsDemo.startAccessibilityLabel, "Start a demo session")
+        XCTAssertEqual(OnboardingControlsDemo.stopAccessibilityLabel, "Stop the demo session")
         if case .entry(let language, _, let english) = OnboardingDemo.yourReply.kind {
             XCTAssertEqual(language, "en")
             XCTAssertEqual(english, "Sí, a las nueve.", "the reply row carries the Spanish, as the Live screen shows it")
         } else {
             XCTFail("the reply is an entry")
+        }
+    }
+
+    func testTheTwoWayFootnotesFollowThePills() {
+        XCTAssertEqual(OnboardingDemo.twoWayOnText(you: "en", they: "es"),
+                       "What you say in English is spoken to them in Spanish, and what they say is spoken to you in English. Both sides stay in the transcript.")
+        XCTAssertEqual(OnboardingDemo.twoWayOnText(you: "fr", they: "de"),
+                       "What you say in French is spoken to them in German, and what they say is spoken to you in English. Both sides stay in the transcript.")
+        XCTAssertEqual(OnboardingDemo.twoWayOnText(you: nil, they: "es"), LiveView.twoWaySummary(you: nil, they: "es"), "nothing chosen: Live's own line")
+        XCTAssertEqual(OnboardingDemo.twoWayOnText(you: "en", they: "en"), LiveView.twoWaySummary(you: "en", they: "en"), "both the same: Live's own line")
+        XCTAssertEqual(OnboardingDemo.twoWayOffText(you: "en"),
+                       "\(LiveView.twoWayOffSummary(you: "en")) Turn on Two-way to answer them in their language.")
+        XCTAssertTrue(OnboardingDemo.twoWayOffText(you: "en").hasPrefix(LiveView.twoWayOffSummary(you: "en")))
+        XCTAssertTrue(OnboardingDemo.twoWayOffText(you: nil).hasPrefix(LiveView.twoWayOffSummary(you: nil)))
+        XCTAssertTrue(OnboardingDemo.twoWayOffText(you: nil).contains(LiveControlStrip.twoWayPillName))
+        // The default demo state (You speak English, They speak Spanish) reads consistently with the page's subtitle.
+        let controls = OnboardingLiveControls()
+        XCTAssertEqual(OnboardingDemo.twoWayOffText(you: controls.ignoredLanguage),
+                       "Two-way is off: English is not translated and not spoken back at you; everything else is spoken to you in English. Turn on Two-way to answer them in their language.")
+    }
+
+    /// M11 §6: where a page names a control it reads the strip's static, so a rename on Live reaches the tutorial.
+    func testTheTutorialNamesTheStripsControls() {
+        XCTAssertTrue(OnboardingPage.controls.subtitle.contains(LiveControlStrip.listenCaption))
+        XCTAssertTrue(OnboardingPage.controls.subtitle.contains(LiveControlStrip.voiceCaption))
+        XCTAssertTrue(OnboardingPage.controls.subtitle.contains(LiveControlStrip.languagesCaption))
+        XCTAssertTrue(OnboardingPage.controls.subtitle.contains(LiveControlStrip.moreAccessibilityLabel))
+        XCTAssertTrue(OnboardingPage.twoWay.subtitle.contains(LiveControlStrip.twoWayPillName))
+        XCTAssertEqual(OnboardingPage.twoWay.subtitle,
+                       "In a conversation ReVox should not echo your own language back at you; it should say what you say to the other person in theirs. Tell it what you speak and what they speak, then turn on Two-way to see both directions.")
+        XCTAssertTrue(OnboardingPage.learning.subtitle.contains(LiveControlStrip.learningPillName))
+        XCTAssertTrue(OnboardingPage.learning.subtitle.hasSuffix(OnboardingDemo.wordTapText))
+        XCTAssertTrue(OnboardingControlsDemo.lockedTipText.contains(LiveControlStrip.lockedText))
+        XCTAssertTrue(OnboardingDemo.twoWayOffText(you: "en").contains(LiveControlStrip.twoWayPillName))
+        let everyString = OnboardingPage.allCases.map(\.subtitle) + OnboardingPage.allCases.map(\.title) + [
+            OnboardingDemo.privacyText, OnboardingDemo.readyFootnote, OnboardingDemo.transcriptEmptyText, OnboardingDemo.speakingText,
+            OnboardingDemo.guessText, OnboardingDemo.bothSidesText, OnboardingDemo.wordTapText, OnboardingDemo.benchmarkText,
+            OnboardingDemo.systemVoiceText, OnboardingDemo.pocketVoiceText,
+            OnboardingDemo.twoWayOnText(you: "en", they: "es"), OnboardingDemo.twoWayOnText(you: nil, they: "es"),
+            OnboardingDemo.twoWayOffText(you: "en"), OnboardingDemo.twoWayOffText(you: nil),
+            OnboardingControlsDemo.tipText, OnboardingControlsDemo.lockedTipText, OnboardingControlsDemo.startHint, OnboardingControlsDemo.stopHint,
+            OnboardingTranscriptDemo.hintText,
+        ] + OnboardingDemo.welcomePoints.map(\.text) + OnboardingDemo.readyPoints.map(\.text) + WhisperModelID.allCases.map(OnboardingDemo.modelNote)
+        for text in everyString {
+            for banned in ["left alone", "Reply in", "Don't translate", "Skip a language", "ignored"] {
+                XCTAssertFalse(text.contains(banned), "\(banned) in: \(text)")
+            }
         }
     }
 
