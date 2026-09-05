@@ -6,7 +6,7 @@ Accepted
 
 ## Date
 
-Non-goal in the design spec of 2026-09-02; the second direction added in milestone 8 (2026-09-04); recorded 2026-09-04.
+Non-goal in the design spec of 2026-09-02; the second direction added in milestone 8 (2026-09-04); recorded 2026-09-04. Milestone 11 (2026-09-05) renamed the surfaces to **You speak** / **They speak**; the decision is unchanged.
 
 ## Context
 
@@ -23,7 +23,7 @@ The English direction stays on Whisper. The reply direction uses Apple's on-devi
 
 ## Consequences
 
-- Two-way needs **Source language = Auto-detect** (a pinned language is never detected) and a language chosen under Skip a language.
+- Two-way needs **Source language = Auto-detect** (a pinned language is never detected) and the language you speak chosen under **You speak** (Settings › Your language, or the pill on the Live tab).
 - The reply is only ever as available as iOS's own translation models on that iPhone; ReVox neither downloads nor ships them.
 - The reply is spoken by an iOS voice for the target language ([ADR-0007](0007-pocket-tts-english-only-system-voice-for-replies.md)).
 
