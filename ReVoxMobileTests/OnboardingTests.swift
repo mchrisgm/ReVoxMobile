@@ -308,6 +308,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertTrue(OnboardingPage.learning.subtitle.hasSuffix(OnboardingDemo.wordTapText))
         XCTAssertTrue(OnboardingControlsDemo.lockedTipText.contains(LiveControlStrip.lockedText))
         XCTAssertTrue(OnboardingDemo.twoWayOffText(you: "en").contains(LiveControlStrip.twoWayPillName))
+        XCTAssertTrue(OnboardingDemo.benchmarkText.contains(BenchmarkViewModel.linkTitle), "the tutorial names the real Settings row")
         let everyString = OnboardingPage.allCases.map(\.subtitle) + OnboardingPage.allCases.map(\.title) + [
             OnboardingDemo.privacyText, OnboardingDemo.readyFootnote, OnboardingDemo.transcriptEmptyText, OnboardingDemo.speakingText,
             OnboardingDemo.guessText, OnboardingDemo.bothSidesText, OnboardingDemo.wordTapText, OnboardingDemo.benchmarkText,

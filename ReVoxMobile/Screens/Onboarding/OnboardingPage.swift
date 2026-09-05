@@ -155,7 +155,7 @@ enum OnboardingDemo {
     /// (M11 §5) recommends on a given iPhone.
     static let recommendedModel: WhisperModelID = ModelCatalog.defaultWhisperModel
     /// M11 §6: the one line the Models page gains.
-    static let benchmarkText = "Settings › Models › Benchmark this iPhone measures them on your iPhone."
+    static let benchmarkText = "Settings › Models › \(BenchmarkViewModel.linkTitle) measures them on your iPhone."
     static let systemVoiceText = "The iPhone's own voice — works at once, no download."
     static let pocketVoiceText = "pocket-tts — optional, four natural voices, downloaded once from Settings › Voices."
 }
