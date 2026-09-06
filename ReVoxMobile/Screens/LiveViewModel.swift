@@ -308,6 +308,18 @@ final class LiveViewModel {
         await pipeline.start(Self.configuration(settings: effectiveSettings, captureMode: captureMode))
     }
 
+    /// The "No model installed" prompt is checked again when Live reappears (release S3): the download it asked
+    /// for, or the one the Models screen selected in its place, may have finished behind it. The check is the one
+    /// `start()` makes, so a model on disk without a verified load keeps the prompt, and a Start that came first
+    /// (it clears the banner itself) is left alone.
+    func refreshModelPrompt() async {
+        guard case .modelMissing = banner else { return }
+        let model = settings.settings.whisperModel
+        guard await modelReady(model), case .modelMissing = banner else { return }
+        banner = nil
+        modelReadyForStatus = true
+    }
+
     /// Reuses the cached pipeline when its signature still matches, otherwise builds one; a load failure goes to
     /// `recover(from:)` (§9 rows 1 and 4). Returns false when the run must not start.
     private func buildIfNeeded() async -> Bool {

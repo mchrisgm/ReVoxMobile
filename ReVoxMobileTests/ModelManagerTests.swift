@@ -248,6 +248,38 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.installedWhisper, [])
     }
 
+    /// Release S3: the finished-install callback fires once per Whisper install, after the flags were refreshed,
+    /// and never for the VAD install that follows, a failure or a cancel.
+    @MainActor
+    func testWhisperInstallReportsItselfOnceWithTheFlagsRefreshed() async {
+        let manager = makeManager()
+        var reported: [WhisperModelID] = []
+        var flaggedInstalled: [Bool] = []
+        var rowInstalled: [Bool] = []
+        manager.onWhisperInstalled = { id in
+            reported.append(id)
+            flaggedInstalled.append(manager.installedWhisper.contains(id))
+            rowInstalled.append(manager.state(for: .whisper(id)).phase == .installed)
+        }
+        manager.install(.whisper(.tiny))
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), reported \(reported)" }) { manager.state(for: .vad).phase == .installed }
+        XCTAssertEqual(reported, [.tiny], "the VAD that follows is not a Whisper install")
+        XCTAssertEqual(flaggedInstalled, [true])
+        XCTAssertEqual(rowInstalled, [true])
+
+        fakeSteps.failVariantOnce = true
+        manager.install(.whisper(.base))
+        await waitUntil("failed row") { if case .failed = manager.state(for: .whisper(.base)).phase { return true } else { return false } }
+        XCTAssertEqual(reported, [.tiny], "a failure is not reported")
+
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase.isActive }
+        manager.cancel(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase == .idle }
+        XCTAssertEqual(reported, [.tiny], "a cancel is not reported")
+    }
+
     @MainActor
     func testDeleteInactiveModelDoesNotTouchTheActiveOne() async throws {
         let manager = makeManager()

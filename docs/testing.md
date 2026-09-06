@@ -23,7 +23,7 @@ From now on new builds arrive automatically. TestFlight shows a notification whe
 
 ## 3. First launch
 
-ReVox opens on the **Live** tab with "Ready to translate". Before the first translation it needs a Whisper model: go to **Settings → Models**, tap **Download** on **small** (about 487 MB; the row shows a progress bar and the phase). Keep ReVox open until the row says **Installed** — a download interrupted by leaving the app shows **Paused** and resumes when you come back. The **Voice detector** row installs by itself with the first model. Nothing else is downloaded afterwards; the app works in airplane mode from here on.
+ReVox opens on the **Live** tab with "Ready to translate". Before the first translation it needs a Whisper model: go to **Settings → Models**, tap **Download** on **small** (about 487 MB; the row shows a progress bar and the phase). Keep ReVox open until the row says **Installed** — a download interrupted by leaving the app shows **Paused** and resumes when you come back. The **Voice detector** row installs by itself with the first model, and the model you download first becomes the one in use, so **Live** is ready as soon as the row says Installed. Nothing else is downloaded afterwards; the app works in airplane mode from here on.
 
 ## 4. Translate from the microphone
 

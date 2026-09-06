@@ -195,6 +195,9 @@ struct LiveView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+            // Fires again when the Models screen pops or the tab comes back: the prompt asks about the model
+            // again rather than waiting for the next Start (release S3).
+            .onAppear { Task { await model.refreshModelPrompt() } }
         } else if model.rows.isEmpty && model.state == .idle {
             ContentUnavailableView("Ready to translate", systemImage: "waveform.and.mic",
                                    description: Text(model.captureMode == .broadcast ? Self.broadcastEmptyStateText : "Choose a source and tap Start."))

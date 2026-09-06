@@ -9,6 +9,8 @@ final class ModelsViewModelTests: XCTestCase {
     private var steps: FakeInstallSteps!
     private var host: FakeInstallHost!
     private var store: SettingsStore!
+    /// The manager behind the last `makeModel()`, for the tests that drive it directly (release S3).
+    private var manager: ModelManager!
     private var pipelineRunning = false
     private var benchmarkRunning = false
 
@@ -34,6 +36,7 @@ final class ModelsViewModelTests: XCTestCase {
                                        verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxModelsVM-\(UUID().uuidString)")!))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                    availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
+        self.manager = manager
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: memoryGiB * 1_073_741_824),
                                isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                benchmarks: benchmarks, isBenchmarkRunning: { [unowned self] in self.benchmarkRunning })
@@ -123,6 +126,58 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(model.selectedModel, .base)
         model.select(.medium)
         XCTAssertEqual(store.settings.model, "base", "not installed → ignored")
+    }
+
+    // MARK: Release S3: a first download becomes the selection
+
+    /// Fails against the old view model: the selection stayed at the default small, which was never downloaded,
+    /// so Live kept reading "No model installed" beside the only model on the iPhone.
+    func testAFinishedDownloadIsSelectedWhenTheSelectedModelIsNotInstalled() async {
+        let model = makeModel(memoryGiB: 3)                 // recommends base; the selection still defaults to small
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.base])
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .idle, "small is selected but not on disk")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+        XCTAssertEqual(model.selectedModel, .base)
+        XCTAssertTrue(model.rows[1].isSelected)
+        XCTAssertFalse(model.rows[2].isSelected)
+    }
+
+    /// The guard half of the rule; it passes against the old code too and keeps the rule from growing.
+    func testAFinishedDownloadNeverOverridesAnInstalledSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .installed)
+        model.download(.tiny)
+        await waitUntil("tiny installed") { model.rows[0].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "small is installed and selected, so tiny is not adopted")
+        XCTAssertFalse(model.rows[0].isSelected)
+        XCTAssertTrue(model.rows[2].isSelected)
+    }
+
+    /// After the last model was deleted the setting keeps naming it (Live shows the prompt); the next download
+    /// is then the only model on disk and becomes the selection.
+    func testTheNextDownloadAfterTheLastDeleteBecomesTheSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        let model = makeModel()
+        model.select(.tiny)
+        try model.delete(.tiny)
+        XCTAssertEqual(store.settings.model, "tiny", "nothing installed: the setting stays")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+    }
+
+    func testWhisperInstalledAppliesTheRuleDirectly() throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let model = makeModel()
+        model.whisperInstalled(.base)
+        XCTAssertEqual(store.settings.model, "base", "the default small is not installed, so base is adopted")
+        model.whisperInstalled(.tiny)
+        XCTAssertEqual(store.settings.model, "base", "base is installed and selected: left alone")
     }
 
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {

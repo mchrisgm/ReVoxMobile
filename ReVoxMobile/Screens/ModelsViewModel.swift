@@ -48,6 +48,18 @@ final class ModelsViewModel {
             guard let self, let replacement else { return }   // none left: the setting stays; Live shows "No model"
             self.settings.update { $0.model = replacement.rawValue }
         }
+        manager.onWhisperInstalled = { [weak self] installed in
+            self?.whisperInstalled(installed)
+        }
+    }
+
+    /// A finished download becomes the selection when the selected model is not installed; a selection that is
+    /// on disk is never overridden (release S3). The selection defaults to small, so without this a user who
+    /// downloaded the base model recommended for a 3 GB iPhone came back to Live and still read "No model
+    /// installed", with the only installed model one tap away and nothing saying so.
+    func whisperInstalled(_ installed: WhisperModelID) {
+        guard !manager.installedWhisper.contains(selectedModel) else { return }
+        settings.update { $0.model = installed.rawValue }
     }
 
     // MARK: Rows
