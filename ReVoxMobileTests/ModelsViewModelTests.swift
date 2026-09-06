@@ -145,6 +145,36 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertFalse(model.rows[2].isSelected)
     }
 
+    /// Review R1: two downloads, the selected one (small) finishes second. The fake holds every download at once,
+    /// so base's finish is delivered by hand through the manager's callback while small's row is still in flight;
+    /// against the old view model that call adopted base, and small's own finish then left base in place.
+    func testTheSelectedModelsOwnDownloadWinsOverOneThatFinishesFirst() async {
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        steps.holdDownloads = true
+        model.download(.small)
+        await waitUntil("small in flight") { model.rows[2].state.phase.isActive }
+        model.download(.base)
+        await waitUntil("base in flight") { model.rows[1].state.phase.isActive }
+
+        manager.onWhisperInstalled?(.base)                  // base finished first
+        XCTAssertEqual(store.settings.model, "small", "the selected model's own download is still in flight")
+        XCTAssertTrue(model.rows[2].isSelected)
+
+        steps.holdDownloads = false
+        await waitUntil("both installed") { model.rows[1].state.phase == .installed && model.rows[2].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "the user's choice, now installed, is the selection")
+        XCTAssertTrue(model.rows[2].isSelected)
+        XCTAssertFalse(model.rows[1].isSelected)
+
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .paused] {
+            XCTAssertTrue(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): on its way")
+        }
+        for phase in [ModelDownloadPhase.idle, .installed, .failed("boom")] {
+            XCTAssertFalse(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): not coming, so a finished model is adopted")
+        }
+    }
+
     /// The guard half of the rule; it passes against the old code too and keeps the rule from growing.
     func testAFinishedDownloadNeverOverridesAnInstalledSelection() async throws {
         try FakeInstallSteps.fabricateWhisper(.small, in: layout)
