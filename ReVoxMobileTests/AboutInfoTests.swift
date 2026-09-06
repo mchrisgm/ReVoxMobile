@@ -41,4 +41,15 @@ final class AboutInfoTests: XCTestCase {
         XCTAssertEqual(AboutInfo.windowsProjectURL.absoluteString, "https://github.com/mchrisgm/ReVox")
         XCTAssertEqual(AboutInfo.platformLimitationsURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile#platform-limitations")
     }
+
+    /// The Privacy policy and Support links the About screen gained with the policy. Neither static existed before,
+    /// so this test did not compile against the earlier About screen.
+    func testPrivacyPolicyAndSupportLinksPointAtTheRepository() {
+        XCTAssertEqual(AboutInfo.privacyPolicyURL.host(), "github.com")
+        XCTAssertTrue(AboutInfo.privacyPolicyURL.path().hasSuffix("docs/privacy.md"), AboutInfo.privacyPolicyURL.absoluteString)
+        XCTAssertEqual(AboutInfo.privacyPolicyURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile/blob/main/docs/privacy.md")
+        XCTAssertEqual(AboutInfo.supportURL.host(), "github.com")
+        XCTAssertTrue(AboutInfo.supportURL.path().hasSuffix("/issues"), AboutInfo.supportURL.absoluteString)
+        XCTAssertEqual(AboutInfo.supportURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile/issues")
+    }
 }
