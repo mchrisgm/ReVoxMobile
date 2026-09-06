@@ -23,7 +23,7 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 
 ## Why ReVox
 
-Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a call in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. Since milestone 8 it also talks back: with **Two-way** on, what you say is spoken to the other person in their language, and the language you speak is neither translated nor spoken back at you.
+Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a podcast in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. Since milestone 8 it also talks back: with **Two-way** on, what you say is spoken to the other person in their language, and the language you speak is neither translated nor spoken back at you.
 
 ## What it looks like
 
@@ -125,7 +125,7 @@ The Live screen keeps its controls to three captioned rows of pills above the tr
 
 1. On the **Live** tab, choose what to listen to:
    - **Microphone** — whatever the iPhone's microphone hears: the room, the person across the table.
-   - **Other apps** — a call, a video, anything playing on the iPhone. Tap **Start**, then start the broadcast from the picker ReVox shows (or from Control Center's **Screen Recording** control) and choose ReVox. Pressing the side button ends the broadcast.
+   - **Other apps** — a video, a podcast, another app's audio. Tap **Start**, then start the broadcast from the picker ReVox shows (or from Control Center's **Screen Recording** control) and choose ReVox. Pressing the side button ends the broadcast.
 2. Tap **Start**. The button shows a spinner and the model's own progress while it loads — the first load of a model takes a few seconds — then turns into a red **Stop**.
 3. Speak, or start playing. Each finished phrase appears in the transcript with its detected language and its English translation, and is spoken aloud.
 4. Tap **Stop** when you are done. The session is saved to **History**.
@@ -170,7 +170,7 @@ Two things to know about the reply direction:
 <details>
 <summary><strong>Afterwards</strong></summary>
 
-The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Tap **Edit** to select several sessions and **Merge** them into one, in time order (the originals are removed), or **Delete** them together. Sessions older than 30 days are pruned automatically.
+The **History** tab lists every session, newest first, and searches across their English text. Open a session to read it in full, then **Share** it as a `.txt` file — the same format the Windows app writes — through Files, Mail or AirDrop. Swipe to delete a session; **Clear All** removes them all. Tap **Edit** to select several sessions and **Merge** them into one, in time order (the originals are removed), or **Delete** them together.
 
 </details>
 
@@ -253,7 +253,7 @@ What each milestone was measured to do on real devices is recorded row by row in
 These are iOS rules, not bugs, and they make the iPhone app behave differently from the Windows version. The About screen links here.
 
 1. **Ducking.** iOS cannot set another app's volume. ReVox uses the `AVAudioSession` option `.duckOthers`; iOS chooses the amount and the ramp. The Windows ducked-level slider has no iOS equivalent; the Voice volume slider adjusts ReVox's own voice only. Ducking is applied and released by changing the session's options, never by deactivating it: deactivating would require pausing the engine, and a paused engine captures no microphone audio — a gap after every spoken phrase. Because ReVox's session mixes with others rather than interrupting them, dropping the `.duckOthers` option is what ends the duck. The fallback that does deactivate is still in the code behind one constant, in case a future iOS needs it; see [docs/measurements/m4-pocket-tts-ducking.md](docs/measurements/m4-pocket-tts-ducking.md) (the per-edge outcome is pending device measurement) and [ADR-0004](docs/adr/0004-ducking-via-session-options.md).
-2. **Broadcast start.** Other apps' audio requires a user-started system broadcast: the picker in ReVox or Control Center's Screen Recording control. ReVox cannot start or stop it programmatically; pressing the side button ends it; some players (AVPlayer-based apps, Safari, Music) deliver silence to broadcasts.
+2. **Broadcast start.** Other apps' audio requires a user-started system broadcast: the picker in ReVox or Control Center's Screen Recording control. ReVox cannot start or stop it programmatically; pressing the side button ends it; some players (AVPlayer-based apps, Safari, Music) deliver silence to broadcasts; phone and FaceTime call audio is never available to a broadcast.
 3. **Extension memory.** The broadcast extension has a 50 MB cap; it only forwards audio, and every model runs in the app. A Control Center broadcast started while ReVox is closed is buffered for at most 60 s.
 4. **Background.** Translation continues under the `audio` background mode while the audio session and engine run; the app must be started from the foreground first. iOS may still suspend the app under memory pressure, in which case the transcript shows a gap. The audio session and engine configuration that keeps a session alive in the background was measured and is recorded in [docs/broadcast-bridge.md](docs/broadcast-bridge.md).
 5. **Self-capture.** In broadcast mode the extension also hears ReVox's English voice; the timing gate drops audio while ReVox speaks and for 300 ms after, so speech that overlaps ReVox's voice is not translated.

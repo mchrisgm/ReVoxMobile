@@ -27,7 +27,7 @@ ReVox opens on the **Live** tab with "Ready to translate". Before the first tran
 
 ## 4. Translate from the microphone
 
-1. On **Live**, the source picker shows **Microphone** (the other-apps source arrives in a later build).
+1. On **Live**, the source picker shows **Microphone**; **Other apps** is covered in section 5.
 2. Tap **Start**. iOS asks for microphone access the first time; allow it. If you refused, the screen shows a banner with **Open Settings**.
 3. Speak a sentence in Spanish, French, German or any other language. After a short pause the English text appears with the detected language badge, and the system voice reads it aloud. The status line shows the model ("small · ready") and the voice ("System voice — pocket-tts not downloaded").
 4. Long phrases are cut at about 10 seconds; if translation falls behind, a **Falling behind** badge appears and the transcript shows "… skipped: falling behind".
@@ -36,7 +36,7 @@ ReVox opens on the **Live** tab with "Ready to translate". Before the first tran
 
 ## 5. Translate other apps (broadcast)
 
-ReVox can also translate audio from other apps: a video, a call in another app, a podcast, a game. Because of how iOS works, you must start a **screen broadcast** that sends the other apps' audio to ReVox:
+ReVox can also translate audio from other apps: a video, a podcast, a game (not phone or FaceTime calls, which iOS does not share). Because of how iOS works, you must start a **screen broadcast** that sends the other apps' audio to ReVox:
 
 1. On the **Live** tab choose **Other apps** and tap **Start**. A box with a round broadcast button appears with the text "Tap to choose ReVox and start the broadcast."
 2. Tap the round button. iOS shows a small sheet; make sure **ReVox** is selected and tap **Start Broadcast**. After a three-second countdown the status bar (or the Dynamic Island) shows a red indicator: the broadcast is running, and the box disappears.
