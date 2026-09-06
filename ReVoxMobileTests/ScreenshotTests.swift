@@ -73,6 +73,36 @@ final class ScreenshotTests: XCTestCase {
             LiveView(model: running, models: hosting.models(), broadcastExtensionBundleID: extensionID)
         })
 
+        // Live, running, from other apps: the App Store set's third frame (docs/store/README.md), the one state no
+        // README capture shows. Its own settings store, because the source is persisted there and live-idle and
+        // live-running must keep reading Mic. A broadcast attached through the coordinator, so the screen shows
+        // neither the picker nor a broadcast status line, and not joined in progress, so no header row. Learn off
+        // and four Portuguese phrases with no original and no Unsure row, so the frame reads as a programme rather
+        // than the meeting above.
+        let broadcastStore = SettingsStore(fileURL: root.appendingPathComponent("broadcast-" + SettingsCodec.fileName))
+        let broadcastPipeline = FakeLivePipeline()
+        let otherApps = LiveViewModel(settings: broadcastStore, mute: mute, permission: .fixed(.granted), modelReady: { _ in true },
+                                      supplier: { _, _ in broadcastPipeline })
+        otherApps.captureMode = .broadcast
+        otherApps.isTwoWay = false
+        otherApps.isLearning = false
+        let suite = "group.test.revox-\(UUID().uuidString)"
+        let coordinator = BroadcastCoordinator(capture: BroadcastCapture(appGroup: suite, containerURL: nil, records: nil),
+                                               records: nil, containerURL: nil, names: BroadcastNotificationNames(appGroup: suite))
+        otherApps.observe(broadcast: coordinator)
+        coordinator.handle(.attached(generation: 1, joinedInProgress: false))
+        XCTAssertFalse(otherApps.showsBroadcastPicker, "attached: the picker stays out of the shot")
+        XCTAssertNil(otherApps.broadcastStatusText, "attached, not joined: the status line shows the model and the voice only")
+        XCTAssertEqual(live.captureMode, .microphone, "the other Live captures keep their own store, and Mic")
+        otherApps.handle(.state(.running))
+        for (index, english) in Self.programmeTranscript.enumerated() {          // 33, 24, 15 and 6 s ago
+            otherApps.handle(.entry(TranscriptEntry(timestamp: Date().addingTimeInterval(Double(index - 4) * 9 + 3),
+                                                    language: "pt", original: "", english: english)))
+        }
+        try capture("live-running-other-apps", NavigationStack {
+            LiveView(model: otherApps, models: hosting.models(), broadcastExtensionBundleID: extensionID)
+        })
+
         // Models, Voices, Settings.
         let modelsForVoices = hosting.models()
         let voices = try hosting.voices(installed: true)
@@ -168,6 +198,14 @@ final class ScreenshotTests: XCTestCase {
         let storeImage = try XCTUnwrap(UIImage(contentsOfFile: store.path)?.cgImage, "no store capture at \(store.path)")
         XCTAssertEqual([storeImage.width, storeImage.height], [1290, 2796], "App Store Connect's 6.9-inch slot: 430 × 932 points at @3x")
     }
+
+    /// Four lines of a programme, for the other-apps capture: Portuguese, so the set is not read as Spanish-only.
+    static let programmeTranscript = [
+        "Welcome back to the programme.",
+        "Tonight we start with the weather along the coast.",
+        "Rain is expected in the north by the morning.",
+        "Then the week's news from the capital.",
+    ]
 
     static let sampleTranscript: [(String, String)] = [
         ("es", "Good morning, thanks for joining us today."),
