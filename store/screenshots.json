@@ -1,0 +1,46 @@
+{
+  "frames": [
+    {
+      "id": "01-hear-it-in-english",
+      "capture": "live-running",
+      "headline": "Hear it in English.",
+      "subline": "What the microphone hears, translated to English one phrase at a time."
+    },
+    {
+      "id": "02-nothing-leaves-the-phone",
+      "capture": "onboarding-welcome",
+      "headline": "Nothing leaves the phone.",
+      "subline": "It hears, translates into English and speaks, all on this iPhone."
+    },
+    {
+      "id": "03-listen-to-other-apps",
+      "capture": "live-running-other-apps",
+      "headline": "Listen to other apps.",
+      "subline": "Sound from another app reaches ReVox through a screen broadcast you start.",
+      "fallback": {
+        "capture": "benchmark",
+        "headline": "Measured on your iPhone.",
+        "subline": "A built-in benchmark times every installed model on the phone itself."
+      }
+    },
+    {
+      "id": "04-reply-in-their-language",
+      "capture": "live-idle",
+      "headline": "Reply in their language.",
+      "subline": "From iOS 18, Two-way speaks your replies to them in Spanish."
+    },
+    {
+      "id": "05-keep-every-conversation",
+      "capture": "history-selecting",
+      "headline": "Keep every conversation.",
+      "subline": "Search every transcript, then select sessions to merge or delete."
+    },
+    {
+      "id": "06-tap-a-word-learn-it",
+      "capture": "learning-word",
+      "presentation": "close-up",
+      "headline": "Tap a word. Learn it.",
+      "subline": "Hear the word, read its meaning on iOS 18, see the sentence."
+    }
+  ]
+}
