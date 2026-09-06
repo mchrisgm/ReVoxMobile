@@ -5,8 +5,8 @@ import UIKit
 /// Renders a screen to a PNG at each of the two sizes the project publishes, so `ScreenshotTests` and
 /// `OnboardingScreenshotTests` share one implementation and every capture, present and future, gets both:
 ///
-/// - `screenshots/<name>.png`, the README's: 393 × 852 points (iPhone 15/16 portrait) at @2x, 786 × 1704 px —
-///   sharp in the README, half the bytes of @3x.
+/// - `screenshots/<name>.png`, the README's: 393 × 852 points (iPhone 15/16 portrait) at @2x, 786 × 1704 px,
+///   sharp in the README at half the bytes of @3x.
 /// - `store-screenshots/<name>.png`, App Store Connect's 6.9-inch slot: 430 × 932 points (the 6.7-inch phones'
 ///   portrait) at @3x, 1290 × 2796 px exactly. `scripts/store/compose-screenshots.py` puts the captions round them.
 ///
@@ -29,7 +29,7 @@ enum ScreenCapture {
     }
 
     static let readme = Render(folder: "screenshots", size: CGSize(width: 393, height: 852), scale: 2, safeArea: nil)
-    /// The safe area is the 6.7-inch phones' own — 59 points of status bar, 34 of home indicator — rather than the
+    /// The safe area is the 6.7-inch phones' own (59 points of status bar, 34 of home indicator) rather than the
     /// simulator's, which is a different phone.
     static let store = Render(folder: "store-screenshots", size: CGSize(width: 430, height: 932), scale: 3,
                               safeArea: UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0))

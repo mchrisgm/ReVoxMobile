@@ -105,6 +105,17 @@ cd ReVoxCore && swift test
 
 </details>
 
+#### App Store screenshots
+
+`ScreenshotTests` renders every screen at two sizes on the simulator job. The README's, 393 × 852 points at @2x (786 × 1704 px), is uploaded as the `screenshots` artifact and lands in `docs/screenshots/`. App Store Connect's 6.9-inch slot takes 1290 × 2796 px, so the same screens are rendered again at 430 × 932 points at @3x and uploaded as the `store-screenshots` artifact. The App Store set is composed from that second artifact by a script that needs only Python 3 and a Chromium or Chrome binary:
+
+```bash
+python3 scripts/store/compose-screenshots.py --input store-screenshots \
+  --spec store/screenshots.json --output docs/store/screenshots
+```
+
+Each frame in `store/screenshots.json` is a headline, a subline and the name of the capture shown whole beneath them; the panel's inks, type and geometry live in the script. [docs/store/README.md](docs/store/README.md) describes the pipeline and how to add or reword a frame.
+
 ## Using ReVox
 
 <details open>
@@ -327,3 +338,5 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md): how to build, how the core tests run on
 - [Whisper weights (OpenAI)](https://github.com/openai/whisper): MIT.
 
 The same five third-party notices, with links, are shown on the app's About screen.
+
+The repository also bundles two weights of [Inter](https://github.com/rsms/inter) under `store/fonts/` (SIL Open Font License 1.1, `store/fonts/OFL.txt`) for the App Store screenshot panels. The font is not part of the app.
