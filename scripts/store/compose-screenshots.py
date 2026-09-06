@@ -225,7 +225,9 @@ def screen_geometry(capture_size, presentation):
     """Where the capture goes and how much of it: (box left, top, width, height, radius, image left, top, width, height).
 
     Full screens scale the whole capture to the 950 x 2060 box (a resample of at most one pixel in aspect). The
-    close-up scales its crop to 950 wide and centres it in the band the phone occupies on the other frames.
+    close-up scales its crop to 950 wide and sits in the band the phone occupies on the other frames, a third of
+    the way down the free space rather than centred, so the card reads as the next thing after the subline instead
+    of floating in the middle of the panel.
     """
     width, height = capture_size
     if presentation == "screen":
@@ -243,7 +245,7 @@ def screen_geometry(capture_size, presentation):
         raise SystemExit("the close-up crop falls outside the capture; update CLOSE_UP")
     factor = SCREEN["width"] / crop_width
     box_height = int(crop_height * factor + 0.5)
-    box_top = SCREEN["top"] + (SCREEN["height"] - box_height) // 2
+    box_top = SCREEN["top"] + (SCREEN["height"] - box_height) // 3
     return {"left": LEFT, "top": box_top, "width": SCREEN["width"], "height": box_height, "radius": CLOSE_UP_RADIUS,
             "img_left": -crop_left * factor, "img_top": -crop_top * factor,
             "img_width": width * factor, "img_height": height * factor}
