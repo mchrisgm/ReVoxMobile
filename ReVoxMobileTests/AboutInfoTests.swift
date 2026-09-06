@@ -4,7 +4,7 @@ import ReVoxCore
 
 final class AboutInfoTests: XCTestCase {
     func testVersionTextAndDefaults() {
-        XCTAssertEqual(AboutInfo(infoDictionary: ["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "42"]).versionText, "0.1.0 (42)")
+        XCTAssertEqual(AboutInfo(infoDictionary: ["CFBundleShortVersionString": "1.0.0", "CFBundleVersion": "42"]).versionText, "1.0.0 (42)")
         XCTAssertEqual(AboutInfo(infoDictionary: [:]).versionText, "0 (0)")
         XCTAssertEqual(AboutInfo(marketingVersion: "1.2.3", buildNumber: "7").versionText, "1.2.3 (7)")
     }
@@ -16,7 +16,7 @@ final class AboutInfoTests: XCTestCase {
     }
 
     func testLicencesAreTheFiveCatalogNoticesInOrder() {
-        let info = AboutInfo(marketingVersion: "0.1.0", buildNumber: "1")
+        let info = AboutInfo(marketingVersion: "1.0.0", buildNumber: "1")
         XCTAssertEqual(info.licences.map(\.name), ["WhisperKit", "FluidAudio", "pocket-tts Core ML weights", "Silero VAD", "Whisper weights (OpenAI)"])
         XCTAssertEqual(info.licences.map(\.licence), ["MIT", "Apache-2.0", "CC-BY-4.0", "MIT", "MIT"])
         XCTAssertEqual(info.licences.map(\.url.absoluteString), [
@@ -29,7 +29,7 @@ final class AboutInfoTests: XCTestCase {
     }
 
     func testKyutaiAttributionComesFromTheCatalog() {
-        let info = AboutInfo(marketingVersion: "0.1.0", buildNumber: "1")
+        let info = AboutInfo(marketingVersion: "1.0.0", buildNumber: "1")
         XCTAssertEqual(info.pocketTTSAttributionText, "pocket-tts voices: pocket-tts by Kyutai (https://kyutai.org), Core ML weights under CC-BY-4.0.")
         XCTAssertEqual(ModelCatalog.licences.first { $0.id == AboutInfo.pocketTTSLicenceID }?.attribution, "pocket-tts by Kyutai (https://kyutai.org)")
     }

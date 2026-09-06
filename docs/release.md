@@ -26,7 +26,7 @@ Two jobs:
 Version numbers:
 
 - **Build number** (`CFBundleVersion`) = `github.run_number`, passed as `CURRENT_PROJECT_VERSION`. Every new run gets a higher number, so a new run never collides with an earlier upload. Re-running an existing run (**Re-run jobs** / **Re-run failed jobs**) reuses that run's number: if its upload step had already succeeded, App Store Connect rejects the second upload as a duplicate (ITMS-90189, redundant binary). To upload again, start a new run (**Actions** → **Run workflow**, or push a `v*` tag) instead of re-running the old one. `manageAppVersionAndBuildNumber` is `false` in `ci/ExportOptions.plist`, so App Store Connect does not renumber it.
-- **Marketing version** (`CFBundleShortVersionString`) = `MARKETING_VERSION` in `project.yml` (currently `0.1.0`). Change it there when you start a new version; TestFlight groups builds by this number.
+- **Marketing version** (`CFBundleShortVersionString`) = `MARKETING_VERSION` in `project.yml` (currently `1.0.0`). Change it there when you start a new version; TestFlight groups builds by this number.
 
 Only one TestFlight run executes at a time (`concurrency: testflight`); further pushes wait rather than cancelling a running upload.
 

@@ -354,7 +354,7 @@ final class ScreenHostingTests: XCTestCase {
     }
 
     func testAboutViewHosts() {
-        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "1.0.0", buildNumber: "42")) })
     }
 
     func testBroadcastPickerButtonHosts() {
