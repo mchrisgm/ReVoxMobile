@@ -304,6 +304,52 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertFalse(manager.vadInstalled)
     }
 
+    /// Review R1: the VAD Live could not load is on disk and reads Installed; the mark turns the row Failed so
+    /// the Models screen offers Re-download. Fails against the old manager, which had no `markVADLoadFailed()`.
+    @MainActor
+    func testMarkVADLoadFailedTurnsTheInstalledRowFailedAndLeavesAnInstallInFlightAlone() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        manager.refreshInstalledStates()
+        XCTAssertEqual(manager.state(for: .vad).phase, .installed)
+        manager.markVADLoadFailed()
+        XCTAssertEqual(manager.state(for: .vad).phase, .failed(ModelManager.vadLoadFailedText))
+        XCTAssertEqual(ModelManager.vadLoadFailedText, "Failed to load")
+        XCTAssertTrue(manager.vadInstalled, "the files are still there; only the row says otherwise")
+
+        fakeSteps.holdDownloads = true
+        try manager.reinstallVAD()
+        await waitUntil("vad in flight") { manager.state(for: .vad).phase.isActive }
+        manager.markVADLoadFailed()
+        XCTAssertTrue(manager.state(for: .vad).phase.isActive, "an install in flight reports its own result")
+        fakeSteps.holdDownloads = false
+        await waitUntil("vad installed") { manager.state(for: .vad).phase == .installed }
+    }
+
+    /// Review R1: a bundle that is complete but will not load is skipped by `install(.vad)` as already installed,
+    /// so Re-download deletes first. Fails against the old manager, which had no `reinstallVAD()`.
+    @MainActor
+    func testReinstallVADDeletesTheFilesThenInstallsAndIsRefusedWhileThePipelineRuns() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        manager.refreshInstalledStates()
+        var releases = 0
+        manager.onModelFilesChanged = { releases += 1 }
+        manager.markVADLoadFailed()
+        try manager.reinstallVAD()
+        XCTAssertEqual(fakeSteps.vadDeletes, 1)
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase)" }) { manager.state(for: .vad).phase == .installed }
+        XCTAssertEqual(fakeSteps.vadDownloads, 1, "the delete came first, so the install downloaded rather than skipped")
+        XCTAssertEqual(releases, 1, "a cached pipeline is released as after a delete")
+        XCTAssertTrue(manager.vadInstalled)
+
+        let running = makeManager(pipelineRunning: true)
+        XCTAssertThrowsError(try running.reinstallVAD()) { error in
+            XCTAssertEqual(error as? ModelManagerError, .pipelineRunning)
+        }
+        XCTAssertEqual(fakeSteps.vadDeletes, 0)
+    }
+
     @MainActor
     func testFreeSpaceRule() {
         let small: Int64 = 486_500_000

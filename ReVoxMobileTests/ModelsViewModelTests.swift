@@ -145,6 +145,36 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertFalse(model.rows[2].isSelected)
     }
 
+    /// Review R1: two downloads, the selected one (small) finishes second. The fake holds every download at once,
+    /// so base's finish is delivered by hand through the manager's callback while small's row is still in flight;
+    /// against the old view model that call adopted base, and small's own finish then left base in place.
+    func testTheSelectedModelsOwnDownloadWinsOverOneThatFinishesFirst() async {
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        steps.holdDownloads = true
+        model.download(.small)
+        await waitUntil("small in flight") { model.rows[2].state.phase.isActive }
+        model.download(.base)
+        await waitUntil("base in flight") { model.rows[1].state.phase.isActive }
+
+        manager.onWhisperInstalled?(.base)                  // base finished first
+        XCTAssertEqual(store.settings.model, "small", "the selected model's own download is still in flight")
+        XCTAssertTrue(model.rows[2].isSelected)
+
+        steps.holdDownloads = false
+        await waitUntil("both installed") { model.rows[1].state.phase == .installed && model.rows[2].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "the user's choice, now installed, is the selection")
+        XCTAssertTrue(model.rows[2].isSelected)
+        XCTAssertFalse(model.rows[1].isSelected)
+
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .paused] {
+            XCTAssertTrue(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): on its way")
+        }
+        for phase in [ModelDownloadPhase.idle, .installed, .failed("boom")] {
+            XCTAssertFalse(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): not coming, so a finished model is adopted")
+        }
+    }
+
     /// The guard half of the rule; it passes against the old code too and keeps the rule from growing.
     func testAFinishedDownloadNeverOverridesAnInstalledSelection() async throws {
         try FakeInstallSteps.fabricateWhisper(.small, in: layout)
@@ -202,6 +232,28 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertNil(model.footerText)
     }
 
+    /// Review R1: the case Live's banner names, an installed voice detector that fails to load. Fails against the
+    /// old code: the row stayed Installed, which offers nothing, and a Re-download would have been skipped as
+    /// already installed.
+    func testAVADThatWouldNotLoadOffersRedownloadWhichReplacesTheFiles() async throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.vadRow.state.phase, .installed)
+        XCTAssertFalse(model.vadRow.showsRedownload)
+
+        manager.markVADLoadFailed()                         // what LiveViewModel's seam does on .vadLoadFailed
+        XCTAssertEqual(model.vadRow.state.phase, .failed(ModelManager.vadLoadFailedText))
+        XCTAssertTrue(model.vadRow.showsRedownload)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertEqual(steps.vadDeletes, 1, "the files on disk go first")
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 1, "and the download happened rather than being skipped")
+        XCTAssertFalse(model.vadRow.showsRedownload)
+    }
+
     func testRedownloadVADIsRefusedWhileASessionOrABenchmarkRuns() async {
         let model = makeModel()
         pipelineRunning = true
@@ -241,7 +293,31 @@ final class ModelsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(VADRowView.redownloadTitle, "Re-download")
         XCTAssertEqual(VADRowView.redownloadAccessibilityLabel, "Re-download voice detector")
-        XCTAssertEqual(VADRowView.redownloadHint, "Downloads the voice detector again")
+        XCTAssertEqual(VADRowView.redownloadHint, "Replaces the copy on this iPhone, about 1 MB")
+    }
+
+    /// Review R1: the idle row beside an installed Whisper model has nothing to download again, so its button
+    /// reads Download, and its caption stops claiming an automatic install that never finished. Fails against the
+    /// old view, which had one title, a hint that restated it and one caption.
+    func testVADRowButtonAndCaptionFollowThePhase() throws {
+        let download = VADRowView.buttonText(for: .idle)
+        XCTAssertEqual(download, VADRowView.ButtonText(title: "Download", accessibilityLabel: "Download voice detector", hint: "About 1 MB"))
+        let redownload = VADRowView.buttonText(for: .failed("boom"))
+        XCTAssertEqual(redownload, VADRowView.ButtonText(title: "Re-download", accessibilityLabel: "Re-download voice detector",
+                                                         hint: "Replaces the copy on this iPhone, about 1 MB"))
+        XCTAssertEqual(VADRowView.buttonText(for: .failed(ModelManager.vadLoadFailedText)), redownload, "a load failure is a failed row too")
+        XCTAssertEqual(ModelsViewModel.sizeText(ModelCatalog.vad.approximateBytes), "≈ 1 MB", "the hints' figure is the catalog's")
+
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel().vadRow
+        XCTAssertTrue(withoutVAD.showsRedownload)
+        XCTAssertEqual(VADRowView.caption(for: withoutVAD), "Needed to translate; its download did not finish")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let installed = makeModel().vadRow
+        XCTAssertEqual(VADRowView.caption(for: installed), "Installed automatically with the first Whisper model")
+        let failedRow = VADRow(name: ModelsViewModel.vadName, sizeText: "under 1 MB",
+                               state: ModelDownloadState(phase: .failed("boom"), fraction: nil, bytesExpected: 1), noticeText: nil, showsRedownload: true)
+        XCTAssertEqual(VADRowView.caption(for: failedRow), VADRowView.installedCaption, "a failed row keeps the original caption")
     }
 
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {

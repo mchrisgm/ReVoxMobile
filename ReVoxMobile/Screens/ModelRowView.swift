@@ -124,7 +124,35 @@ struct VADRowView: View {
 
     static let redownloadTitle = "Re-download"
     static let redownloadAccessibilityLabel = "Re-download voice detector"
-    static let redownloadHint = "Downloads the voice detector again"
+    /// True of the app since review R1: `ModelManager.reinstallVAD()` deletes the files before it downloads.
+    static let redownloadHint = "Replaces the copy on this iPhone, about 1 MB"
+    static let downloadTitle = "Download"
+    static let downloadAccessibilityLabel = "Download voice detector"
+    static let downloadHint = "About 1 MB"
+    static let installedCaption = "Installed automatically with the first Whisper model"
+    /// The idle row beside an installed Whisper model: the automatic install was cancelled or never ran, so nothing
+    /// was "installed automatically" here (review R1).
+    static let missingCaption = "Needed to translate; its download did not finish"
+
+    /// The button's title, VoiceOver label and hint by phase: Download for an idle row (nothing is on disk to
+    /// download again), Re-download for a failed one. The hint says what happens, not the label over again.
+    struct ButtonText: Equatable {
+        let title: String
+        let accessibilityLabel: String
+        let hint: String
+    }
+
+    static func buttonText(for phase: ModelDownloadPhase) -> ButtonText {
+        if phase == .idle {
+            return ButtonText(title: downloadTitle, accessibilityLabel: downloadAccessibilityLabel, hint: downloadHint)
+        }
+        return ButtonText(title: redownloadTitle, accessibilityLabel: redownloadAccessibilityLabel, hint: redownloadHint)
+    }
+
+    /// The caption under the name: the automatic-install note, except on the idle row that offers Download.
+    static func caption(for row: VADRow) -> String {
+        row.showsRedownload && row.state.phase == .idle ? missingCaption : installedCaption
+    }
 
     /// The text stays one VoiceOver sentence; the button (release S3) is its own element below it, with a label
     /// that names what is downloaded, since "Re-download" alone says nothing out of the row's context.
@@ -133,7 +161,7 @@ struct VADRowView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name).font(.headline)
-                    Text("Installed automatically with the first Whisper model").font(.caption).foregroundStyle(.secondary)
+                    Text(Self.caption(for: row)).font(.caption).foregroundStyle(.secondary)
                     if let notice = row.noticeText {
                         Label(notice, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
                     }
@@ -146,11 +174,12 @@ struct VADRowView: View {
             }
             .accessibilityElement(children: .combine)
             if row.showsRedownload {
-                Button(Self.redownloadTitle, action: onRedownload)
+                let text = Self.buttonText(for: row.state.phase)
+                Button(text.title, action: onRedownload)
                     .buttonStyle(.bordered)
                     .frame(minHeight: 44)
-                    .accessibilityLabel(Self.redownloadAccessibilityLabel)
-                    .accessibilityHint(Self.redownloadHint)
+                    .accessibilityLabel(text.accessibilityLabel)
+                    .accessibilityHint(text.hint)
             }
         }
     }

@@ -57,9 +57,21 @@ final class ModelsViewModel {
     /// on disk is never overridden (release S3). The selection defaults to small, so without this a user who
     /// downloaded the base model recommended for a 3 GB iPhone came back to Live and still read "No model
     /// installed", with the only installed model one tap away and nothing saying so.
+    ///
+    /// Review R1: while the selected model's own download is in flight or paused, the selection is left alone, so
+    /// the model the user chose wins when it finishes rather than the one that happened to finish first.
     func whisperInstalled(_ installed: WhisperModelID) {
         guard !manager.installedWhisper.contains(selectedModel) else { return }
+        guard !Self.selectionIsPending(phase: manager.state(for: .whisper(selectedModel)).phase) else { return }
         settings.update { $0.model = installed.rawValue }
+    }
+
+    /// True while the selected model's row is on its way to installed: in flight, or paused to resume by itself.
+    static func selectionIsPending(phase: ModelDownloadPhase) -> Bool {
+        switch phase {
+        case .listing, .downloading, .compiling, .verifying, .paused: return true
+        case .idle, .installed, .failed: return false
+        }
     }
 
     // MARK: Rows
@@ -191,8 +203,9 @@ final class ModelsViewModel {
     }
 
     /// The VAD row's Re-download (release S3): the refusals `download(_:)` makes, then a standalone `.vad`
-    /// install (`ModelManager.runInstall` pulls nothing else for that kind). A failure stays on the row, which is
-    /// where the button sits; the alert is for the Whisper rows a user may have left.
+    /// install (`ModelManager.runInstall` pulls nothing else for that kind) over deleted files, so a bundle that
+    /// is on disk but would not load is replaced (review R1). A failure stays on the row, which is where the
+    /// button sits; the alert is for the Whisper rows a user may have left.
     func redownloadVAD() {
         guard canDownload else {
             downloadRefusedAlert = downloadRefusalText
@@ -202,7 +215,11 @@ final class ModelsViewModel {
             lowStorageAlert = message
             return
         }
-        manager.install(.vad)
+        do {
+            try manager.reinstallVAD()
+        } catch {
+            downloadRefusedAlert = Self.stopToDownloadText   // the pipeline started between the guard and the call
+        }
     }
 
     func select(_ id: WhisperModelID) {
