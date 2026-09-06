@@ -232,6 +232,31 @@ final class ScreenshotTests: XCTestCase {
         })
     }
 
+    /// Every capture is written twice: the README's 786 × 1704 to `screenshots`, and App Store Connect's
+    /// 1290 × 2796 — the 6.9-inch slot's exact size — to the sibling `store-screenshots` folder. Written before the
+    /// second render existed, when it failed at the `store-screenshots` unwrap: no such file. The view is twelve
+    /// flat bands, so the blank check cannot be what fails, and both files are removed afterwards so the folders CI
+    /// collects hold only the screens.
+    func testEveryCaptureIsAlsoWrittenAtTheAppStoreSize() throws {
+        let name = "size-check"
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        let readme = documents.appendingPathComponent("screenshots/\(name).png")
+        let store = documents.appendingPathComponent("store-screenshots/\(name).png")
+        defer {
+            try? FileManager.default.removeItem(at: readme)
+            try? FileManager.default.removeItem(at: store)
+        }
+        try capture(name, VStack(spacing: 0) {
+            ForEach(0..<12, id: \.self) { band in
+                Color(hue: Double(band) / 12, saturation: 0.7, brightness: 0.9)
+            }
+        })
+        let readmeImage = try XCTUnwrap(UIImage(contentsOfFile: readme.path)?.cgImage, "no README capture at \(readme.path)")
+        XCTAssertEqual([readmeImage.width, readmeImage.height], [786, 1704], "the README render stays 393 × 852 points at @2x")
+        let storeImage = try XCTUnwrap(UIImage(contentsOfFile: store.path)?.cgImage, "no store capture at \(store.path)")
+        XCTAssertEqual([storeImage.width, storeImage.height], [1290, 2796], "App Store Connect's 6.9-inch slot: 430 × 932 points at @3x")
+    }
+
     static let sampleTranscript: [(String, String)] = [
         ("es", "Good morning, thanks for joining us today."),
         ("es", "The first item is the quarterly report."),
