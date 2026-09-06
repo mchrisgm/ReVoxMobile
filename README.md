@@ -23,7 +23,7 @@ ReVox Mobile is the iPhone version of [ReVox](https://github.com/mchrisgm/ReVox)
 
 ## Why ReVox
 
-Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a call in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. Since milestone 8 it also talks back: with **Two-way** on, what you say is spoken to the other person in their language, and the language you speak is neither translated nor spoken back at you.
+Live translation usually means sending audio to a server. ReVox does not have one. Every model — the Silero voice detector, the Whisper model you choose, the optional pocket-tts voice — is downloaded once and then runs on the iPhone's own silicon, so a conversation across a table, a call in another app or a video you are watching is translated where it is heard. There is no account, no analytics and no telemetry; the only hosts ReVox ever contacts, and only while you start a download, are `huggingface.co` and its CDN. The [privacy policy](docs/privacy.md) says the same in full. Since milestone 8 it also talks back: with **Two-way** on, what you say is spoken to the other person in their language, and the language you speak is neither translated nor spoken back at you.
 
 ## What it looks like
 
@@ -317,6 +317,8 @@ Every session is stored on the iPhone (SwiftData, in the app's own container, ne
 - **TestFlight on every merge to `main`:** [`.github/workflows/testflight.yml`](.github/workflows/testflight.yml) runs the tests, archives, exports and uploads the build to App Store Connect (jobs `preflight` and `upload`). It also runs on a `v*` tag and on demand from the **Actions** tab, where you can choose the signing path. A macOS runner bills at ten times the minute rate, so this is affordable at milestone-sized merges and would not be at per-push frequency — the trigger is `main` only. Until the Apple secrets are configured the upload is skipped with a notice and the workflow stays green. [ADR-0008](docs/adr/0008-testflight-on-every-merge.md)
 - [docs/release.md](docs/release.md): one-time Apple setup, GitHub secrets, signing paths and troubleshooting for the repository owner.
 - [docs/testing.md](docs/testing.md): how to install and try the app through TestFlight, for testers.
+- [docs/privacy.md](docs/privacy.md): the privacy policy, which the About screen links to.
+- [docs/support.md](docs/support.md): how to report a problem and what to include.
 
 ## Testing
 
