@@ -90,6 +90,10 @@ final class LiveViewModel {
     @ObservationIgnored private var broadcastTask: Task<Void, Never>?
     @ObservationIgnored private var pipeline: (any LivePipeline)?
     @ObservationIgnored private let installedModels: @MainActor () -> [WhisperModelID]
+    /// Told when the pipeline reports that the installed voice detector would not load, so the Models screen's row
+    /// can say Failed and offer the Re-download the banner names (review R1). `AppEnvironment` wires it to
+    /// `ModelManager.markVADLoadFailed()`; a no-op by default, like the other seams.
+    @ObservationIgnored private let vadLoadFailed: @MainActor () -> Void
     @ObservationIgnored private var signature: PipelineSignature?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var lagTask: Task<Void, Never>?
@@ -99,13 +103,15 @@ final class LiveViewModel {
     init(settings: SettingsStore, mute: PlaybackMute, permission: MicrophonePermission = .live,
          modelReady: @escaping @MainActor (WhisperModelID) async -> Bool, supplier: @escaping PipelineSupplier,
          speakerStatus: SpeakerStatusRelay? = nil, broadcast: BroadcastCoordinator? = nil,
-         installedModels: @escaping @MainActor () -> [WhisperModelID] = { [] }) {
+         installedModels: @escaping @MainActor () -> [WhisperModelID] = { [] },
+         vadLoadFailed: @escaping @MainActor () -> Void = {}) {
         self.settings = settings
         self.mute = mute
         self.permission = permission
         self.modelReady = modelReady
         self.supplier = supplier
         self.installedModels = installedModels
+        self.vadLoadFailed = vadLoadFailed
         // `nil`, not `SpeakerStatusRelay()`: a default argument is evaluated in the caller's context, which
         // may be nonisolated, and the relay is main-actor isolated. Building it here — inside the isolated
         // init — keeps the convenience without the isolation violation.
@@ -308,6 +314,18 @@ final class LiveViewModel {
         await pipeline.start(Self.configuration(settings: effectiveSettings, captureMode: captureMode))
     }
 
+    /// The "No model installed" prompt is checked again when Live reappears (release S3): the download it asked
+    /// for, or the one the Models screen selected in its place, may have finished behind it. The check is the one
+    /// `start()` makes, so a model on disk without a verified load keeps the prompt, and a Start that came first
+    /// (it clears the banner itself) is left alone.
+    func refreshModelPrompt() async {
+        guard case .modelMissing = banner else { return }
+        let model = settings.settings.whisperModel
+        guard await modelReady(model), case .modelMissing = banner else { return }
+        banner = nil
+        modelReadyForStatus = true
+    }
+
     /// Reuses the cached pipeline when its signature still matches, otherwise builds one; a load failure goes to
     /// `recover(from:)` (§9 rows 1 and 4). Returns false when the run must not start.
     private func buildIfNeeded() async -> Bool {
@@ -341,6 +359,7 @@ final class LiveViewModel {
         switch error as? PipelineBuildError {
         case .vadLoadFailed:
             banner = .vadLoadFailed
+            vadLoadFailed()
             return false
         case .whisperLoadFailed(let failed, _):
             let untried = installedModels().filter { !attemptedModels.contains($0) }

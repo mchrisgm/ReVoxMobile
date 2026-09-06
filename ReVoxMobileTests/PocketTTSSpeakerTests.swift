@@ -77,12 +77,12 @@ final class PocketTTSSpeakerTests: XCTestCase {
         let fake = FakeEngine()
         let speaker = PocketTTSSpeaker(voice: "alba", engine: fake.engine)
         _ = try await speaker.synthesize("hi")
-        await speaker.setVoice("cosette")
+        await speaker.setVoice("javert")
         _ = try await speaker.synthesize("again")
-        XCTAssertEqual(fake.voices, ["cosette"], "setDefaultVoice forwarded once")
-        XCTAssertEqual(fake.synthesizedVoices, ["alba", "cosette"], "the next synthesis carries the new voice")
+        XCTAssertEqual(fake.voices, ["javert"], "setDefaultVoice forwarded once")
+        XCTAssertEqual(fake.synthesizedVoices, ["alba", "javert"], "the next synthesis carries the new voice")
         let voice = await speaker.voice
-        XCTAssertEqual(voice, "cosette")
+        XCTAssertEqual(voice, "javert")
     }
 
     func testOnlyOfferedVoicesAreEverSynthesised() async throws {

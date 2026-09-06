@@ -209,6 +209,37 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(model.modelStatusText, "No model")
     }
 
+    /// Release S3: the prompt clears when Live reappears with the selected model ready, whichever model that now
+    /// is; it stays while nothing is ready. Fails against the old view model, which had no refresh: the prompt
+    /// named small until the next Start even with base installed and selected behind it.
+    func testTheMissingModelPromptClearsOnReturnOnceTheSelectedModelIsReady() async {
+        let ready = LockedBox<Set<WhisperModelID>>([])
+        let pipelines = self.pipelines!
+        let model = LiveViewModel(settings: store, mute: PlaybackMute(), permission: .fixed(.granted),
+                                  modelReady: { ready.value.contains($0) },
+                                  supplier: { _, _ in
+                                      let pipeline = FakeLivePipeline()
+                                      pipelines.mutate { $0.append(pipeline) }
+                                      return pipeline
+                                  })
+        await model.start()
+        XCTAssertEqual(model.banner, .modelMissing(.small))
+        await model.refreshModelPrompt()
+        XCTAssertEqual(model.banner, .modelMissing(.small), "nothing is ready yet: the prompt stays")
+        XCTAssertEqual(model.modelStatusText, "No model")
+
+        ready.mutate { $0.insert(.base) }
+        store.update { $0.model = "base" }          // what the Models screen does when base finishes installing
+        await model.refreshModelPrompt()
+        XCTAssertNil(model.banner)
+        XCTAssertEqual(model.modelStatusText, "base · ready")
+        await model.refreshModelPrompt()
+        XCTAssertNil(model.banner, "nothing to do without the prompt")
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(pipelines.value.count, 1)
+    }
+
     func testMuteForwardsToThePipelineAndIsAppliedOnStart() async {
         let model = makeModel()
         await model.setMuted(true)
@@ -504,7 +535,8 @@ final class LiveViewModelTests: XCTestCase {
     /// One element per build attempt, consumed front to back: an error fails that build, `nil` lets it succeed, and
     /// once the list is empty every further build succeeds.
     private func makeRecoveringModel(failures: [Error?],
-                                     installed: [WhisperModelID] = [.tiny, .base, .small]) -> (LiveViewModel, LockedBox<[Settings]>) {
+                                     installed: [WhisperModelID] = [.tiny, .base, .small],
+                                     vadLoadFailed: @escaping @MainActor () -> Void = {}) -> (LiveViewModel, LockedBox<[Settings]>) {
         let pipelines = self.pipelines!
         let received = LockedBox<[Settings]>([])
         let remaining = LockedBox<[Error?]>(failures)
@@ -520,7 +552,8 @@ final class LiveViewModelTests: XCTestCase {
                 pipelines.mutate { $0.append(pipeline) }
                 return pipeline
             },
-            installedModels: { installed }
+            installedModels: { installed },
+            vadLoadFailed: vadLoadFailed
         )
         return (model, received)
     }
@@ -634,6 +667,26 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(received.value.count, 1)
         XCTAssertEqual(model.banner, .vadLoadFailed)
         XCTAssertEqual(LiveBanner.vadLoadFailedText, "Voice detector failed to load. Re-download it in Models.")
+    }
+
+    /// Review R1: the banner says "Re-download it in Models", so the manager's row has to say Failed for that
+    /// button to exist. Fails against the old view model, which had no seam: the count stays at zero.
+    func testVADLoadFailureTellsTheSeamOnceAndAWhisperFailureDoesNot() async {
+        var marked = 0
+        let (model, _) = makeRecoveringModel(failures: [PipelineBuildError.vadLoadFailed("MLModel compile failed")],
+                                             vadLoadFailed: { marked += 1 })
+        await model.start()
+        await waitUntil("idle again") { model.state == .idle }
+        XCTAssertEqual(model.banner, .vadLoadFailed)
+        XCTAssertEqual(marked, 1)
+
+        store.update { $0.model = "tiny" }
+        let (whisper, _) = makeRecoveringModel(failures: [PipelineBuildError.whisperLoadFailed(model: .tiny, reason: "missing files")],
+                                               installed: [.tiny], vadLoadFailed: { marked += 1 })
+        await whisper.start()
+        await waitUntil("idle again") { whisper.state == .idle }
+        XCTAssertEqual(whisper.banner, .modelLoadFailed(.tiny))
+        XCTAssertEqual(marked, 1, "a Whisper failure is the row's own affair")
     }
 
     func testANonBuildErrorKeepsTheGenericBanner() async {

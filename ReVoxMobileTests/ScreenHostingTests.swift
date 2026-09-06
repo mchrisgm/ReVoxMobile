@@ -105,6 +105,42 @@ final class ScreenHostingTests: XCTestCase {
         host(List { ModelRowView(row: warned, onDownload: {}, onCancel: {}, onSelect: {}) })
     }
 
+    /// Release S3: the Voice detector row hosts with its Re-download button (a failed install, and a Whisper model
+    /// on disk without the VAD) and without it (installed, idle with nothing installed). SwiftUI exposes no button
+    /// to a unit test, so the flag the view switches on is asserted beside each host, and the real Models screen
+    /// is hosted over a layout that puts a model on disk without the VAD.
+    func testVADRowViewHostsWithAndWithoutTheRedownloadButton() throws {
+        let expected = ModelCatalog.download(for: .vad).expectedBytes
+        let failed = VADRow(name: ModelsViewModel.vadName, sizeText: "≈ 1 MB",
+                            state: ModelDownloadState(phase: .failed("The Internet connection appears to be offline."), fraction: nil, bytesExpected: expected),
+                            noticeText: nil, showsRedownload: true)
+        XCTAssertTrue(failed.showsRedownload)
+        host(List { VADRowView(row: failed, onRedownload: {}) })
+        host(List { VADRowView(row: failed, onRedownload: {}) }.environment(\.dynamicTypeSize, .accessibility5))
+
+        let installed = VADRow(name: ModelsViewModel.vadName, sizeText: "under 1 MB",
+                               state: ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: expected),
+                               noticeText: ModelManager.upstreamChangedText)
+        XCTAssertFalse(installed.showsRedownload, "the default: the memberwise sites before S3 show no button")
+        host(List { VADRowView(row: installed) })
+
+        host(NavigationStack { ModelsView(model: makeModelsViewModel()) })                    // nothing installed: no button
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModelsViewModel()
+        XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        // Review R1: this row's button reads Download, with a hint that is not the label again, and its caption no
+        // longer claims an automatic install; the failed row above keeps Re-download and the original caption.
+        XCTAssertEqual(VADRowView.buttonText(for: withoutVAD.vadRow.state.phase).title, "Download")
+        XCTAssertEqual(VADRowView.buttonText(for: withoutVAD.vadRow.state.phase).hint, "About 1 MB")
+        XCTAssertEqual(VADRowView.caption(for: withoutVAD.vadRow), VADRowView.missingCaption)
+        XCTAssertEqual(VADRowView.buttonText(for: failed.state.phase).title, "Re-download")
+        XCTAssertEqual(VADRowView.caption(for: failed), VADRowView.installedCaption)
+        host(List { VADRowView(row: withoutVAD.vadRow, onRedownload: {}) })                  // the Download row on its own
+        host(NavigationStack { ModelsView(model: withoutVAD) })                              // the button on the real screen
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        XCTAssertFalse(makeModelsViewModel().vadRow.showsRedownload)
+    }
+
     /// M10 HIG audit: every row lays out at the largest accessibility text size, where the transcript row switches
     /// to its stacked layout and the History row's second line wraps as one paragraph.
     func testRowsHostAtTheLargestAccessibilitySize() throws {
@@ -354,7 +390,12 @@ final class ScreenHostingTests: XCTestCase {
     }
 
     func testAboutViewHosts() {
-        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "1.0.0", buildNumber: "42")) })
+        // Four project links since the privacy policy landed (Privacy policy, Support, Windows, Platform limitations) plus the
+        // "Read the privacy policy" row under the privacy paragraph: the screen must still lay out at the largest accessibility size.
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "1.0.0", buildNumber: "42")) }.environment(\.dynamicTypeSize, .accessibility5))
+        XCTAssertEqual(AboutInfo.privacyPolicyURL.host(), "github.com", "the About screen links to the policy in this repository")
+        XCTAssertEqual(AboutInfo.supportURL.host(), "github.com", "and to its issue tracker")
     }
 
     func testBroadcastPickerButtonHosts() {

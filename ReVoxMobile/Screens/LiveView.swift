@@ -195,6 +195,11 @@ struct LiveView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+            // Fires again when the Models screen pops or the tab comes back: the prompt asks about the model
+            // again rather than waiting for the next Start (release S3). And when the selection changes under
+            // it (review R1): the Models screen selects a finished download while this prompt sits beneath it.
+            .onAppear { Task { await model.refreshModelPrompt() } }
+            .onChange(of: models.selectedModel) { _, _ in Task { await model.refreshModelPrompt() } }
         } else if model.rows.isEmpty && model.state == .idle {
             ContentUnavailableView("Ready to translate", systemImage: "waveform.and.mic",
                                    description: Text(model.captureMode == .broadcast ? Self.broadcastEmptyStateText : "Choose a source and tap Start."))
@@ -292,7 +297,7 @@ struct LiveView: View {
     static let preparingText = "Getting the model ready…"
     static let twoWayHintText = "Speaks what you say to the other person in their language"
     static let microphoneDescription = "Translates what this iPhone's microphone hears."
-    static let broadcastDescription = "Translates a call, a video or anything else playing on this iPhone."
+    static let broadcastDescription = "Translates a video, a podcast or another app playing on this iPhone. Some apps do not share their audio."
 
     static func title(for mode: CaptureMode) -> String {
         switch mode {

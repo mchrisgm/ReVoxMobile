@@ -219,11 +219,16 @@ final class BroadcastCaptureTests: XCTestCase {
         try await capture.start(.broadcast)
         let event4 = await nextEvent(&events)
         XCTAssertEqual(event4, .attached(generation: 1, joinedInProgress: false))
+        var annotated = try XCTUnwrap(records.readBroadcastState())
+        annotated.annotatedBundleID = "com.example.player"    // the extension annotated an app, then was killed
+        records.write(annotated)
         now.mutate { $0 = 1_005 }                              // 5 s without a heartbeat
         let event5 = await nextEvent(&events)
         XCTAssertEqual(event5, .stale(lastWriteAt: 1_000))
         XCTAssertEqual(capture.attachState, .stale(lastWriteAt: 1_000))
-        XCTAssertEqual(records.readBroadcastState()?.state, .lost)
+        let lost = try XCTUnwrap(records.readBroadcastState())
+        XCTAssertEqual(lost.state, .lost)
+        XCTAssertNil(lost.annotatedBundleID, "cleared on the lost path too (security review finding 18)")
         await capture.stop()
     }
 

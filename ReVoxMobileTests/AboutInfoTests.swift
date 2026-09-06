@@ -4,7 +4,7 @@ import ReVoxCore
 
 final class AboutInfoTests: XCTestCase {
     func testVersionTextAndDefaults() {
-        XCTAssertEqual(AboutInfo(infoDictionary: ["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "42"]).versionText, "0.1.0 (42)")
+        XCTAssertEqual(AboutInfo(infoDictionary: ["CFBundleShortVersionString": "1.0.0", "CFBundleVersion": "42"]).versionText, "1.0.0 (42)")
         XCTAssertEqual(AboutInfo(infoDictionary: [:]).versionText, "0 (0)")
         XCTAssertEqual(AboutInfo(marketingVersion: "1.2.3", buildNumber: "7").versionText, "1.2.3 (7)")
     }
@@ -16,7 +16,7 @@ final class AboutInfoTests: XCTestCase {
     }
 
     func testLicencesAreTheFiveCatalogNoticesInOrder() {
-        let info = AboutInfo(marketingVersion: "0.1.0", buildNumber: "1")
+        let info = AboutInfo(marketingVersion: "1.0.0", buildNumber: "1")
         XCTAssertEqual(info.licences.map(\.name), ["WhisperKit", "FluidAudio", "pocket-tts Core ML weights", "Silero VAD", "Whisper weights (OpenAI)"])
         XCTAssertEqual(info.licences.map(\.licence), ["MIT", "Apache-2.0", "CC-BY-4.0", "MIT", "MIT"])
         XCTAssertEqual(info.licences.map(\.url.absoluteString), [
@@ -29,9 +29,9 @@ final class AboutInfoTests: XCTestCase {
     }
 
     func testKyutaiAttributionComesFromTheCatalog() {
-        let info = AboutInfo(marketingVersion: "0.1.0", buildNumber: "1")
-        XCTAssertEqual(info.pocketTTSAttributionText, "pocket-tts voices: pocket-tts by Kyutai (https://kyutai.org), Core ML weights under CC-BY-4.0.")
-        XCTAssertEqual(ModelCatalog.licences.first { $0.id == AboutInfo.pocketTTSLicenceID }?.attribution, "pocket-tts by Kyutai (https://kyutai.org)")
+        let info = AboutInfo(marketingVersion: "1.0.0", buildNumber: "1")
+        XCTAssertEqual(info.pocketTTSAttributionText, "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices. Core ML weights under CC-BY-4.0.")
+        XCTAssertEqual(ModelCatalog.licences.first { $0.id == AboutInfo.pocketTTSLicenceID }?.attribution, "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices.")
     }
 
     func testStaticTexts() {
@@ -40,5 +40,16 @@ final class AboutInfoTests: XCTestCase {
         XCTAssertTrue(AboutInfo.privacyText.contains("never uses the network"))
         XCTAssertEqual(AboutInfo.windowsProjectURL.absoluteString, "https://github.com/mchrisgm/ReVox")
         XCTAssertEqual(AboutInfo.platformLimitationsURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile#platform-limitations")
+    }
+
+    /// The Privacy policy and Support links the About screen gained with the policy. Neither static existed before,
+    /// so this test did not compile against the earlier About screen.
+    func testPrivacyPolicyAndSupportLinksPointAtTheRepository() {
+        XCTAssertEqual(AboutInfo.privacyPolicyURL.host(), "github.com")
+        XCTAssertTrue(AboutInfo.privacyPolicyURL.path().hasSuffix("docs/privacy.md"), AboutInfo.privacyPolicyURL.absoluteString)
+        XCTAssertEqual(AboutInfo.privacyPolicyURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile/blob/main/docs/privacy.md")
+        XCTAssertEqual(AboutInfo.supportURL.host(), "github.com")
+        XCTAssertTrue(AboutInfo.supportURL.path().hasSuffix("/issues"), AboutInfo.supportURL.absoluteString)
+        XCTAssertEqual(AboutInfo.supportURL.absoluteString, "https://github.com/mchrisgm/ReVoxMobile/issues")
     }
 }

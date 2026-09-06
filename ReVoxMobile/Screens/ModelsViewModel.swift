@@ -48,6 +48,30 @@ final class ModelsViewModel {
             guard let self, let replacement else { return }   // none left: the setting stays; Live shows "No model"
             self.settings.update { $0.model = replacement.rawValue }
         }
+        manager.onWhisperInstalled = { [weak self] installed in
+            self?.whisperInstalled(installed)
+        }
+    }
+
+    /// A finished download becomes the selection when the selected model is not installed; a selection that is
+    /// on disk is never overridden (release S3). The selection defaults to small, so without this a user who
+    /// downloaded the base model recommended for a 3 GB iPhone came back to Live and still read "No model
+    /// installed", with the only installed model one tap away and nothing saying so.
+    ///
+    /// Review R1: while the selected model's own download is in flight or paused, the selection is left alone, so
+    /// the model the user chose wins when it finishes rather than the one that happened to finish first.
+    func whisperInstalled(_ installed: WhisperModelID) {
+        guard !manager.installedWhisper.contains(selectedModel) else { return }
+        guard !Self.selectionIsPending(phase: manager.state(for: .whisper(selectedModel)).phase) else { return }
+        settings.update { $0.model = installed.rawValue }
+    }
+
+    /// True while the selected model's row is on its way to installed: in flight, or paused to resume by itself.
+    static func selectionIsPending(phase: ModelDownloadPhase) -> Bool {
+        switch phase {
+        case .listing, .downloading, .compiling, .verifying, .paused: return true
+        case .idle, .installed, .failed: return false
+        }
     }
 
     // MARK: Rows
@@ -119,7 +143,19 @@ final class ModelsViewModel {
         return VADRow(name: Self.vadName,
                       sizeText: Self.rowSizeText(catalogBytes: ModelCatalog.vad.approximateBytes, state: state, measuredBytes: manager.storage.bytes(for: .vad)),
                       state: state,
-                      noticeText: manager.upstreamChangeText(for: .vad))
+                      noticeText: manager.upstreamChangeText(for: .vad),
+                      showsRedownload: Self.vadOffersRedownload(phase: state.phase, whisperInstalled: !manager.installedWhisper.isEmpty))
+    }
+
+    /// Release S3: a failed VAD install, or a Whisper model on disk without the VAD (its automatic install was
+    /// cancelled or never ran), is the dead end Live's "Re-download it in Models" banner sends the user into.
+    /// A row in flight offers nothing, and a paused row resumes by itself when the app becomes active.
+    static func vadOffersRedownload(phase: ModelDownloadPhase, whisperInstalled: Bool) -> Bool {
+        switch phase {
+        case .failed: return true
+        case .idle: return whisperInstalled
+        case .listing, .downloading, .compiling, .verifying, .installed, .paused: return false
+        }
     }
 
     var canDelete: Bool { !isPipelineRunning() && !isBenchmarkRunning() }
@@ -137,10 +173,15 @@ final class ModelsViewModel {
 
     // MARK: Actions
 
+    /// The "Can't download now" message: the benchmark's refusal when one runs, else the running session's.
+    private var downloadRefusalText: String {
+        isBenchmarkRunning() ? Self.finishBenchmarkText : Self.stopToDownloadText
+    }
+
     func download(_ id: WhisperModelID) {
         lowStorageWarning = nil
         guard canDownload else {
-            downloadRefusedAlert = isBenchmarkRunning() ? Self.finishBenchmarkText : Self.stopToDownloadText
+            downloadRefusedAlert = downloadRefusalText
             return
         }
         switch manager.freeSpaceVerdict(for: .whisper(id)) {
@@ -159,6 +200,26 @@ final class ModelsViewModel {
     func cancel(_ id: WhisperModelID) {
         awaitingUserResult.remove(id)
         manager.cancel(.whisper(id))
+    }
+
+    /// The VAD row's Re-download (release S3): the refusals `download(_:)` makes, then a standalone `.vad`
+    /// install (`ModelManager.runInstall` pulls nothing else for that kind) over deleted files, so a bundle that
+    /// is on disk but would not load is replaced (review R1). A failure stays on the row, which is where the
+    /// button sits; the alert is for the Whisper rows a user may have left.
+    func redownloadVAD() {
+        guard canDownload else {
+            downloadRefusedAlert = downloadRefusalText
+            return
+        }
+        if case .refuse(let message) = manager.freeSpaceVerdict(for: .vad) {
+            lowStorageAlert = message
+            return
+        }
+        do {
+            try manager.reinstallVAD()
+        } catch {
+            downloadRefusedAlert = Self.stopToDownloadText   // the pipeline started between the guard and the call
+        }
     }
 
     func select(_ id: WhisperModelID) {

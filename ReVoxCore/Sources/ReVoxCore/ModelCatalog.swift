@@ -51,7 +51,7 @@ public struct PocketTTSDescriptor: Sendable, Equatable {
     public let repo: String                       // "FluidInference/pocket-tts-coreml"
     public let languageFolder: String             // "v2.1/english"
     public let approximateBytes: Int64            // ≈ 527_300_000 (ANE placement, fp16, all 26 voices)
-    public let offeredVoices: [String]            // ["alba", "azelma", "cosette", "javert"]
+    public let offeredVoices: [String]            // ["alba", "azelma", "javert"]
 }
 
 public struct LicenceNotice: Sendable, Equatable, Identifiable {
@@ -116,7 +116,7 @@ public enum ModelCatalog {
     public static let pocketTTS = PocketTTSDescriptor(repo: "FluidInference/pocket-tts-coreml",
                                                       languageFolder: "v2.1/english",
                                                       approximateBytes: 527_300_000,
-                                                      offeredVoices: ["alba", "azelma", "cosette", "javert"])
+                                                      offeredVoices: ["alba", "azelma", "javert"])
 
     public static let licences: [LicenceNotice] = [
         LicenceNotice(id: "whisperkit", name: "WhisperKit", licence: "MIT",
@@ -125,7 +125,7 @@ public enum ModelCatalog {
                       url: URL(string: "https://github.com/FluidInference/FluidAudio")!, attribution: nil),
         LicenceNotice(id: "pocket-tts", name: "pocket-tts Core ML weights", licence: "CC-BY-4.0",
                       url: URL(string: "https://huggingface.co/FluidInference/pocket-tts-coreml")!,
-                      attribution: "pocket-tts by Kyutai (https://kyutai.org)"),
+                      attribution: "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices."),
         LicenceNotice(id: "silero-vad", name: "Silero VAD", licence: "MIT",
                       url: URL(string: "https://github.com/snakers4/silero-vad")!, attribution: nil),
         LicenceNotice(id: "whisper", name: "Whisper weights (OpenAI)", licence: "MIT",

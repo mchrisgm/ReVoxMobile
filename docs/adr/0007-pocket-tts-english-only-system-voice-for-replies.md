@@ -6,11 +6,11 @@ Accepted
 
 ## Date
 
-Rulings R6 and R7 in the design spec of 2026-09-02; the reply routing added in milestone 8 (2026-09-04); recorded 2026-09-04. Milestone 11 (2026-09-05) renamed the picker to **They speak**; the decision is unchanged.
+Rulings R6 and R7 in the design spec of 2026-09-02; the reply routing added in milestone 8 (2026-09-04); recorded 2026-09-04. Milestone 11 (2026-09-05) renamed the picker to **They speak**; the decision is unchanged. The 1.0.0 release (2026-09-06) dropped cosette from the offered voices because its source clip is licensed CC BY-NC 4.0 ([docs/model-revisions.md](../model-revisions.md)); the decision is unchanged.
 
 ## Context
 
-ReVox's own voice is Kyutai's pocket-tts, run through FluidAudio with `language: .english`; the four offered voices (alba, azelma, cosette, javert) are English voices, and extra pocket-tts languages are a v1 non-goal. Until pocket-tts is downloaded — about 527 MB — and whenever it fails to load or to speak, ReVox uses `AVSpeechSynthesizer`, the iPhone's own voice, which needs no download. With two-way conversation ([ADR-0006](0006-whisper-translate-is-english-only.md)) ReVox also has to speak phrases that are *not* English.
+ReVox's own voice is Kyutai's pocket-tts, run through FluidAudio with `language: .english`; the three offered voices (alba, azelma, javert) are English voices, and extra pocket-tts languages are a v1 non-goal. Until pocket-tts is downloaded — about 527 MB — and whenever it fails to load or to speak, ReVox uses `AVSpeechSynthesizer`, the iPhone's own voice, which needs no download. With two-way conversation ([ADR-0006](0006-whisper-translate-is-english-only.md)) ReVox also has to speak phrases that are *not* English.
 
 ## Decision
 
@@ -21,7 +21,7 @@ ReVox's own voice is Kyutai's pocket-tts, run through FluidAudio with `language:
 ## Consequences
 
 - No download is required to hear ReVox at all; pocket-tts is an upgrade for the English direction.
-- ReVox never selects pocket-tts unless its installed check passes (`bos_before_voice.bin` plus every offered voice file), because pocket-tts has fetch paths that bypass `ModelHub.offlineMode`; only the four offered voices are ever synthesised, so no request is issued after install (airplane-mode row, `pending device measurement`).
+- ReVox never selects pocket-tts unless its installed check passes (`bos_before_voice.bin` plus every offered voice file), because pocket-tts has fetch paths that bypass `ModelHub.offlineMode`; only the three offered voices are ever synthesised, so no request is issued after install (airplane-mode row, `pending device measurement`).
 - The pocket-tts gain (`0.7`) is calibrated against the system voice at the same volume so switching engines does not change loudness; the value is an M4 measurement row.
 
 ## Sources

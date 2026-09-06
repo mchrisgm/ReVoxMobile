@@ -16,6 +16,10 @@ struct AboutView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(AboutInfo.appName), version \(info.versionText)")
                 Text(AboutInfo.privacyText).font(.body)
+                Link(destination: AboutInfo.privacyPolicyURL) {
+                    Label("Read the privacy policy", systemImage: "hand.raised").frame(minHeight: 44)
+                }
+                .accessibilityHint("Opens the privacy policy in Safari")
             } header: {
                 Text("On-device translation")
             }
@@ -51,6 +55,14 @@ struct AboutView: View {
             }
 
             Section("Links") {
+                Link(destination: AboutInfo.privacyPolicyURL) {
+                    Label("Privacy policy", systemImage: "hand.raised").frame(minHeight: 44)
+                }
+                .accessibilityHint("Opens the privacy policy in Safari")
+                Link(destination: AboutInfo.supportURL) {
+                    Label("Support", systemImage: "questionmark.circle").frame(minHeight: 44)
+                }
+                .accessibilityHint("Opens the issue tracker in Safari")
                 Link(destination: AboutInfo.windowsProjectURL) {
                     Label("ReVox for Windows", systemImage: "desktopcomputer").frame(minHeight: 44)
                 }

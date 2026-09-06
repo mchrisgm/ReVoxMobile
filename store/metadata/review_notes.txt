@@ -1,0 +1,29 @@
+ReVox translates speech into English entirely on the device: no account, no server, no analytics. The only network use is the one-time model download the tester starts from the Models screen (huggingface.co and the hosts it redirects to); after it the app makes no requests. ITSAppUsesNonExemptEncryption is false. A physical iPhone is needed (iOS 17 or later; iOS 18 for the Two-way reply).
+
+SETUP (once, on Wi-Fi)
+1. Open ReVox and tap Skip on the tutorial.
+2. Settings > Models > Download next to "small" (about 487 MB). Keep the app in the foreground until the row says Installed.
+
+MICROPHONE PATH
+1. On Live, tap Start and allow the microphone. The first load compiles the model and takes longer.
+2. Speak a full sentence in Spanish, French or German, or play non-English speech from a laptop beside the iPhone (a single word may be too short to detect the language). After a short pause the English appears with a language badge and is spoken aloud. A phrase ReVox is unsure about is greyed, marked Unsure and not spoken; that is intended.
+3. Lock the phone or switch apps and keep speaking: translation and speech continue.
+4. Tap Stop. The session is saved under History.
+The microphone is on only between Start and Stop in Mic mode.
+
+BROADCAST PATH ("Other apps")
+You need another app playing non-English speech (a podcast, for example). Not every player is captured: Safari, Music and some video players deliver silence to iOS broadcasts, and phone or FaceTime call audio is never available to one; iOS behaviour, not a defect. If ReVox shows "No audio from the app (some players are not captured)", try a different app.
+1. On Live, tap the Mic pill, choose "Other apps", tap Start. A round broadcast button appears.
+2. Tap it. The system sheet opens with ReVox selected (the microphone toggle is hidden: the extension ignores the microphone). Tap Start Broadcast; after the countdown a red indicator appears in the status bar.
+3. Switch to the other app and play the speech. The English appears in ReVox and is spoken over the other app's audio, which iOS lowers while ReVox speaks. Translation continues in the background. Pressing the side button ends the broadcast (iOS behaviour).
+4. End the broadcast from the red indicator or Control Center's Screen Recording control. Stop in ReVox only stops translating; it cannot end the broadcast.
+
+UIBackgroundModes "audio" (Guideline 2.5.4)
+The background activity is audio: in Mic mode the app records through the microphone and plays the translated English; in Other apps mode it plays the English while the user-started broadcast supplies the audio. The session is playAndRecord (Mic) or playback (Other apps), both with mixWithOthers so other apps keep playing; duckOthers is applied only while ReVox speaks. Without it a session would end when the phone locks or the user opens the app they are listening to; the app does no other background work.
+
+REPLAYKIT BROADCAST UPLOAD EXTENSION
+iOS offers no other way to hear another app's audio. The extension (com.apple.broadcast-services-upload, ReVoxBroadcast) ignores the video and microphone buffers and writes the app audio to a 60-second rolling buffer in an App Group file, overwritten continuously and zeroed when a broadcast starts and ends. Its only other write is a small App Group status record: state, timestamps, the source audio format and, while a broadcast is live, the bundle id of the app being broadcast, cleared when the broadcast ends or is lost. It holds no model and never uses the network; screen contents are never saved, analysed or displayed.
+
+TWO-WAY (optional): turn on Two-way in the Languages row, set You speak and They speak, and speak: your phrase is spoken to them in their language through Apple's on-device Translation framework (iOS 18; iOS may offer a language-pack download). On iOS 17 it is transcribed, not spoken, and the screen says so.
+
+Source (MIT) and privacy policy (docs/privacy.md): https://github.com/mchrisgm/ReVoxMobile

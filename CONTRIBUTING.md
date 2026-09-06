@@ -57,7 +57,13 @@ Every gate is a script you can run from the repository root. They are grouped by
 | `python3 scripts/ci/check-plists.py` | An incomplete or inconsistent Info.plist, privacy manifest or entitlements file in either target (spec §11, C7). | `source-checks`, `ios-simulator` |
 | `python3 scripts/ci/check-package-resolved.py` | A resolved package graph that differs from the committed `Package.resolved` — a pin that drifted (spec E1). | `ios-simulator`, TestFlight |
 
-The remaining scripts in `scripts/ci` are CI plumbing rather than gates: `select-xcode.sh`, `pick-simulator.sh`, `install-package-resolved.sh` and `collect-screenshots.sh` (which copies the README's screenshots out of the simulator; [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md)).
+### `scripts/store`: the App Store listing (job `source-checks`)
+
+| Script | What it catches | Where |
+|---|---|---|
+| `python3 scripts/store/check-metadata.py` | A listing field under `store/metadata` over App Store Connect's limit (name and subtitle 30 characters, promotional text 170, keywords 100, description, release notes and review notes 4000), a keyword that repeats a word of the name or subtitle or sits next to a space, a file that does not end in exactly one newline, or an em-dash or an AI vendor name anywhere in the listing. | `source-checks` |
+
+The remaining scripts in `scripts/ci` are CI plumbing rather than gates: `select-xcode.sh`, `pick-simulator.sh`, `install-package-resolved.sh` and `collect-screenshots.sh` (which copies the README's screenshots and the App Store size captures out of the simulator; [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md), [docs/store/README.md](docs/store/README.md)).
 
 Run the whole Linux-side set before pushing:
 
@@ -71,6 +77,7 @@ python3 scripts/dev/check-test-autoclosures.py
 python3 scripts/dev/check-tests-are-discoverable.py
 python3 scripts/ci/check-broadcast-bridge-doc.py
 python3 scripts/ci/check-plists.py
+python3 scripts/store/check-metadata.py
 ```
 
 ## Tests

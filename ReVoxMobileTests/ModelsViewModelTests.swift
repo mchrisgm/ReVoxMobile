@@ -9,6 +9,8 @@ final class ModelsViewModelTests: XCTestCase {
     private var steps: FakeInstallSteps!
     private var host: FakeInstallHost!
     private var store: SettingsStore!
+    /// The manager behind the last `makeModel()`, for the tests that drive it directly (release S3).
+    private var manager: ModelManager!
     private var pipelineRunning = false
     private var benchmarkRunning = false
 
@@ -34,6 +36,7 @@ final class ModelsViewModelTests: XCTestCase {
                                        verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxModelsVM-\(UUID().uuidString)")!))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                    availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
+        self.manager = manager
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: memoryGiB * 1_073_741_824),
                                isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                benchmarks: benchmarks, isBenchmarkRunning: { [unowned self] in self.benchmarkRunning })
@@ -123,6 +126,198 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(model.selectedModel, .base)
         model.select(.medium)
         XCTAssertEqual(store.settings.model, "base", "not installed → ignored")
+    }
+
+    // MARK: Release S3: a first download becomes the selection
+
+    /// Fails against the old view model: the selection stayed at the default small, which was never downloaded,
+    /// so Live kept reading "No model installed" beside the only model on the iPhone.
+    func testAFinishedDownloadIsSelectedWhenTheSelectedModelIsNotInstalled() async {
+        let model = makeModel(memoryGiB: 3)                 // recommends base; the selection still defaults to small
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.base])
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .idle, "small is selected but not on disk")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+        XCTAssertEqual(model.selectedModel, .base)
+        XCTAssertTrue(model.rows[1].isSelected)
+        XCTAssertFalse(model.rows[2].isSelected)
+    }
+
+    /// Review R1: two downloads, the selected one (small) finishes second. The fake holds every download at once,
+    /// so base's finish is delivered by hand through the manager's callback while small's row is still in flight;
+    /// against the old view model that call adopted base, and small's own finish then left base in place.
+    func testTheSelectedModelsOwnDownloadWinsOverOneThatFinishesFirst() async {
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        steps.holdDownloads = true
+        model.download(.small)
+        await waitUntil("small in flight") { model.rows[2].state.phase.isActive }
+        model.download(.base)
+        await waitUntil("base in flight") { model.rows[1].state.phase.isActive }
+
+        manager.onWhisperInstalled?(.base)                  // base finished first
+        XCTAssertEqual(store.settings.model, "small", "the selected model's own download is still in flight")
+        XCTAssertTrue(model.rows[2].isSelected)
+
+        steps.holdDownloads = false
+        await waitUntil("both installed") { model.rows[1].state.phase == .installed && model.rows[2].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "the user's choice, now installed, is the selection")
+        XCTAssertTrue(model.rows[2].isSelected)
+        XCTAssertFalse(model.rows[1].isSelected)
+
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .paused] {
+            XCTAssertTrue(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): on its way")
+        }
+        for phase in [ModelDownloadPhase.idle, .installed, .failed("boom")] {
+            XCTAssertFalse(ModelsViewModel.selectionIsPending(phase: phase), "\(phase): not coming, so a finished model is adopted")
+        }
+    }
+
+    /// The guard half of the rule; it passes against the old code too and keeps the rule from growing.
+    func testAFinishedDownloadNeverOverridesAnInstalledSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .installed)
+        model.download(.tiny)
+        await waitUntil("tiny installed") { model.rows[0].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "small is installed and selected, so tiny is not adopted")
+        XCTAssertFalse(model.rows[0].isSelected)
+        XCTAssertTrue(model.rows[2].isSelected)
+    }
+
+    /// After the last model was deleted the setting keeps naming it (Live shows the prompt); the next download
+    /// is then the only model on disk and becomes the selection.
+    func testTheNextDownloadAfterTheLastDeleteBecomesTheSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        let model = makeModel()
+        model.select(.tiny)
+        try model.delete(.tiny)
+        XCTAssertEqual(store.settings.model, "tiny", "nothing installed: the setting stays")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+    }
+
+    func testWhisperInstalledAppliesTheRuleDirectly() throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let model = makeModel()
+        model.whisperInstalled(.base)
+        XCTAssertEqual(store.settings.model, "base", "the default small is not installed, so base is adopted")
+        model.whisperInstalled(.tiny)
+        XCTAssertEqual(store.settings.model, "base", "base is installed and selected: left alone")
+    }
+
+    // MARK: Release S3: Re-download for the voice detector
+
+    /// Fails against the old view model, which had no `redownloadVAD()` and no `showsRedownload`: the failed VAD
+    /// row offered nothing, though Live's banner sent the user here to re-download it.
+    func testRedownloadVADStartsAStandaloneVADInstallFromAFailedRow() async {
+        let model = makeModel()
+        steps.failVADOnce = true
+        manager.install(.vad)
+        await waitUntil("failed VAD row", details: { "vad \(model.vadRow.state.phase)" }) { if case .failed = model.vadRow.state.phase { return true } else { return false } }
+        XCTAssertTrue(model.vadRow.showsRedownload)
+        XCTAssertEqual(steps.vadDownloads, 1)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertNil(model.lowStorageAlert)
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 2)
+        XCTAssertEqual(steps.variantDownloads, [], "the VAD installs on its own: no Whisper model is pulled with it")
+        XCTAssertFalse(model.vadRow.showsRedownload, "installed: the button goes")
+        XCTAssertNil(model.footerText)
+    }
+
+    /// Review R1: the case Live's banner names, an installed voice detector that fails to load. Fails against the
+    /// old code: the row stayed Installed, which offers nothing, and a Re-download would have been skipped as
+    /// already installed.
+    func testAVADThatWouldNotLoadOffersRedownloadWhichReplacesTheFiles() async throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.vadRow.state.phase, .installed)
+        XCTAssertFalse(model.vadRow.showsRedownload)
+
+        manager.markVADLoadFailed()                         // what LiveViewModel's seam does on .vadLoadFailed
+        XCTAssertEqual(model.vadRow.state.phase, .failed(ModelManager.vadLoadFailedText))
+        XCTAssertTrue(model.vadRow.showsRedownload)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertEqual(steps.vadDeletes, 1, "the files on disk go first")
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 1, "and the download happened rather than being skipped")
+        XCTAssertFalse(model.vadRow.showsRedownload)
+    }
+
+    func testRedownloadVADIsRefusedWhileASessionOrABenchmarkRuns() async {
+        let model = makeModel()
+        pipelineRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.stopToDownloadText)
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+
+        benchmarkRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.finishBenchmarkText)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.vadDownloads, 0)
+        XCTAssertEqual(model.vadRow.state.phase, .idle)
+
+        benchmarkRunning = false
+        let noRoom = makeModel(availableBytes: 100_000)
+        noRoom.redownloadVAD()
+        XCTAssertNotNil(noRoom.lowStorageAlert, "the free-space refusal alerts like a Whisper download's")
+        XCTAssertEqual(noRoom.vadRow.state.phase, .idle)
+    }
+
+    func testVADRowOffersRedownloadOnlyBesideAnInstalledModelOrAfterAFailure() throws {
+        XCTAssertFalse(makeModel().vadRow.showsRedownload, "nothing installed: the first model brings the VAD with it")
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel()
+        XCTAssertEqual(withoutVAD.vadRow.state.phase, .idle)
+        XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        XCTAssertFalse(makeModel().vadRow.showsRedownload)
+
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .failed("boom"), whisperInstalled: false), "a failure offers it on its own")
+        XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: false))
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: true))
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .installed, .paused] {
+            XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: phase, whisperInstalled: true), "\(phase): in flight, installed or resuming by itself")
+        }
+        XCTAssertEqual(VADRowView.redownloadTitle, "Re-download")
+        XCTAssertEqual(VADRowView.redownloadAccessibilityLabel, "Re-download voice detector")
+        XCTAssertEqual(VADRowView.redownloadHint, "Replaces the copy on this iPhone, about 1 MB")
+    }
+
+    /// Review R1: the idle row beside an installed Whisper model has nothing to download again, so its button
+    /// reads Download, and its caption stops claiming an automatic install that never finished. Fails against the
+    /// old view, which had one title, a hint that restated it and one caption.
+    func testVADRowButtonAndCaptionFollowThePhase() throws {
+        let download = VADRowView.buttonText(for: .idle)
+        XCTAssertEqual(download, VADRowView.ButtonText(title: "Download", accessibilityLabel: "Download voice detector", hint: "About 1 MB"))
+        let redownload = VADRowView.buttonText(for: .failed("boom"))
+        XCTAssertEqual(redownload, VADRowView.ButtonText(title: "Re-download", accessibilityLabel: "Re-download voice detector",
+                                                         hint: "Replaces the copy on this iPhone, about 1 MB"))
+        XCTAssertEqual(VADRowView.buttonText(for: .failed(ModelManager.vadLoadFailedText)), redownload, "a load failure is a failed row too")
+        XCTAssertEqual(ModelsViewModel.sizeText(ModelCatalog.vad.approximateBytes), "≈ 1 MB", "the hints' figure is the catalog's")
+
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel().vadRow
+        XCTAssertTrue(withoutVAD.showsRedownload)
+        XCTAssertEqual(VADRowView.caption(for: withoutVAD), "Needed to translate; its download did not finish")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let installed = makeModel().vadRow
+        XCTAssertEqual(VADRowView.caption(for: installed), "Installed automatically with the first Whisper model")
+        let failedRow = VADRow(name: ModelsViewModel.vadName, sizeText: "under 1 MB",
+                               state: ModelDownloadState(phase: .failed("boom"), fraction: nil, bytesExpected: 1), noticeText: nil, showsRedownload: true)
+        XCTAssertEqual(VADRowView.caption(for: failedRow), VADRowView.installedCaption, "a failed row keeps the original caption")
     }
 
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {

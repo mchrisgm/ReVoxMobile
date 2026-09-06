@@ -14,6 +14,7 @@ final class FakeInstallSteps: @unchecked Sendable {
     private(set) var pocketTTSDownloads = 0
     private(set) var pocketTTSDeletes = 0
     var failVariantOnce = false
+    var failVADOnce = false
     var failPocketTTSOnce = false
 
     var holdDownloads: Bool {
@@ -137,6 +138,10 @@ final class FakeInstallSteps: @unchecked Sendable {
             },
             downloadVAD: { [self] _, progress in
                 note { vadDownloads += 1 }
+                if failVADOnce {
+                    failVADOnce = false
+                    throw URLError(.notConnectedToInternet)
+                }
                 progress(0, .listing)
                 try await waitWhileHeld()
                 progress(1, .downloading(completedFiles: 6, totalFiles: 6))

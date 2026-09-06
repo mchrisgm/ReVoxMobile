@@ -97,7 +97,7 @@ ModelCatalogTests.swift|XCTAssertNotEqual(revision, "main")
 ModelCatalogTests.swift|^[0-9a-f]{40}$
 ModelCatalogTests.swift|XCTAssertEqual(ModelCatalog.vad.approximateBytes, 950_000)
 ModelCatalogTests.swift|XCTAssertEqual(ModelCatalog.pocketTTS.approximateBytes, 527_300_000)
-ModelCatalogTests.swift|XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+ModelCatalogTests.swift|XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "javert"])
 # Device recommendation (R13 table)
 DeviceRecommendationTests.swift|XCTAssertEqual(recommendation.recommended, .base)
 DeviceRecommendationTests.swift|XCTAssertEqual(recommendation.suitable, [.tiny, .base, .small, .medium], "\(value)")

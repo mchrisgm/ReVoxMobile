@@ -128,7 +128,8 @@ final class AppEnvironment {
                                   supplier: Self.gated(assembler.supplier(), isBenchmarkRunning: { benchmarkActivity.isRunning }),
                                   speakerStatus: speakerStatus,
                                   broadcast: broadcast,
-                                  installedModels: { manager.installedWhisper })
+                                  installedModels: { manager.installedWhisper },
+                                  vadLoadFailed: { manager.markVADLoadFailed() })
         activity.live = live
         live.volume = voiceVolume   // the Live screen's volume slider writes the players' box (M9)
         self.benchmarks = BenchmarkStore(directory: try benchmarkDirectory ?? BenchmarkStore.defaultDirectory(),

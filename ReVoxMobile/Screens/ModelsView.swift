@@ -38,7 +38,7 @@ struct ModelsView: View {
                 }
             }
             Section("Voice detector") {
-                VADRowView(row: model.vadRow)
+                VADRowView(row: model.vadRow, onRedownload: { model.redownloadVAD() })
             }
         }
         .navigationTitle("Models")

@@ -122,6 +122,10 @@ final class TwoWayLiveTests: XCTestCase {
         XCTAssertEqual(LiveView.description(for: .microphone), LiveView.microphoneDescription)
         XCTAssertEqual(LiveView.description(for: .broadcast), LiveView.broadcastDescription)
         XCTAssertNotEqual(LiveView.symbol(for: .microphone), LiveView.symbol(for: .broadcast))
+        // A broadcast never carries phone or FaceTime call audio, so the source must not promise a call.
+        XCTAssertFalse(LiveView.broadcastDescription.lowercased().contains("call"), LiveView.broadcastDescription)
+        XCTAssertTrue(LiveView.broadcastDescription.contains("Some apps do not share their audio."),
+                      "the silent-player limit is stated where the source is chosen")
     }
 
     /// A language iOS has no voice for is called out while it is being chosen, not discovered as silence.

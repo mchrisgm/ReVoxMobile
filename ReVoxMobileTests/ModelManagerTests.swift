@@ -248,6 +248,38 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(manager.installedWhisper, [])
     }
 
+    /// Release S3: the finished-install callback fires once per Whisper install, after the flags were refreshed,
+    /// and never for the VAD install that follows, a failure or a cancel.
+    @MainActor
+    func testWhisperInstallReportsItselfOnceWithTheFlagsRefreshed() async {
+        let manager = makeManager()
+        var reported: [WhisperModelID] = []
+        var flaggedInstalled: [Bool] = []
+        var rowInstalled: [Bool] = []
+        manager.onWhisperInstalled = { id in
+            reported.append(id)
+            flaggedInstalled.append(manager.installedWhisper.contains(id))
+            rowInstalled.append(manager.state(for: .whisper(id)).phase == .installed)
+        }
+        manager.install(.whisper(.tiny))
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase), reported \(reported)" }) { manager.state(for: .vad).phase == .installed }
+        XCTAssertEqual(reported, [.tiny], "the VAD that follows is not a Whisper install")
+        XCTAssertEqual(flaggedInstalled, [true])
+        XCTAssertEqual(rowInstalled, [true])
+
+        fakeSteps.failVariantOnce = true
+        manager.install(.whisper(.base))
+        await waitUntil("failed row") { if case .failed = manager.state(for: .whisper(.base)).phase { return true } else { return false } }
+        XCTAssertEqual(reported, [.tiny], "a failure is not reported")
+
+        fakeSteps.holdDownloads = true
+        manager.install(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase.isActive }
+        manager.cancel(.whisper(.small))
+        await waitUntil { manager.state(for: .whisper(.small)).phase == .idle }
+        XCTAssertEqual(reported, [.tiny], "a cancel is not reported")
+    }
+
     @MainActor
     func testDeleteInactiveModelDoesNotTouchTheActiveOne() async throws {
         let manager = makeManager()
@@ -270,6 +302,52 @@ final class ModelManagerTests: XCTestCase {
         try manager.delete(.vad, activeModel: .small)
         XCTAssertEqual(fakeSteps.vadDeletes, 1)
         XCTAssertFalse(manager.vadInstalled)
+    }
+
+    /// Review R1: the VAD Live could not load is on disk and reads Installed; the mark turns the row Failed so
+    /// the Models screen offers Re-download. Fails against the old manager, which had no `markVADLoadFailed()`.
+    @MainActor
+    func testMarkVADLoadFailedTurnsTheInstalledRowFailedAndLeavesAnInstallInFlightAlone() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        manager.refreshInstalledStates()
+        XCTAssertEqual(manager.state(for: .vad).phase, .installed)
+        manager.markVADLoadFailed()
+        XCTAssertEqual(manager.state(for: .vad).phase, .failed(ModelManager.vadLoadFailedText))
+        XCTAssertEqual(ModelManager.vadLoadFailedText, "Failed to load")
+        XCTAssertTrue(manager.vadInstalled, "the files are still there; only the row says otherwise")
+
+        fakeSteps.holdDownloads = true
+        try manager.reinstallVAD()
+        await waitUntil("vad in flight") { manager.state(for: .vad).phase.isActive }
+        manager.markVADLoadFailed()
+        XCTAssertTrue(manager.state(for: .vad).phase.isActive, "an install in flight reports its own result")
+        fakeSteps.holdDownloads = false
+        await waitUntil("vad installed") { manager.state(for: .vad).phase == .installed }
+    }
+
+    /// Review R1: a bundle that is complete but will not load is skipped by `install(.vad)` as already installed,
+    /// so Re-download deletes first. Fails against the old manager, which had no `reinstallVAD()`.
+    @MainActor
+    func testReinstallVADDeletesTheFilesThenInstallsAndIsRefusedWhileThePipelineRuns() async throws {
+        let manager = makeManager()
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        manager.refreshInstalledStates()
+        var releases = 0
+        manager.onModelFilesChanged = { releases += 1 }
+        manager.markVADLoadFailed()
+        try manager.reinstallVAD()
+        XCTAssertEqual(fakeSteps.vadDeletes, 1)
+        await waitUntil("vad installed", details: { "vad \(manager.state(for: .vad).phase)" }) { manager.state(for: .vad).phase == .installed }
+        XCTAssertEqual(fakeSteps.vadDownloads, 1, "the delete came first, so the install downloaded rather than skipped")
+        XCTAssertEqual(releases, 1, "a cached pipeline is released as after a delete")
+        XCTAssertTrue(manager.vadInstalled)
+
+        let running = makeManager(pipelineRunning: true)
+        XCTAssertThrowsError(try running.reinstallVAD()) { error in
+            XCTAssertEqual(error as? ModelManagerError, .pipelineRunning)
+        }
+        XCTAssertEqual(fakeSteps.vadDeletes, 0)
     }
 
     @MainActor
@@ -393,7 +471,7 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(ModelLayout.pocketTTSConstantsFolder, "constants_bin")
         XCTAssertEqual(ModelLayout.pocketTTSConstantFiles, ["text_embed_table.bin", "tokenizer.model", "bos_emb.bin", "bos_before_voice.bin"])
         XCTAssertEqual(ModelLayout.pocketTTSVoiceFile("alba"), "alba.safetensors")
-        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "javert"])
     }
 
     func testPocketTTSNotReadyWhenVoiceOrBosMissing() throws {

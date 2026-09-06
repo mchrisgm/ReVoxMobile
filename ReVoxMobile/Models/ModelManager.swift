@@ -51,6 +51,10 @@ final class ModelManager {
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
     /// Fired after a delete removed files that a cached, loaded pipeline may still hold open (§6.9, M7).
     var onModelFilesChanged: (@MainActor () -> Void)?
+    /// Called once a Whisper install has finished and `installedWhisper` and the row say so; never for the VAD
+    /// install that follows it, a failure or a cancel. The Models screen selects the model when nothing selected
+    /// is installed (release S3).
+    var onWhisperInstalled: (@MainActor (WhisperModelID) -> Void)?
 
     @ObservationIgnored private var tasks: [DownloadKind: Task<Void, Never>] = [:]
 
@@ -247,8 +251,11 @@ final class ModelManager {
             // the upstream flag all become true together rather than one tick apart.
             recordInstalledFiles(kind)
             finishTask(for: kind, cancelled: false)
-            if case .whisper = kind, !layout.isVADInstalled(), tasks[.vad] == nil {
-                install(.vad)
+            if case .whisper(let id) = kind {
+                onWhisperInstalled?(id)
+                if !layout.isVADInstalled(), tasks[.vad] == nil {
+                    install(.vad)
+                }
             }
         } catch is CancellationError {
             await drainReports()
@@ -279,6 +286,33 @@ final class ModelManager {
             return
         }
         tasks[kind]?.cancel()
+    }
+
+    // MARK: The voice detector that would not load (release S3, review R1)
+
+    static let vadLoadFailedText = "Failed to load"
+
+    /// The pipeline reported that the installed voice detector would not load: the row says Failed, so the Models
+    /// screen offers the Re-download Live's banner sends the user to. Left alone while an install is in flight,
+    /// whose own result lands after it; `refreshInstalledStates()` reads the files as installed again, which
+    /// is what they are, so the mark lasts until the next install or delete.
+    func markVADLoadFailed() {
+        guard tasks[.vad] == nil else { return }
+        setState(.vad, phase: .failed(Self.vadLoadFailedText), fraction: nil)
+    }
+
+    /// Re-download for the voice detector: the files on disk are deleted first, so a bundle that is complete but
+    /// will not load is replaced rather than skipped as already installed. Refuses while the pipeline runs, as
+    /// `delete(_:activeModel:)` does; a `.vad` task in flight is left to finish.
+    func reinstallVAD() throws {
+        guard !isPipelineRunning() else { throw ModelManagerError.pipelineRunning }
+        guard tasks[.vad] == nil else { return }
+        installer.deleteVADSync()
+        fileRecord.clear(.vad)
+        upstreamChanged.remove(.vad)
+        refreshInstalledStates()
+        onModelFilesChanged?()
+        install(.vad)
     }
 
     // MARK: Delete (§6.9: idle only; the confirmation lives in the screen)
