@@ -180,6 +180,70 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(store.settings.model, "base", "base is installed and selected: left alone")
     }
 
+    // MARK: Release S3: Re-download for the voice detector
+
+    /// Fails against the old view model, which had no `redownloadVAD()` and no `showsRedownload`: the failed VAD
+    /// row offered nothing, though Live's banner sent the user here to re-download it.
+    func testRedownloadVADStartsAStandaloneVADInstallFromAFailedRow() async {
+        let model = makeModel()
+        steps.failVADOnce = true
+        manager.install(.vad)
+        await waitUntil("failed VAD row", details: { "vad \(model.vadRow.state.phase)" }) { if case .failed = model.vadRow.state.phase { return true } else { return false } }
+        XCTAssertTrue(model.vadRow.showsRedownload)
+        XCTAssertEqual(steps.vadDownloads, 1)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertNil(model.lowStorageAlert)
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 2)
+        XCTAssertEqual(steps.variantDownloads, [], "the VAD installs on its own: no Whisper model is pulled with it")
+        XCTAssertFalse(model.vadRow.showsRedownload, "installed: the button goes")
+        XCTAssertNil(model.footerText)
+    }
+
+    func testRedownloadVADIsRefusedWhileASessionOrABenchmarkRuns() async {
+        let model = makeModel()
+        pipelineRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.stopToDownloadText)
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+
+        benchmarkRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.finishBenchmarkText)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.vadDownloads, 0)
+        XCTAssertEqual(model.vadRow.state.phase, .idle)
+
+        benchmarkRunning = false
+        let noRoom = makeModel(availableBytes: 100_000)
+        noRoom.redownloadVAD()
+        XCTAssertNotNil(noRoom.lowStorageAlert, "the free-space refusal alerts like a Whisper download's")
+        XCTAssertEqual(noRoom.vadRow.state.phase, .idle)
+    }
+
+    func testVADRowOffersRedownloadOnlyBesideAnInstalledModelOrAfterAFailure() throws {
+        XCTAssertFalse(makeModel().vadRow.showsRedownload, "nothing installed: the first model brings the VAD with it")
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel()
+        XCTAssertEqual(withoutVAD.vadRow.state.phase, .idle)
+        XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        XCTAssertFalse(makeModel().vadRow.showsRedownload)
+
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .failed("boom"), whisperInstalled: false), "a failure offers it on its own")
+        XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: false))
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: true))
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .installed, .paused] {
+            XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: phase, whisperInstalled: true), "\(phase): in flight, installed or resuming by itself")
+        }
+        XCTAssertEqual(VADRowView.redownloadTitle, "Re-download")
+        XCTAssertEqual(VADRowView.redownloadAccessibilityLabel, "Re-download voice detector")
+        XCTAssertEqual(VADRowView.redownloadHint, "Downloads the voice detector again")
+    }
+
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {
         try FakeInstallSteps.fabricateWhisper(.small, in: layout)
         let model = makeModel()

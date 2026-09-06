@@ -170,6 +170,9 @@ final class ScreenshotTests: XCTestCase {
         // put on disk first — small then wins on word error rate and carries the note.
         try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
         try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        // The VAD too: a phone with a model installed has it, and without it the row would show the Re-download
+        // button (release S3) that an ordinary Models screen never does.
+        try FakeInstallSteps.fabricateVAD(in: layout)
         let benchmarkStore = BenchmarkStore(directory: root.appendingPathComponent("Benchmarks", isDirectory: true),
                                             host: BenchmarkHost(device: "iPhone17,1", iOSVersion: "26.0.1", memoryTierGB: 8))
         try benchmarkStore.save(.sample())

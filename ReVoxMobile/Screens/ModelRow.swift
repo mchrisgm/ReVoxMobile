@@ -23,4 +23,7 @@ struct VADRow: Equatable {
     let state: ModelDownloadState
     /// §11: the bundle comes from FluidAudio's `main`, so a changed file set is captioned, never hidden.
     let noticeText: String?
+    /// Release S3: the row offers Re-download when its install failed, or when a Whisper model is on disk without
+    /// it, so Live's "Re-download it in Models" leads to a button. Defaulted like `ModelRow.measuredNote`.
+    var showsRedownload: Bool = false
 }

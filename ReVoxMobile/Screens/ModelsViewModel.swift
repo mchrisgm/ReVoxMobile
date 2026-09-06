@@ -131,7 +131,19 @@ final class ModelsViewModel {
         return VADRow(name: Self.vadName,
                       sizeText: Self.rowSizeText(catalogBytes: ModelCatalog.vad.approximateBytes, state: state, measuredBytes: manager.storage.bytes(for: .vad)),
                       state: state,
-                      noticeText: manager.upstreamChangeText(for: .vad))
+                      noticeText: manager.upstreamChangeText(for: .vad),
+                      showsRedownload: Self.vadOffersRedownload(phase: state.phase, whisperInstalled: !manager.installedWhisper.isEmpty))
+    }
+
+    /// Release S3: a failed VAD install, or a Whisper model on disk without the VAD (its automatic install was
+    /// cancelled or never ran), is the dead end Live's "Re-download it in Models" banner sends the user into.
+    /// A row in flight offers nothing, and a paused row resumes by itself when the app becomes active.
+    static func vadOffersRedownload(phase: ModelDownloadPhase, whisperInstalled: Bool) -> Bool {
+        switch phase {
+        case .failed: return true
+        case .idle: return whisperInstalled
+        case .listing, .downloading, .compiling, .verifying, .installed, .paused: return false
+        }
     }
 
     var canDelete: Bool { !isPipelineRunning() && !isBenchmarkRunning() }
@@ -149,10 +161,15 @@ final class ModelsViewModel {
 
     // MARK: Actions
 
+    /// The "Can't download now" message: the benchmark's refusal when one runs, else the running session's.
+    private var downloadRefusalText: String {
+        isBenchmarkRunning() ? Self.finishBenchmarkText : Self.stopToDownloadText
+    }
+
     func download(_ id: WhisperModelID) {
         lowStorageWarning = nil
         guard canDownload else {
-            downloadRefusedAlert = isBenchmarkRunning() ? Self.finishBenchmarkText : Self.stopToDownloadText
+            downloadRefusedAlert = downloadRefusalText
             return
         }
         switch manager.freeSpaceVerdict(for: .whisper(id)) {
@@ -171,6 +188,21 @@ final class ModelsViewModel {
     func cancel(_ id: WhisperModelID) {
         awaitingUserResult.remove(id)
         manager.cancel(.whisper(id))
+    }
+
+    /// The VAD row's Re-download (release S3): the refusals `download(_:)` makes, then a standalone `.vad`
+    /// install (`ModelManager.runInstall` pulls nothing else for that kind). A failure stays on the row, which is
+    /// where the button sits; the alert is for the Whisper rows a user may have left.
+    func redownloadVAD() {
+        guard canDownload else {
+            downloadRefusedAlert = downloadRefusalText
+            return
+        }
+        if case .refuse(let message) = manager.freeSpaceVerdict(for: .vad) {
+            lowStorageAlert = message
+            return
+        }
+        manager.install(.vad)
     }
 
     func select(_ id: WhisperModelID) {
