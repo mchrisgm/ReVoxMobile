@@ -191,8 +191,9 @@ final class ModelsViewModel {
     }
 
     /// The VAD row's Re-download (release S3): the refusals `download(_:)` makes, then a standalone `.vad`
-    /// install (`ModelManager.runInstall` pulls nothing else for that kind). A failure stays on the row, which is
-    /// where the button sits; the alert is for the Whisper rows a user may have left.
+    /// install (`ModelManager.runInstall` pulls nothing else for that kind) over deleted files, so a bundle that
+    /// is on disk but would not load is replaced (review R1). A failure stays on the row, which is where the
+    /// button sits; the alert is for the Whisper rows a user may have left.
     func redownloadVAD() {
         guard canDownload else {
             downloadRefusedAlert = downloadRefusalText
@@ -202,7 +203,11 @@ final class ModelsViewModel {
             lowStorageAlert = message
             return
         }
-        manager.install(.vad)
+        do {
+            try manager.reinstallVAD()
+        } catch {
+            downloadRefusedAlert = Self.stopToDownloadText   // the pipeline started between the guard and the call
+        }
     }
 
     func select(_ id: WhisperModelID) {

@@ -202,6 +202,28 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertNil(model.footerText)
     }
 
+    /// Review R1: the case Live's banner names, an installed voice detector that fails to load. Fails against the
+    /// old code: the row stayed Installed, which offers nothing, and a Re-download would have been skipped as
+    /// already installed.
+    func testAVADThatWouldNotLoadOffersRedownloadWhichReplacesTheFiles() async throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.vadRow.state.phase, .installed)
+        XCTAssertFalse(model.vadRow.showsRedownload)
+
+        manager.markVADLoadFailed()                         // what LiveViewModel's seam does on .vadLoadFailed
+        XCTAssertEqual(model.vadRow.state.phase, .failed(ModelManager.vadLoadFailedText))
+        XCTAssertTrue(model.vadRow.showsRedownload)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertEqual(steps.vadDeletes, 1, "the files on disk go first")
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 1, "and the download happened rather than being skipped")
+        XCTAssertFalse(model.vadRow.showsRedownload)
+    }
+
     func testRedownloadVADIsRefusedWhileASessionOrABenchmarkRuns() async {
         let model = makeModel()
         pipelineRunning = true
