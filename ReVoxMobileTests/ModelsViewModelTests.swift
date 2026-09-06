@@ -9,6 +9,8 @@ final class ModelsViewModelTests: XCTestCase {
     private var steps: FakeInstallSteps!
     private var host: FakeInstallHost!
     private var store: SettingsStore!
+    /// The manager behind the last `makeModel()`, for the tests that drive it directly (release S3).
+    private var manager: ModelManager!
     private var pipelineRunning = false
     private var benchmarkRunning = false
 
@@ -34,6 +36,7 @@ final class ModelsViewModelTests: XCTestCase {
                                        verifiedLoads: VerifiedLoadRecord(defaults: UserDefaults(suiteName: "ReVoxModelsVM-\(UUID().uuidString)")!))
         let manager = ModelManager(layout: layout, installer: installer, isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                    availableBytes: { availableBytes }, host: host, fileRecord: fileRecord)
+        self.manager = manager
         return ModelsViewModel(manager: manager, settings: store, deviceInfo: DeviceInfo(physicalMemoryBytes: memoryGiB * 1_073_741_824),
                                isPipelineRunning: { [unowned self] in self.pipelineRunning },
                                benchmarks: benchmarks, isBenchmarkRunning: { [unowned self] in self.benchmarkRunning })
@@ -123,6 +126,122 @@ final class ModelsViewModelTests: XCTestCase {
         XCTAssertEqual(model.selectedModel, .base)
         model.select(.medium)
         XCTAssertEqual(store.settings.model, "base", "not installed → ignored")
+    }
+
+    // MARK: Release S3: a first download becomes the selection
+
+    /// Fails against the old view model: the selection stayed at the default small, which was never downloaded,
+    /// so Live kept reading "No model installed" beside the only model on the iPhone.
+    func testAFinishedDownloadIsSelectedWhenTheSelectedModelIsNotInstalled() async {
+        let model = makeModel(memoryGiB: 3)                 // recommends base; the selection still defaults to small
+        XCTAssertEqual(model.rows.filter(\.isRecommended).map(\.id), [.base])
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .idle, "small is selected but not on disk")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+        XCTAssertEqual(model.selectedModel, .base)
+        XCTAssertTrue(model.rows[1].isSelected)
+        XCTAssertFalse(model.rows[2].isSelected)
+    }
+
+    /// The guard half of the rule; it passes against the old code too and keeps the rule from growing.
+    func testAFinishedDownloadNeverOverridesAnInstalledSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.small, in: layout)
+        let model = makeModel()
+        XCTAssertEqual(model.selectedModel, .small)
+        XCTAssertEqual(model.rows[2].state.phase, .installed)
+        model.download(.tiny)
+        await waitUntil("tiny installed") { model.rows[0].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "small", "small is installed and selected, so tiny is not adopted")
+        XCTAssertFalse(model.rows[0].isSelected)
+        XCTAssertTrue(model.rows[2].isSelected)
+    }
+
+    /// After the last model was deleted the setting keeps naming it (Live shows the prompt); the next download
+    /// is then the only model on disk and becomes the selection.
+    func testTheNextDownloadAfterTheLastDeleteBecomesTheSelection() async throws {
+        try FakeInstallSteps.fabricateWhisper(.tiny, in: layout)
+        let model = makeModel()
+        model.select(.tiny)
+        try model.delete(.tiny)
+        XCTAssertEqual(store.settings.model, "tiny", "nothing installed: the setting stays")
+        model.download(.base)
+        await waitUntil("base installed") { model.rows[1].state.phase == .installed }
+        XCTAssertEqual(store.settings.model, "base")
+    }
+
+    func testWhisperInstalledAppliesTheRuleDirectly() throws {
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let model = makeModel()
+        model.whisperInstalled(.base)
+        XCTAssertEqual(store.settings.model, "base", "the default small is not installed, so base is adopted")
+        model.whisperInstalled(.tiny)
+        XCTAssertEqual(store.settings.model, "base", "base is installed and selected: left alone")
+    }
+
+    // MARK: Release S3: Re-download for the voice detector
+
+    /// Fails against the old view model, which had no `redownloadVAD()` and no `showsRedownload`: the failed VAD
+    /// row offered nothing, though Live's banner sent the user here to re-download it.
+    func testRedownloadVADStartsAStandaloneVADInstallFromAFailedRow() async {
+        let model = makeModel()
+        steps.failVADOnce = true
+        manager.install(.vad)
+        await waitUntil("failed VAD row", details: { "vad \(model.vadRow.state.phase)" }) { if case .failed = model.vadRow.state.phase { return true } else { return false } }
+        XCTAssertTrue(model.vadRow.showsRedownload)
+        XCTAssertEqual(steps.vadDownloads, 1)
+
+        model.redownloadVAD()
+        XCTAssertNil(model.downloadRefusedAlert)
+        XCTAssertNil(model.lowStorageAlert)
+        await waitUntil("VAD installed", details: { "vad \(model.vadRow.state.phase)" }) { model.vadRow.state.phase == .installed }
+        XCTAssertEqual(steps.vadDownloads, 2)
+        XCTAssertEqual(steps.variantDownloads, [], "the VAD installs on its own: no Whisper model is pulled with it")
+        XCTAssertFalse(model.vadRow.showsRedownload, "installed: the button goes")
+        XCTAssertNil(model.footerText)
+    }
+
+    func testRedownloadVADIsRefusedWhileASessionOrABenchmarkRuns() async {
+        let model = makeModel()
+        pipelineRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.stopToDownloadText)
+        pipelineRunning = false
+        model.downloadRefusedAlert = nil
+
+        benchmarkRunning = true
+        model.redownloadVAD()
+        XCTAssertEqual(model.downloadRefusedAlert, ModelsViewModel.finishBenchmarkText)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(steps.vadDownloads, 0)
+        XCTAssertEqual(model.vadRow.state.phase, .idle)
+
+        benchmarkRunning = false
+        let noRoom = makeModel(availableBytes: 100_000)
+        noRoom.redownloadVAD()
+        XCTAssertNotNil(noRoom.lowStorageAlert, "the free-space refusal alerts like a Whisper download's")
+        XCTAssertEqual(noRoom.vadRow.state.phase, .idle)
+    }
+
+    func testVADRowOffersRedownloadOnlyBesideAnInstalledModelOrAfterAFailure() throws {
+        XCTAssertFalse(makeModel().vadRow.showsRedownload, "nothing installed: the first model brings the VAD with it")
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel()
+        XCTAssertEqual(withoutVAD.vadRow.state.phase, .idle)
+        XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        XCTAssertFalse(makeModel().vadRow.showsRedownload)
+
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .failed("boom"), whisperInstalled: false), "a failure offers it on its own")
+        XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: false))
+        XCTAssertTrue(ModelsViewModel.vadOffersRedownload(phase: .idle, whisperInstalled: true))
+        for phase in [ModelDownloadPhase.listing, .downloading(completedFiles: 1, totalFiles: 6), .compiling(nil), .verifying, .installed, .paused] {
+            XCTAssertFalse(ModelsViewModel.vadOffersRedownload(phase: phase, whisperInstalled: true), "\(phase): in flight, installed or resuming by itself")
+        }
+        XCTAssertEqual(VADRowView.redownloadTitle, "Re-download")
+        XCTAssertEqual(VADRowView.redownloadAccessibilityLabel, "Re-download voice detector")
+        XCTAssertEqual(VADRowView.redownloadHint, "Downloads the voice detector again")
     }
 
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {

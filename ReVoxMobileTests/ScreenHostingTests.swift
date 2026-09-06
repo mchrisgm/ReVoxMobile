@@ -105,6 +105,34 @@ final class ScreenHostingTests: XCTestCase {
         host(List { ModelRowView(row: warned, onDownload: {}, onCancel: {}, onSelect: {}) })
     }
 
+    /// Release S3: the Voice detector row hosts with its Re-download button (a failed install, and a Whisper model
+    /// on disk without the VAD) and without it (installed, idle with nothing installed). SwiftUI exposes no button
+    /// to a unit test, so the flag the view switches on is asserted beside each host, and the real Models screen
+    /// is hosted over a layout that puts a model on disk without the VAD.
+    func testVADRowViewHostsWithAndWithoutTheRedownloadButton() throws {
+        let expected = ModelCatalog.download(for: .vad).expectedBytes
+        let failed = VADRow(name: ModelsViewModel.vadName, sizeText: "≈ 1 MB",
+                            state: ModelDownloadState(phase: .failed("The Internet connection appears to be offline."), fraction: nil, bytesExpected: expected),
+                            noticeText: nil, showsRedownload: true)
+        XCTAssertTrue(failed.showsRedownload)
+        host(List { VADRowView(row: failed, onRedownload: {}) })
+        host(List { VADRowView(row: failed, onRedownload: {}) }.environment(\.dynamicTypeSize, .accessibility5))
+
+        let installed = VADRow(name: ModelsViewModel.vadName, sizeText: "under 1 MB",
+                               state: ModelDownloadState(phase: .installed, fraction: 1, bytesExpected: expected),
+                               noticeText: ModelManager.upstreamChangedText)
+        XCTAssertFalse(installed.showsRedownload, "the default: the memberwise sites before S3 show no button")
+        host(List { VADRowView(row: installed) })
+
+        host(NavigationStack { ModelsView(model: makeModelsViewModel()) })                    // nothing installed: no button
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModelsViewModel()
+        XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        host(NavigationStack { ModelsView(model: withoutVAD) })                              // the button on the real screen
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        XCTAssertFalse(makeModelsViewModel().vadRow.showsRedownload)
+    }
+
     /// M10 HIG audit: every row lays out at the largest accessibility text size, where the transcript row switches
     /// to its stacked layout and the History row's second line wraps as one paragraph.
     func testRowsHostAtTheLargestAccessibilitySize() throws {

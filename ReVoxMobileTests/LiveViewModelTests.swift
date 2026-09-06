@@ -209,6 +209,37 @@ final class LiveViewModelTests: XCTestCase {
         XCTAssertEqual(model.modelStatusText, "No model")
     }
 
+    /// Release S3: the prompt clears when Live reappears with the selected model ready, whichever model that now
+    /// is; it stays while nothing is ready. Fails against the old view model, which had no refresh: the prompt
+    /// named small until the next Start even with base installed and selected behind it.
+    func testTheMissingModelPromptClearsOnReturnOnceTheSelectedModelIsReady() async {
+        let ready = LockedBox<Set<WhisperModelID>>([])
+        let pipelines = self.pipelines!
+        let model = LiveViewModel(settings: store, mute: PlaybackMute(), permission: .fixed(.granted),
+                                  modelReady: { ready.value.contains($0) },
+                                  supplier: { _, _ in
+                                      let pipeline = FakeLivePipeline()
+                                      pipelines.mutate { $0.append(pipeline) }
+                                      return pipeline
+                                  })
+        await model.start()
+        XCTAssertEqual(model.banner, .modelMissing(.small))
+        await model.refreshModelPrompt()
+        XCTAssertEqual(model.banner, .modelMissing(.small), "nothing is ready yet: the prompt stays")
+        XCTAssertEqual(model.modelStatusText, "No model")
+
+        ready.mutate { $0.insert(.base) }
+        store.update { $0.model = "base" }          // what the Models screen does when base finishes installing
+        await model.refreshModelPrompt()
+        XCTAssertNil(model.banner)
+        XCTAssertEqual(model.modelStatusText, "base · ready")
+        await model.refreshModelPrompt()
+        XCTAssertNil(model.banner, "nothing to do without the prompt")
+        await model.start()
+        await waitUntil { model.state == .running }
+        XCTAssertEqual(pipelines.value.count, 1)
+    }
+
     func testMuteForwardsToThePipelineAndIsAppliedOnStart() async {
         let model = makeModel()
         await model.setMuted(true)

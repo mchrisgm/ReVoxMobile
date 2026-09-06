@@ -119,22 +119,39 @@ struct ModelRowView: View {
 
 struct VADRowView: View {
     let row: VADRow
+    /// Release S3: what the Re-download button does; defaulted so a caller that never shows it needs nothing.
+    var onRedownload: () -> Void = {}
 
+    static let redownloadTitle = "Re-download"
+    static let redownloadAccessibilityLabel = "Re-download voice detector"
+    static let redownloadHint = "Downloads the voice detector again"
+
+    /// The text stays one VoiceOver sentence; the button (release S3) is its own element below it, with a label
+    /// that names what is downloaded, since "Re-download" alone says nothing out of the row's context.
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).font(.headline)
-                Text("Installed automatically with the first Whisper model").font(.caption).foregroundStyle(.secondary)
-                if let notice = row.noticeText {
-                    Label(notice, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.name).font(.headline)
+                    Text("Installed automatically with the first Whisper model").font(.caption).foregroundStyle(.secondary)
+                    if let notice = row.noticeText {
+                        Label(notice, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(row.sizeText).font(.subheadline).foregroundStyle(.secondary)
+                    Text(ModelsViewModel.phaseText(row.state.phase)).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(row.sizeText).font(.subheadline).foregroundStyle(.secondary)
-                Text(ModelsViewModel.phaseText(row.state.phase)).font(.caption).foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            if row.showsRedownload {
+                Button(Self.redownloadTitle, action: onRedownload)
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel(Self.redownloadAccessibilityLabel)
+                    .accessibilityHint(Self.redownloadHint)
             }
         }
-        .accessibilityElement(children: .combine)
     }
 }

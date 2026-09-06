@@ -51,6 +51,10 @@ final class ModelManager {
     var onActiveModelDeleted: (@MainActor (WhisperModelID?) -> Void)?
     /// Fired after a delete removed files that a cached, loaded pipeline may still hold open (§6.9, M7).
     var onModelFilesChanged: (@MainActor () -> Void)?
+    /// Called once a Whisper install has finished and `installedWhisper` and the row say so; never for the VAD
+    /// install that follows it, a failure or a cancel. The Models screen selects the model when nothing selected
+    /// is installed (release S3).
+    var onWhisperInstalled: (@MainActor (WhisperModelID) -> Void)?
 
     @ObservationIgnored private var tasks: [DownloadKind: Task<Void, Never>] = [:]
 
@@ -247,8 +251,11 @@ final class ModelManager {
             // the upstream flag all become true together rather than one tick apart.
             recordInstalledFiles(kind)
             finishTask(for: kind, cancelled: false)
-            if case .whisper = kind, !layout.isVADInstalled(), tasks[.vad] == nil {
-                install(.vad)
+            if case .whisper(let id) = kind {
+                onWhisperInstalled?(id)
+                if !layout.isVADInstalled(), tasks[.vad] == nil {
+                    install(.vad)
+                }
             }
         } catch is CancellationError {
             await drainReports()
