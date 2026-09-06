@@ -135,8 +135,9 @@ jobs:
             exit 1
           }
 
-      # Best effort, and deliberately after the test step: `ScreenshotTests` renders the README's images from the
-      # real views, and the runner copies them out of the simulator's app container.
+      # Best effort, and deliberately after the test step: `ScreenshotTests` renders the README's images and the
+      # 1290 x 2796 captures behind the App Store set from the real views, and the runner copies both folders out
+      # of the simulator's app container.
       - name: Collect screenshots
         if: always()
         env:
@@ -149,6 +150,15 @@ jobs:
         with:
           name: screenshots
           path: screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload store screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: store-screenshots
+          path: store-screenshots
           if-no-files-found: ignore
           retention-days: 7
 

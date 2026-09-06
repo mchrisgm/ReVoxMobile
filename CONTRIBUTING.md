@@ -57,7 +57,7 @@ Every gate is a script you can run from the repository root. They are grouped by
 | `python3 scripts/ci/check-plists.py` | An incomplete or inconsistent Info.plist, privacy manifest or entitlements file in either target (spec §11, C7). | `source-checks`, `ios-simulator` |
 | `python3 scripts/ci/check-package-resolved.py` | A resolved package graph that differs from the committed `Package.resolved` — a pin that drifted (spec E1). | `ios-simulator`, TestFlight |
 
-The remaining scripts in `scripts/ci` are CI plumbing rather than gates: `select-xcode.sh`, `pick-simulator.sh`, `install-package-resolved.sh` and `collect-screenshots.sh` (which copies the README's screenshots out of the simulator; [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md)).
+The remaining scripts in `scripts/ci` are CI plumbing rather than gates: `select-xcode.sh`, `pick-simulator.sh`, `install-package-resolved.sh` and `collect-screenshots.sh` (which copies the README's screenshots and the App Store size captures out of the simulator; [ADR-0009](docs/adr/0009-screenshots-rendered-by-ci.md), [docs/store/README.md](docs/store/README.md)).
 
 Run the whole Linux-side set before pushing:
 
