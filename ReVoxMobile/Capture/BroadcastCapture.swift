@@ -350,11 +350,14 @@ final class BroadcastCapture: AudioSource, @unchecked Sendable {
         }
     }
 
-    /// §9 "Broadcast heartbeat stale (extension killed)": stop reading; record `lost`.
+    /// §9 "Broadcast heartbeat stale (extension killed)": stop reading; record `lost`. The extension never reached
+    /// `broadcastFinished`, so the bundle id it annotated is cleared here, as `BroadcastSession.finished()` would have
+    /// (docs/security-review-m5.md finding 18: the App Group plist is not backup-excluded).
     private func markLost(now: Double) {
         guard let records, var record = records.readBroadcastState(), record.state != .lost else { return }
         record.state = .lost
         record.finishedAt = now
+        record.annotatedBundleID = nil
         records.write(record)
     }
 
