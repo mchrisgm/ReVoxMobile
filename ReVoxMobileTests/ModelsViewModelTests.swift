@@ -263,7 +263,31 @@ final class ModelsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(VADRowView.redownloadTitle, "Re-download")
         XCTAssertEqual(VADRowView.redownloadAccessibilityLabel, "Re-download voice detector")
-        XCTAssertEqual(VADRowView.redownloadHint, "Downloads the voice detector again")
+        XCTAssertEqual(VADRowView.redownloadHint, "Replaces the copy on this iPhone, about 1 MB")
+    }
+
+    /// Review R1: the idle row beside an installed Whisper model has nothing to download again, so its button
+    /// reads Download, and its caption stops claiming an automatic install that never finished. Fails against the
+    /// old view, which had one title, a hint that restated it and one caption.
+    func testVADRowButtonAndCaptionFollowThePhase() throws {
+        let download = VADRowView.buttonText(for: .idle)
+        XCTAssertEqual(download, VADRowView.ButtonText(title: "Download", accessibilityLabel: "Download voice detector", hint: "About 1 MB"))
+        let redownload = VADRowView.buttonText(for: .failed("boom"))
+        XCTAssertEqual(redownload, VADRowView.ButtonText(title: "Re-download", accessibilityLabel: "Re-download voice detector",
+                                                         hint: "Replaces the copy on this iPhone, about 1 MB"))
+        XCTAssertEqual(VADRowView.buttonText(for: .failed(ModelManager.vadLoadFailedText)), redownload, "a load failure is a failed row too")
+        XCTAssertEqual(ModelsViewModel.sizeText(ModelCatalog.vad.approximateBytes), "≈ 1 MB", "the hints' figure is the catalog's")
+
+        try FakeInstallSteps.fabricateWhisper(.base, in: layout)
+        let withoutVAD = makeModel().vadRow
+        XCTAssertTrue(withoutVAD.showsRedownload)
+        XCTAssertEqual(VADRowView.caption(for: withoutVAD), "Needed to translate; its download did not finish")
+        try FakeInstallSteps.fabricateVAD(in: layout)
+        let installed = makeModel().vadRow
+        XCTAssertEqual(VADRowView.caption(for: installed), "Installed automatically with the first Whisper model")
+        let failedRow = VADRow(name: ModelsViewModel.vadName, sizeText: "under 1 MB",
+                               state: ModelDownloadState(phase: .failed("boom"), fraction: nil, bytesExpected: 1), noticeText: nil, showsRedownload: true)
+        XCTAssertEqual(VADRowView.caption(for: failedRow), VADRowView.installedCaption, "a failed row keeps the original caption")
     }
 
     func testDeleteHiddenWhileRunningAndFooterExplains() throws {

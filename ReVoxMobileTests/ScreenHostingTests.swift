@@ -128,6 +128,14 @@ final class ScreenHostingTests: XCTestCase {
         try FakeInstallSteps.fabricateWhisper(.base, in: layout)
         let withoutVAD = makeModelsViewModel()
         XCTAssertTrue(withoutVAD.vadRow.showsRedownload, "base is on disk without the VAD")
+        // Review R1: this row's button reads Download, with a hint that is not the label again, and its caption no
+        // longer claims an automatic install; the failed row above keeps Re-download and the original caption.
+        XCTAssertEqual(VADRowView.buttonText(for: withoutVAD.vadRow.state.phase).title, "Download")
+        XCTAssertEqual(VADRowView.buttonText(for: withoutVAD.vadRow.state.phase).hint, "About 1 MB")
+        XCTAssertEqual(VADRowView.caption(for: withoutVAD.vadRow), VADRowView.missingCaption)
+        XCTAssertEqual(VADRowView.buttonText(for: failed.state.phase).title, "Re-download")
+        XCTAssertEqual(VADRowView.caption(for: failed), VADRowView.installedCaption)
+        host(List { VADRowView(row: withoutVAD.vadRow, onRedownload: {}) })                  // the Download row on its own
         host(NavigationStack { ModelsView(model: withoutVAD) })                              // the button on the real screen
         try FakeInstallSteps.fabricateVAD(in: layout)
         XCTAssertFalse(makeModelsViewModel().vadRow.showsRedownload)
