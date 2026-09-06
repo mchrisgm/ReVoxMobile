@@ -12,7 +12,7 @@ ReVox for iPhone is made by one independent developer. There is no support email
 Open an issue at [github.com/mchrisgm/ReVoxMobile/issues](https://github.com/mchrisgm/ReVoxMobile/issues) and choose the **Bug report** template. Include:
 
 - your iPhone model and iOS version;
-- the app version, shown at the top of **Settings › About** (for example `0.1.0 (42)`);
+- the app version, shown at the top of **Settings › About** (for example `1.0.0 (42)`);
 - which source you were using, Microphone or Other apps, and for Other apps which app you were listening to;
 - for Other apps, the numbers from **Settings › Diagnostics › Broadcast diagnostics** (write cursor, heartbeat age, levels, source format);
 - what you expected, what happened instead, and a screenshot of the screen, the status line or the banner if there is one.

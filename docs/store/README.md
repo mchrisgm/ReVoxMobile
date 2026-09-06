@@ -8,7 +8,7 @@ The App Store listing shows six screenshots. Each is a poster with one claim in 
 |---|---|
 | `store/screenshots.json` | The frames, in order, with their copy: an `id` (the output file name), the `capture` shown, a `headline` and a `subline`. Copy only; nothing about colour, type or geometry. |
 | `scripts/store/compose-screenshots.py` | The compositor. Python 3 standard library plus a Chromium or Chrome binary. Holds the inks, the type and the geometry. |
-| `store/fonts/` | Inter 4.1, Medium (500) and ExtraBold (800), the two weights the panel uses, with the SIL Open Font License in `OFL.txt`. |
+| `store/fonts/` | Inter 4, Medium (500) and ExtraBold (800), the two weights the panel uses, with the SIL Open Font License in `OFL.txt`. |
 | `docs/store/screenshots/` | The composed set, `01-….png` to `06-….png`, 1290 × 2796 px each. Committed after a CI run, never produced by CI itself. |
 | `ReVoxMobileTests/ScreenshotTests.swift`, `OnboardingScreenshotTests.swift` | Where the captures come from: every screen is rendered by CI at the README's size and at the App Store size, through `ReVoxMobileTests/Support/ScreenCapture.swift`. |
 
@@ -71,4 +71,4 @@ Everything below is in the script, not the JSON, so a reworded frame cannot drif
 - **Subline** Inter 500, 50 / 62 px, letter-spacing -0.5 px, `#D4E7EA` on teal (4.0:1) or `#4A5B60` on off-white (6.5:1), 28 px under the headline box.
 - **Screen** the whole capture scaled to 950 × 2060 at (170, 672), corners 120 px, a 1.5 px inside stroke (`#FFFFFF47` on teal, `#0F2A301A` on off-white), shadows `0 48px 120px` and `0 8px 24px` (black at 40 and 30 percent on teal, `#0F2A30` at 20 and 13 percent on off-white). The capture keeps its own background: no tint, no overlay, no added status bar. Its bottom lands at y = 2732, so the Start and Stop capsules, History's Merge and Delete bar and the tab bar are always in shot.
 - **Close-up** (frame 06) the popover's card cropped with about 32 points of the capture's own white around its content, scaled to 950 wide, centred vertically in the band the phone occupies on the other frames, corners 96 px, the same stroke and shadows.
-- **Fonts** Inter 4.1 from the project's GitHub releases, `web/Inter-Medium.woff2` and `web/Inter-ExtraBold.woff2` copied to `store/fonts/` with the licence. The fallback stack is the system sans, so a panel still reads if the files are missing, but the wraps above were measured with Inter; the self-test checks that Chromium used it.
+- **Fonts** Inter 4 from the project's GitHub releases, `web/Inter-Medium.woff2` and `web/Inter-ExtraBold.woff2` copied to `store/fonts/` with the licence. The fallback stack is the system sans, so a panel still reads if the files are missing, but the wraps above were measured with Inter; the self-test checks that Chromium used it.
