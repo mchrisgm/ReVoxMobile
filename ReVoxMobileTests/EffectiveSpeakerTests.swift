@@ -82,8 +82,10 @@ final class EffectiveSpeakerTests: XCTestCase {
         settings.voice = "system"
         settings.systemVoiceIdentifier = "com.apple.voice.compact.en-US.Samantha"
         XCTAssertEqual(SpeakerSelection.choose(settings: settings, pocketTTSReady: true), .system(identifier: "com.apple.voice.compact.en-US.Samantha"))
-        settings.voice = "cosette"
-        XCTAssertEqual(SpeakerSelection.choose(settings: settings, pocketTTSReady: true), .pocketTTS(voice: "cosette", fallbackIdentifier: "com.apple.voice.compact.en-US.Samantha"))
+        settings.voice = "javert"
+        XCTAssertEqual(SpeakerSelection.choose(settings: settings, pocketTTSReady: true), .pocketTTS(voice: "javert", fallbackIdentifier: "com.apple.voice.compact.en-US.Samantha"))
+        settings.voice = "cosette"                             // no longer offered: the saved choice degrades to the system voice
+        XCTAssertEqual(SpeakerSelection.choose(settings: settings, pocketTTSReady: true), .system(identifier: "com.apple.voice.compact.en-US.Samantha"))
     }
 
     /// M8, §8.2: pocket-tts is English-only, so the second direction never reaches it however healthy it is.
@@ -261,7 +263,7 @@ final class EffectiveSpeakerTests: XCTestCase {
     }
 
     func testStatusTextsGainsAndRecordedVoiceNames() {
-        XCTAssertEqual(SpeakerStatus.pocketTTS(voice: "cosette").text, "cosette (pocket-tts)")
+        XCTAssertEqual(SpeakerStatus.pocketTTS(voice: "javert").text, "javert (pocket-tts)")
         XCTAssertEqual(SpeakerStatus.fallback(.loadFailed("x")).text, "System voice — pocket-tts failed to load")
         XCTAssertEqual(SpeakerStatus.fallback(.synthesisFailed("x")).text, "System voice — pocket-tts failed to speak")
         XCTAssertEqual(SpeakerStatus.fallback(.memoryPressure).text, "System voice — memory low")

@@ -2,7 +2,7 @@ import Foundation
 import ReVoxCore
 
 /// What the About screen shows (§8.7, C5): version, the privacy paragraph, the five catalog licences, the app licence,
-/// the Kyutai attribution and the two project links.
+/// the pocket-tts and voice attribution and the two project links.
 struct AboutInfo: Equatable, Sendable {
     static let appName = "ReVox"
     static let privacyText = "ReVox translates speech to English entirely on this iPhone. After the one-time model download it never uses the network: no audio, text or usage data leaves the phone, and there are no analytics."
@@ -37,6 +37,6 @@ struct AboutInfo: Equatable, Sendable {
         guard let notice = ModelCatalog.licences.first(where: { $0.id == Self.pocketTTSLicenceID }), let attribution = notice.attribution else {
             return nil
         }
-        return "pocket-tts voices: \(attribution), Core ML weights under \(notice.licence)."
+        return "\(attribution) Core ML weights under \(notice.licence)."
     }
 }

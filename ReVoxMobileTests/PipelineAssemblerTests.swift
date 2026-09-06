@@ -31,8 +31,8 @@ final class PipelineAssemblerTests: XCTestCase {
         settings.model = "base"
         settings.captureMode = "broadcast"
         let startedAt = Date(timeIntervalSince1970: 1_756_800_000)
-        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "cosette", joinedInProgress: true)
-        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .broadcast, pinnedLanguage: "pt", modelID: "base", voice: "cosette", joinedInProgress: true))
+        let metadata = PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "javert", joinedInProgress: true)
+        XCTAssertEqual(metadata, SessionMetadata(startedAt: startedAt, captureMode: .broadcast, pinnedLanguage: "pt", modelID: "base", voice: "javert", joinedInProgress: true))
         XCTAssertFalse(PipelineAssembler.sessionMetadata(for: settings, startedAt: startedAt, voice: "system").joinedInProgress, "default false")
     }
 

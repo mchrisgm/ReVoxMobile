@@ -119,13 +119,15 @@ final class SettingsTests: XCTestCase {
 
     func testUsesPocketTTSVoice() {
         var settings = Settings()
-        for voice in ["alba", "azelma", "cosette", "javert"] {
+        for voice in ["alba", "azelma", "javert"] {
             settings.voice = voice
             XCTAssertTrue(settings.usesPocketTTSVoice, voice)
         }
         settings.voice = "system"
         XCTAssertFalse(settings.usesPocketTTSVoice)
         settings.voice = "jane"                                // a pocket-tts voice that is not offered
+        XCTAssertFalse(settings.usesPocketTTSVoice)
+        settings.voice = "cosette"                             // offered before 1.0.0; a saved choice now means the system voice
         XCTAssertFalse(settings.usesPocketTTSVoice)
     }
 

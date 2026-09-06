@@ -30,8 +30,8 @@ final class AboutInfoTests: XCTestCase {
 
     func testKyutaiAttributionComesFromTheCatalog() {
         let info = AboutInfo(marketingVersion: "1.0.0", buildNumber: "1")
-        XCTAssertEqual(info.pocketTTSAttributionText, "pocket-tts voices: pocket-tts by Kyutai (https://kyutai.org), Core ML weights under CC-BY-4.0.")
-        XCTAssertEqual(ModelCatalog.licences.first { $0.id == AboutInfo.pocketTTSLicenceID }?.attribution, "pocket-tts by Kyutai (https://kyutai.org)")
+        XCTAssertEqual(info.pocketTTSAttributionText, "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices. Core ML weights under CC-BY-4.0.")
+        XCTAssertEqual(ModelCatalog.licences.first { $0.id == AboutInfo.pocketTTSLicenceID }?.attribution, "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices.")
     }
 
     func testStaticTexts() {
