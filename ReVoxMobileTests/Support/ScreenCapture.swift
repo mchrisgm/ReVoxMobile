@@ -23,16 +23,21 @@ enum ScreenCapture {
         let scale: CGFloat
         /// The safe area the screen is laid out in, or nil for whatever the simulator gives the window. See `image`.
         let safeArea: UIEdgeInsets?
+        /// Whether a window larger than the simulator's screen is scaled to fit it (see `makeWindow`). True for the
+        /// store render only (review R1): the README render is captured exactly as the simulator lays it out, so
+        /// its PNGs stay byte-identical from one simulator to the next, and a simulator too small for it fails
+        /// `capture` visibly instead of changing the image.
+        let fitsToScreen: Bool
 
         var pixelWidth: Int { Int(size.width * scale) }
         var pixelHeight: Int { Int(size.height * scale) }
     }
 
-    static let readme = Render(folder: "screenshots", size: CGSize(width: 393, height: 852), scale: 2, safeArea: nil)
+    static let readme = Render(folder: "screenshots", size: CGSize(width: 393, height: 852), scale: 2, safeArea: nil, fitsToScreen: false)
     /// The safe area is the 6.7-inch phones' own (59 points of status bar, 34 of home indicator) rather than the
     /// simulator's, which is a different phone.
     static let store = Render(folder: "store-screenshots", size: CGSize(width: 430, height: 932), scale: 3,
-                              safeArea: UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0))
+                              safeArea: UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0), fitsToScreen: true)
     static let renders = [readme, store]
 
     static func directory(for render: Render) throws -> URL {
@@ -65,7 +70,11 @@ enum ScreenCapture {
     private static func image<V: View>(of view: V, at render: Render, settle: TimeInterval) -> UIImage {
         let controller = UIHostingController(rootView: view)
         controller.overrideUserInterfaceStyle = .light
-        let window = makeWindow(size: render.size)
+        let window = makeWindow(size: render.size, fitsToScreen: render.fitsToScreen)
+        if !render.fitsToScreen, let screen = screenSize(of: window), render.size.width > screen.width || render.size.height > screen.height {
+            XCTFail("the \(render.folder) render (\(Int(render.size.width)) × \(Int(render.size.height)) points) does not fit this simulator's "
+                    + "\(Int(screen.width)) × \(Int(screen.height)) screen and is never scaled to it; run the screenshots on an iPhone at least that size")
+        }
         // A window attached to the app's scene is retained by that scene: without this, each capture leaves a
         // live SwiftUI hierarchy sitting over the app for the rest of the run, doing layout on the main actor —
         // which is what started timing out the main-actor polls in the LiveViewModel and keep-alive tests.
@@ -110,7 +119,7 @@ enum ScreenCapture {
     /// A screen with a navigation bar, a card and text has hundreds; a blank page has one.
     static let blankThreshold = 8
 
-    static func makeWindow(size: CGSize) -> UIWindow {
+    static func makeWindow(size: CGSize, fitsToScreen: Bool = false) -> UIWindow {
         let scenes = UIApplication.shared.connectedScenes
         let scene = scenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
             ?? scenes.first as? UIWindowScene
@@ -120,13 +129,19 @@ enum ScreenCapture {
         // screen, bounds untouched, so the layout and the render are still the full 430 × 932 points. UIKit
         // derives a window's safe area from where the screen's status bar and home indicator fall on it: at full
         // size the 932-point window's bottom edge would sit 80 points past an 852-point screen and be given a
-        // 114-point bottom inset. The README render is never larger than the screen, so it is untouched.
-        if let screen = scene?.coordinateSpace.bounds.size, size.width > screen.width || size.height > screen.height {
+        // 114-point bottom inset. Only the render that asks for it is scaled (review R1): the README render is
+        // left as the simulator lays it out, and `image` fails the capture if that simulator is too small.
+        if fitsToScreen, let screen = screenSize(of: window), size.width > screen.width || size.height > screen.height {
             let fit = min(screen.width / size.width, screen.height / size.height)
             window.transform = CGAffineTransform(scaleX: fit, y: fit)
             window.center = CGPoint(x: size.width * fit / 2, y: size.height * fit / 2)
         }
         return window
+    }
+
+    /// The simulator's screen in points, or nil for a window with no scene (which no capture on CI has).
+    static func screenSize(of window: UIWindow) -> CGSize? {
+        window.windowScene?.coordinateSpace.bounds.size
     }
 
     /// Distinct colours across a coarse grid — enough to tell a rendered screen from an empty one without
