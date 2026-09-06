@@ -8,7 +8,7 @@ The App Store listing shows six screenshots. Each is a poster with one claim in 
 |---|---|
 | `store/screenshots.json` | The frames, in order, with their copy: an `id` (the output file name), the `capture` shown, a `headline` and a `subline`. Copy only; nothing about colour, type or geometry. |
 | `scripts/store/compose-screenshots.py` | The compositor. Python 3 standard library plus a Chromium or Chrome binary. Holds the inks, the type and the geometry. |
-| `store/fonts/` | Inter 4.1, Medium (500) and ExtraBold (800), the two weights the panel uses, with the SIL Open Font License in `OFL.txt`. |
+| `store/fonts/` | Inter 4, Medium (500) and ExtraBold (800), the two weights the panel uses, with the SIL Open Font License in `OFL.txt`. |
 | `docs/store/screenshots/` | The composed set, `01-….png` to `06-….png`, 1290 × 2796 px each. Committed after a CI run, never produced by CI itself. |
 | `ReVoxMobileTests/ScreenshotTests.swift`, `OnboardingScreenshotTests.swift` | Where the captures come from: every screen is rendered by CI at the README's size and at the App Store size, through `ReVoxMobileTests/Support/ScreenCapture.swift`. |
 
@@ -27,7 +27,7 @@ Two inks, whole screen. The panels alternate the app's teal (`#12788C`) and a wa
 
 Frame 06 breaks the phone rhythm on purpose. The word popover's content is something CI can only render on its own, on an otherwise empty page, so the frame shows it as a close-up card at the same width rather than as a mostly blank phone. The crop is expressed in points in the script (`CLOSE_UP`), so it holds for both capture sizes; if `testCapturesTheLearningWordPopover` changes the card's width or its top padding, update it.
 
-Frame 03 names a stand-in. If `live-running-other-apps.png` is ever missing from the artifact, the compositor uses `benchmark.png` with its own headline and subline (both in the JSON, under `fallback`) and prints a note. No other frame has one: a missing capture without a fallback stops the run.
+Frame 03 names a stand-in: `benchmark.png` with its own headline and subline (both in the JSON, under `fallback`). A missing capture stops the run whether or not the frame names one; `--allow-fallback` composes the stand-in instead, writes it as `03-listen-to-other-apps-fallback.png` so it is never mistaken for the real frame, and prints a note. No other frame has one.
 
 ## From a CI run to the listing
 
@@ -40,12 +40,12 @@ Frame 03 names a stand-in. If `live-running-other-apps.png` is ever missing from
      --spec store/screenshots.json --output docs/store/screenshots
    ```
 
-   The script needs a Chromium or Chrome. It looks at `--chrome`, then `$CHROME`, then `/opt/pw-browsers/chromium-*/chrome-linux/chrome`, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, `google-chrome` and `chromium`. Each frame becomes an HTML panel with the capture and the fonts embedded as data URIs, rendered with `--headless=new --window-size=1290,2796 --force-device-scale-factor=1 --screenshot`. Each output is read back and refused unless it is exactly 1290 × 2796; a PNG with an alpha channel is rewritten as RGB, because App Store Connect refuses alpha.
+   The script needs a Chromium or Chrome. It looks at `--chrome`, then `$CHROME`, then `/opt/pw-browsers/chromium-*/chrome-linux/chrome`, `/opt/pw-browsers/chromium_headless_shell-*/chrome-linux/headless_shell`, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, `google-chrome` and `chromium`. Chromium's `--window-size` counts the window's own chrome (a 1290 × 2796 window gives a 1290 × 2709 viewport; headless_shell counts none), so the script first renders a probe page with `--dump-dom` that reports `innerWidth` × `innerHeight`, and enlarges the window by the deficit. Each frame then becomes an HTML panel with the capture and the fonts embedded as data URIs, rendered with `--headless=new --force-device-scale-factor=1 --screenshot` in a throwaway `--user-data-dir`, after removing any stale output of the same name. The screenshot is the window, so a taller one is cropped to the canvas, and a PNG with an alpha channel is rewritten as RGB, because App Store Connect refuses alpha; each output is read back and refused unless it is exactly 1290 × 2796.
 4. **Look at every PNG.** The headline and the subline must each fit in two lines, nothing in the capture may be cut, and the copy must still be true of the screen under it (see below). `--keep-panels DIR` keeps the HTML panels for inspection; `--frame <id>` composes one frame.
 5. **Commit** the six PNGs under `docs/store/screenshots/` with a `docs(store):` prefix, naming the CI run they came from.
 6. **Upload** them to App Store Connect in the 6.9-inch iPhone slot, in file-name order. App Store Connect uses that set for the smaller iPhones when no other set is uploaded.
 
-To check the toolchain without an artifact, `python3 scripts/store/compose-screenshots.py --self-test` composes synthetic 1290 × 2796 captures into a temporary folder and checks the sizes, the fallback, the refusal of a missing capture, the README-size input, that Chromium set the copy in the bundled fonts, and the alpha strip.
+To check the toolchain without an artifact, `python3 scripts/store/compose-screenshots.py --self-test` composes synthetic 1290 × 2796 captures into a temporary folder and checks the sizes, that each capture reaches its bottom (the pixel at (645, 2725) is the screen's, the one at (645, 2760) is the ink's), the refusal of a missing capture, the `--allow-fallback` stand-in and its `-fallback` name, the README-size input, that Chromium set the copy in the bundled fonts, and the conforming crop.
 
 The README's own renders in `docs/screenshots/` are accepted as input too, for a preview: they are the same screens at 786 × 1704 and are upscaled, so the script prints a note and the shipped set is composed from the artifact.
 
@@ -68,7 +68,7 @@ Everything below is in the script, not the JSON, so a reworded frame cannot drif
 - **Canvas** 1290 × 2796 px, sRGB, PNG without alpha. Flat, full-bleed ink: teal `#12788C` or off-white `#F6F4EF`; no gradient, noise, vignette, logo or app name.
 - **Rule** at (170, 140), 96 × 8 px, square corners, in the other ink.
 - **Headline** Inter 800, 136 / 140 px, letter-spacing -4 px, white on teal (5.1:1) or `#0F2A30` on off-white (13.7:1), left-aligned at x = 170, max-width 1050 px, top-anchored at y = 176.
-- **Subline** Inter 500, 50 / 62 px, letter-spacing -0.5 px, `#D4E7EA` on teal (4.0:1) or `#4A5B60` on off-white (6.5:1), 28 px under the headline box.
+- **Subline** Inter 500, 50 / 62 px, letter-spacing -0.5 px, `#EAF3F5` on teal (4.6:1) or `#4A5B60` on off-white (6.5:1), 28 px under the headline box.
 - **Screen** the whole capture scaled to 950 × 2060 at (170, 672), corners 120 px, a 1.5 px inside stroke (`#FFFFFF47` on teal, `#0F2A301A` on off-white), shadows `0 48px 120px` and `0 8px 24px` (black at 40 and 30 percent on teal, `#0F2A30` at 20 and 13 percent on off-white). The capture keeps its own background: no tint, no overlay, no added status bar. Its bottom lands at y = 2732, so the Start and Stop capsules, History's Merge and Delete bar and the tab bar are always in shot.
 - **Close-up** (frame 06) the popover's card cropped with about 32 points of the capture's own white around its content, scaled to 950 wide, centred vertically in the band the phone occupies on the other frames, corners 96 px, the same stroke and shadows.
-- **Fonts** Inter 4.1 from the project's GitHub releases, `web/Inter-Medium.woff2` and `web/Inter-ExtraBold.woff2` copied to `store/fonts/` with the licence. The fallback stack is the system sans, so a panel still reads if the files are missing, but the wraps above were measured with Inter; the self-test checks that Chromium used it.
+- **Fonts** Inter 4 from the project's GitHub releases, `web/Inter-Medium.woff2` and `web/Inter-ExtraBold.woff2` copied to `store/fonts/` with the licence. The fallback stack is the system sans, so a panel still reads if the files are missing, but the wraps above were measured with Inter; the self-test checks that Chromium used it.

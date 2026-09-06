@@ -9,8 +9,9 @@ frame marked "close-up" (the word popover, which CI can only render on its own) 
 mostly blank phone. Inks alternate by position: teal for the odd frames, off-white for the even ones.
 
 The panel is an HTML file with the capture and the two Inter weights embedded as data URIs, rendered by
-headless Chromium; the output's size is read back from the PNG header and anything but 1290 x 2796 is
-refused. Python 3 standard library only.
+headless Chromium. Chromium's --window-size counts the window's own chrome, so the script first probes the
+viewport it gets for the canvas size and enlarges the window by the difference; the output's size is read back
+from the PNG header and anything but 1290 x 2796 is refused. Python 3 standard library only.
 
 Usage:
   python3 scripts/store/compose-screenshots.py --input store-screenshots \
@@ -26,6 +27,7 @@ import base64
 import html
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -41,11 +43,11 @@ FONTS = {800: ROOT / "store" / "fonts" / "Inter-ExtraBold.woff2", 500: ROOT / "s
 
 CANVAS = (1290, 2796)
 
-# The two inks and everything that changes with them. Contrast on teal: white 5.1:1, #D4E7EA 4.0:1; on off-white:
+# The two inks and everything that changes with them. Contrast on teal: white 5.1:1, #EAF3F5 4.6:1; on off-white:
 # #0F2A30 13.7:1, #4A5B60 6.5:1.
 INKS = {
     "teal": {
-        "background": "#12788C", "rule": "#F6F4EF", "headline": "#FFFFFF", "subline": "#D4E7EA",
+        "background": "#12788C", "rule": "#F6F4EF", "headline": "#FFFFFF", "subline": "#EAF3F5",
         "stroke": "#FFFFFF47", "shadow": "0 48px 120px #00000066, 0 8px 24px #0000004D",
     },
     "off-white": {
@@ -151,26 +153,45 @@ def encode_png(width, height, rows, channels=3):
             + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
-def strip_alpha(data):
-    """The same image as RGB. App Store Connect refuses a PNG with an alpha channel; Chromium normally writes none,
-    and this is the slow pure-Python path for a build that does."""
+def pixels(data, points):
+    """The (r, g, b) at each (x, y) of an 8-bit RGB or RGBA PNG."""
     width, height, channels, rows = decode_png(data)
-    if channels == 3:
+    return [tuple(rows[y][x * channels:x * channels + 3]) for x, y in points]
+
+
+def hex_rgb(colour):
+    return tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def conform(data, size=CANVAS):
+    """The image's top-left `size` as an RGB PNG; the data itself when it already is one. Chromium's --screenshot is
+    the window, which `window_for_canvas` makes taller than the canvas so the viewport fits it, so the rows under the
+    canvas are bare background and are cut; and App Store Connect refuses a PNG with an alpha channel, so one is
+    dropped. Pure Python, so a second or two per frame; headless_shell needs neither."""
+    width, height, depth, colour = png_header(data)
+    if (width, height) == size and colour == 2:
         return data
-    if channels != 4:
-        raise ValueError(f"cannot strip alpha from a {channels}-channel PNG")
-    rgb_rows = []
-    for row in rows:
-        rgb = bytearray(width * 3)
-        rgb[0::3], rgb[1::3], rgb[2::3] = row[0::4], row[1::4], row[2::4]
-        rgb_rows.append(rgb)
-    return encode_png(width, height, rgb_rows)
+    if width < size[0] or height < size[1]:
+        raise ValueError(f"{width} x {height} is smaller than {size[0]} x {size[1]}")
+    width, height, channels, rows = decode_png(data)
+    if channels not in (3, 4):
+        raise ValueError(f"cannot conform a {channels}-channel PNG")
+    out = []
+    for row in rows[:size[1]]:
+        row = row[:size[0] * channels]
+        if channels == 4:
+            rgb = bytearray(size[0] * 3)
+            rgb[0::3], rgb[1::3], rgb[2::3] = row[0::4], row[1::4], row[2::4]
+            row = rgb
+        out.append(row)
+    return encode_png(size[0], size[1], out)
 
 
 # MARK: Chromium
 
 CHROME_CANDIDATES = [
     "/opt/pw-browsers/chromium-*/chrome-linux/chrome",
+    "/opt/pw-browsers/chromium_headless_shell-*/chrome-linux/headless_shell",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "google-chrome",
     "chromium",
@@ -194,14 +215,53 @@ def find_chrome(explicit):
     raise SystemExit("no Chromium found: pass --chrome PATH or set $CHROME (see docs/store/README.md)")
 
 
-def render(chrome, panel, output):
-    """Renders `panel` (an HTML file) to `output` at the canvas size with headless Chromium."""
+def chromium_command(chrome, window, profile, arguments):
+    """Headless Chromium at `window` (a --window-size) in the throwaway profile `profile`, so a run never touches a
+    desktop profile, followed by `arguments`."""
     command = [chrome, "--headless=new", "--hide-scrollbars", "--force-device-scale-factor=1",
-               f"--window-size={CANVAS[0]},{CANVAS[1]}", "--virtual-time-budget=5000",
-               f"--screenshot={output}", panel.as_uri()]
+               f"--window-size={window[0]},{window[1]}", f"--user-data-dir={profile}", *arguments]
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         command.insert(1, "--no-sandbox")       # Chromium refuses to run as root without it (containers, CI)
-    result = subprocess.run(command, capture_output=True, text=True)
+    return command
+
+
+PROBE_HTML = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>viewport</title></head>'
+              '<body><script>document.body.textContent = innerWidth + "x" + innerHeight;</script></body></html>\n')
+_windows = {}
+
+
+def window_for_canvas(chrome):
+    """The --window-size that gives this binary a viewport of exactly CANVAS, probed once per run.
+
+    Chromium's --window-size is the window, chrome included: 1290 x 2796 gives a 1290 x 2709 viewport (87 px go to
+    the window's own chrome) and --screenshot captures the viewport, so a panel rendered at the canvas size is cut
+    at row 2708. headless_shell counts no chrome. Rather than assume either, a tiny page writes innerWidth x
+    innerHeight into its body, --dump-dom reads it back, and the window is enlarged by the deficit.
+    """
+    if chrome in _windows:
+        return _windows[chrome]
+    with tempfile.TemporaryDirectory(prefix="revox-store-probe-") as tmp:
+        probe = Path(tmp) / "probe.html"
+        probe.write_text(PROBE_HTML, encoding="utf-8")
+        command = chromium_command(chrome, CANVAS, Path(tmp) / "profile", ["--dump-dom", probe.as_uri()])
+        result = subprocess.run(command, capture_output=True, text=True)
+    match = re.search(r"(\d+)x(\d+)", result.stdout)
+    if result.returncode != 0 or not match:
+        raise SystemExit(f"Chromium did not report its viewport (exit {result.returncode}):\n{result.stderr.strip()}")
+    viewport = (int(match.group(1)), int(match.group(2)))
+    _windows[chrome] = (2 * CANVAS[0] - viewport[0], 2 * CANVAS[1] - viewport[1])
+    return _windows[chrome]
+
+
+def render(chrome, panel, output):
+    """Renders `panel` (an HTML file) to `output` at the canvas size with headless Chromium. A stale `output` is
+    removed first, so a failed render can never leave an old PNG in its place."""
+    output = Path(output)
+    output.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix="revox-store-profile-") as profile:
+        command = chromium_command(chrome, window_for_canvas(chrome), profile,
+                                   ["--virtual-time-budget=5000", f"--screenshot={output}", panel.as_uri()])
+        result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0 or not output.exists():
         raise SystemExit(f"Chromium failed on {panel.name} (exit {result.returncode}):\n{result.stderr.strip()}")
 
@@ -298,15 +358,21 @@ def load_spec(path):
     return frames
 
 
-def capture_for(frame, input_dir):
-    """(path, headline, subline, note) for the frame's capture, or its fallback when the capture is missing."""
+def capture_for(frame, input_dir, allow_fallback=False):
+    """(path, headline, subline, output stem, note) for the frame's capture. A missing capture is refused; with
+    `allow_fallback` a frame that names a stand-in composes it instead, under "<id>-fallback" so the stand-in is
+    never mistaken for the real frame."""
     path = Path(input_dir) / f"{frame['capture']}.png"
     if path.exists():
-        return path, frame["headline"], frame["subline"], None
+        return path, frame["headline"], frame["subline"], frame["id"], None
     fallback = frame.get("fallback")
-    if fallback and (Path(input_dir) / f"{fallback['capture']}.png").exists():
-        return (Path(input_dir) / f"{fallback['capture']}.png", fallback["headline"], fallback["subline"],
-                f"{frame['capture']}.png is missing; using the {fallback['capture']} stand-in")
+    fallback_path = Path(input_dir) / f"{fallback['capture']}.png" if fallback else None
+    if fallback and fallback_path.exists():
+        if allow_fallback:
+            return (fallback_path, fallback["headline"], fallback["subline"], f"{frame['id']}-fallback",
+                    f"{path.name} is missing; composing the {fallback['capture']} stand-in as {frame['id']}-fallback.png")
+        raise SystemExit(f"{frame['id']}: {path.name} is missing from {input_dir} "
+                         f"(pass --allow-fallback to compose the {fallback['capture']} stand-in instead)")
     raise SystemExit(f"{frame['id']}: {path.name} is missing from {input_dir}"
                      + (f" and so is its fallback {fallback['capture']}.png" if fallback else ""))
 
@@ -320,7 +386,8 @@ def check_capture(path):
     return width, height
 
 
-def compose(input_dir, spec_path, output_dir, chrome, only=None, keep_panels=None, fonts=FONTS, verbose=True):
+def compose(input_dir, spec_path, output_dir, chrome, only=None, keep_panels=None, allow_fallback=False, fonts=FONTS,
+            verbose=True):
     frames = load_spec(spec_path)
     if only:
         unknown = set(only) - {f["id"] for f in frames}
@@ -328,7 +395,7 @@ def compose(input_dir, spec_path, output_dir, chrome, only=None, keep_panels=Non
             raise SystemExit(f"{spec_path}: no frame named {', '.join(sorted(unknown))}")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    panels = Path(keep_panels) if keep_panels else Path(tempfile.mkdtemp(prefix="revox-store-"))
+    panels = Path(keep_panels).resolve() if keep_panels else Path(tempfile.mkdtemp(prefix="revox-store-"))
     panels.mkdir(parents=True, exist_ok=True)
     composed = []
     try:
@@ -336,7 +403,7 @@ def compose(input_dir, spec_path, output_dir, chrome, only=None, keep_panels=Non
             if only and frame["id"] not in only:
                 continue
             ink = "teal" if index % 2 == 0 else "off-white"
-            capture, headline, subline, note = capture_for(frame, input_dir)
+            capture, headline, subline, stem, note = capture_for(frame, input_dir, allow_fallback)
             size = check_capture(capture)
             if note and verbose:
                 print(f"note: {frame['id']}: {note}")
@@ -347,17 +414,21 @@ def compose(input_dir, spec_path, output_dir, chrome, only=None, keep_panels=Non
             panel = panels / f"{frame['id']}.html"
             panel.write_text(panel_html({**frame, "headline": headline, "subline": subline}, ink, capture, size,
                                         presentation, fonts), encoding="utf-8")
-            output = output_dir / f"{frame['id']}.png"
+            output = output_dir / f"{stem}.png"
             render(chrome, panel, output)
             data = output.read_bytes()
             width, height, depth, colour = png_header(data)
-            if (width, height) != CANVAS:
+            if width < CANVAS[0] or height < CANVAS[1]:
                 output.unlink()
-                raise SystemExit(f"{output}: Chromium wrote {width} x {height}, not {CANVAS[0]} x {CANVAS[1]}; refused")
-            if colour in (4, 6):
-                output.write_bytes(strip_alpha(data))
-                if verbose:
+                raise SystemExit(f"{output}: Chromium wrote {width} x {height}, less than {CANVAS[0]} x {CANVAS[1]}; refused")
+            if (width, height) != CANVAS or colour != 2:
+                output.write_bytes(conform(data))
+                if verbose and colour != 2:
                     print(f"note: {frame['id']}: Chromium wrote an alpha channel; stripped")
+            width, height, depth, colour = png_header(output.read_bytes())
+            if (width, height) != CANVAS or colour != 2:
+                output.unlink()
+                raise SystemExit(f"{output}: {width} x {height}, colour type {colour} after conforming; refused")
             if verbose:
                 print(f"{output.name}  {width} x {height}  {ink:9}  {presentation:8}  from {capture.name} ({size[0]} x {size[1]})")
             composed.append(output)
@@ -409,15 +480,33 @@ def self_test(chrome, spec_path):
         for path in composed:
             width, height, depth, colour = png_header(path.read_bytes())
             assert (width, height) == CANVAS and colour in (0, 2), (path, width, height, colour)
-        # 2. A missing capture with a fallback composes from the stand-in; one without is refused.
+        # 1b. The capture reaches its bottom. The screen box ends at y = 2732, so at x = 645 row 2725 is the synthetic
+        #     screen's white and row 2760 is the ink under the capture's shadow (darker than the ink, never the screen).
+        #     A viewport shorter than the canvas cuts the panel and leaves row 2725 in the bare ink.
+        for index, path in enumerate(composed):
+            if frames[index].get("presentation", "screen") != "screen":
+                continue
+            ink = hex_rgb(INKS["teal" if index % 2 == 0 else "off-white"]["background"])
+            bottom, below = pixels(path.read_bytes(), [(645, SCREEN["top"] + SCREEN["height"] - 7), (645, 2760)])
+            assert all(v >= 250 for v in bottom), f"{path.name}: the capture is cut before its bottom: row 2725 is {bottom}"
+            assert all(v <= i + 1 for v, i in zip(below, ink)), f"{path.name}: row 2760 should be the ink, got {below}"
+        # 2. A missing capture is refused by default, stand-in or not. With allow_fallback a frame that names one
+        #    composes it under "<id>-fallback"; a frame without one is still refused.
         with_fallback = next(f for f in frames if "fallback" in f)
         (partial / f"{with_fallback['capture']}.png").unlink()
-        compose(partial, spec_path, tmp / "out-fallback", chrome, only={with_fallback["id"]}, verbose=False)
-        assert (tmp / "out-fallback" / f"{with_fallback['id']}.png").exists()
+        try:
+            compose(partial, spec_path, tmp / "out-refused-default", chrome, only={with_fallback["id"]}, verbose=False)
+            raise AssertionError("a missing capture was composed from its stand-in without --allow-fallback")
+        except SystemExit as error:
+            assert "is missing" in str(error) and "--allow-fallback" in str(error), error
+        compose(partial, spec_path, tmp / "out-fallback", chrome, only={with_fallback["id"]}, allow_fallback=True,
+                verbose=False)
+        assert (tmp / "out-fallback" / f"{with_fallback['id']}-fallback.png").exists()
+        assert not (tmp / "out-fallback" / f"{with_fallback['id']}.png").exists(), "the stand-in took the real frame's name"
         without = next(f for f in frames if "fallback" not in f)
         (partial / f"{without['capture']}.png").unlink()
         try:
-            compose(partial, spec_path, tmp / "out-refused", chrome, only={without["id"]}, verbose=False)
+            compose(partial, spec_path, tmp / "out-refused", chrome, only={without["id"]}, allow_fallback=True, verbose=False)
             raise AssertionError("a missing capture without a fallback was not refused")
         except SystemExit as error:
             assert "is missing" in str(error), error
@@ -433,13 +522,22 @@ def self_test(chrome, spec_path):
         with_font = (output / f"{frames[0]['id']}.png").read_bytes()
         without_font = (tmp / "out-nofont" / f"{frames[0]['id']}.png").read_bytes()
         assert with_font != without_font, "the panel renders the same with and without Inter: the fonts did not load"
-        # 5. The alpha strip keeps every pixel.
-        rgba = encode_png(3, 2, [bytearray(b"\x10\x20\x30\xff\x40\x50\x60\xff\x70\x80\x90\xff"),
-                                 bytearray(b"\x01\x02\x03\xff\x04\x05\x06\xff\x07\x08\x09\xff")], channels=4)
-        assert decode_png(strip_alpha(rgba))[3] == [bytearray(b"\x10\x20\x30\x40\x50\x60\x70\x80\x90"),
-                                                    bytearray(b"\x01\x02\x03\x04\x05\x06\x07\x08\x09")]
-    print(f"self-test passed: {len(frames)} frames composed at {CANVAS[0]} x {CANVAS[1]}, the fallback, the refusal, "
-          f"the README render, the fonts and the alpha strip checked")
+        # 5. Conforming keeps every pixel of the top-left canvas: the alpha channel goes, the rows and columns past
+        #    the canvas go, and an image already conforming is returned untouched.
+        rgba = encode_png(3, 3, [bytearray(b"\x10\x20\x30\xff\x40\x50\x60\xff\x70\x80\x90\xff"),
+                                 bytearray(b"\x01\x02\x03\xff\x04\x05\x06\xff\x07\x08\x09\xff"),
+                                 bytearray(b"\xaa" * 12)], channels=4)
+        assert decode_png(conform(rgba, (2, 2)))[3] == [bytearray(b"\x10\x20\x30\x40\x50\x60"),
+                                                        bytearray(b"\x01\x02\x03\x04\x05\x06")]
+        rgb = encode_png(2, 1, [bytearray(b"\x01\x02\x03\x04\x05\x06")])
+        assert conform(rgb, (2, 1)) is rgb
+        try:
+            conform(rgb, (3, 1))
+            raise AssertionError("an image smaller than the canvas was conformed")
+        except ValueError:
+            pass
+    print(f"self-test passed: {len(frames)} frames composed at {CANVAS[0]} x {CANVAS[1]} reaching the capture's bottom, "
+          f"the refusal, the opt-in fallback, the README render, the fonts and the conforming crop checked")
 
 
 def main(argv):
@@ -450,6 +548,8 @@ def main(argv):
     parser.add_argument("--chrome", help="Chromium or Chrome binary (else $CHROME, else the usual places)")
     parser.add_argument("--frame", action="append", help="compose only this frame id (repeatable)")
     parser.add_argument("--keep-panels", metavar="DIR", help="keep the HTML panels here instead of a temporary folder")
+    parser.add_argument("--allow-fallback", action="store_true",
+                        help="compose a frame's stand-in when its capture is missing, as <id>-fallback.png (refused otherwise)")
     parser.add_argument("--self-test", action="store_true", help="compose synthetic captures into a temporary folder and check the pipeline")
     args = parser.parse_args(argv)
 
@@ -460,7 +560,7 @@ def main(argv):
     if not args.input:
         parser.error("--input is required (or --self-test)")
     composed = compose(args.input, args.spec, args.output, chrome, only=set(args.frame) if args.frame else None,
-                       keep_panels=args.keep_panels)
+                       keep_panels=args.keep_panels, allow_fallback=args.allow_fallback)
     print(f"composed {len(composed)} frames into {args.output}")
     return 0
 
