@@ -56,6 +56,8 @@ jobs:
         run: python3 scripts/ci/check-broadcast-bridge-doc.py
       - name: Verify Info.plists and privacy manifests
         run: python3 scripts/ci/check-plists.py
+      - name: Verify the App Store listing
+        run: python3 scripts/store/check-metadata.py
 
   ios-simulator:
     name: App and extension (iOS simulator)
