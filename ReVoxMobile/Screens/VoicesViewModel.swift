@@ -26,7 +26,7 @@ final class VoicesViewModel {
         "\(voiceListText(ModelCatalog.pocketTTS.offeredVoices)) Downloaded on demand; the system voice is used until then."
     }
 
-    /// "Voices alba, azelma, cosette and javert." for the catalog's list; degrades sensibly for one or none.
+    /// "Voices alba, azelma and javert." for the catalog's list; degrades sensibly for one or none.
     static func voiceListText(_ voices: [String]) -> String {
         switch voices.count {
         case 0: return "No voices."

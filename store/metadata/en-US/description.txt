@@ -1,0 +1,43 @@
+Someone is presenting in Spanish and you are three sentences behind. The person across the table speaks Japanese and you do not. ReVox listens, says what it heard in English, shows it as text and keeps the transcript, all on the iPhone in your hand.
+
+There is no server: every model runs on the iPhone itself, so after the one-time model download ReVox works fully offline. No account, no analytics, no tracking: nothing you say or hear leaves the phone. The app is open source under the MIT licence, so anyone can check.
+
+WHAT IT LISTENS TO
+
+Microphone: the room, the meeting, the person across the table. Tap Start; each finished phrase appears with its detected language and its English translation, and is spoken aloud. Translation keeps running while the phone is locked or you are in another app, until you tap Stop.
+
+Other apps: a video, a podcast, a game. ReVox receives their audio through an iOS screen broadcast that you start from the picker in ReVox or from Control Center. Only the audio is used; the screen is never saved or looked at. iOS sets two limits: a broadcast cannot capture phone or FaceTime calls, and some players (Safari, Music and some video apps) deliver silence to it; the status line says so.
+
+While ReVox speaks, other apps are turned down. A speaker button mutes the voice; the transcript keeps running. The English arrives phrase by phrase, after a short pause.
+
+TWO-WAY CONVERSATION
+
+Turn on Two-way and set You speak and They speak. What they say is spoken to you in English. What you say is spoken to them in their language by an iOS voice, never echoed back at you in English. Both sides appear in the transcript. The reply direction uses Apple's on-device translation (iOS 18); where that is not available your side is still transcribed, and the screen says why it is not spoken.
+
+LEARNING MODE
+
+With Learn on, the words as spoken appear above each translation, so you can follow the other language as well as understand it. Tap any word for how it sounds in Latin letters, hear it said aloud, see its English meaning (iOS 18), look it up in the iPhone's dictionary when there is one for that language, and read the sentence it came from. Romanize adds the Latin form under a script you cannot read.
+
+MODELS, MEASURED ON YOUR PHONE
+
+You choose the Whisper model: tiny (under 80 MB), base (about 147 MB), small (about 487 MB, the default), medium or large-v3. The Models screen says which sizes suit your iPhone and warns about the ones that will be slow or hot. Benchmark this iPhone times every installed model and moves the recommendation to what it measured. When the phone gets hot, ReVox moves the next session to a smaller installed model and says so, unless you tell it to keep yours.
+
+A phrase ReVox is not sure about is kept greyed and marked Unsure rather than spoken or thrown away.
+
+VOICES
+
+ReVox speaks with the iPhone's own voice, which needs no download. Optionally download the three pocket-tts voices (about 527 MB) and hear a sample before you choose.
+
+THE TRANSCRIPT
+
+Every session is saved on the phone, nowhere else. History searches across sessions by English text, merges several into one, and shares a session as a plain .txt file through Files, Mail or AirDrop.
+
+WHAT TO KNOW BEFORE YOU DOWNLOAD
+
+ReVox translates into English only; the two exceptions above use Apple's translation on iOS 18. The first launch needs a connection to download a model: about 487 MB for small, 147 MB for base, under 80 MB for tiny. Keep the app open while it downloads. The only site ReVox itself ever contacts, and only while you download, is huggingface.co and the hosts it redirects to.
+
+A seven-page tutorial on the first launch lets you try the controls; Settings can show it again.
+
+Built on WhisperKit, Silero VAD and pocket-tts; all five licences are on the About screen. iOS 17 or later; an iPhone 12 or newer is recommended.
+
+Source code, issues and the privacy policy: https://github.com/mchrisgm/ReVoxMobile

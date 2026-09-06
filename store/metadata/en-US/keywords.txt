@@ -1,0 +1,1 @@
+translate,offline,voice,interpreter,transcript,captions,conversation,language,spanish,french,learn

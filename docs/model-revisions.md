@@ -25,3 +25,5 @@ done
 ```
 
 Then update, in one commit: the revisions in `ModelCatalog.swift`, the byte sizes from the new listing, `ModelCatalogTests.testWhisperRevisionsMatchRecordedListing`, `ModelCatalogTests.testFiveEntriesInOrderWithFolderNamesAndSizes`, and this table.
+
+The pocket-tts voices are a catalogue choice in the same file: `ModelCatalog.pocketTTS.offeredVoices` names alba, azelma and javert. cosette was dropped before 1.0.0 because Kyutai's voice catalogue ([kyutai/tts-voices](https://huggingface.co/kyutai/tts-voices)) maps it to an Expresso clip licensed CC BY-NC 4.0 (non-commercial use only), which a binary distributed through the App Store cannot rest on; alba (Alba MacKenna, CC BY 4.0), azelma (VCTK, CC BY 4.0) and javert (Unmute voice donation, CC0) are clear, and jean (EARS, also CC BY-NC 4.0) sits in the same download and must never be offered. The reasoning and its sources are in [docs/release.md](release.md#app-store-submission).

@@ -1,0 +1,17 @@
+The first App Store release of ReVox.
+
+Live translation of speech into English, entirely on the iPhone: from the microphone, or from other apps through a screen broadcast. Nothing leaves the phone, and after the one-time model download the app works fully offline.
+
+Two-way conversation: what they say is spoken to you in English, and what you say is spoken to them in their language (iOS 18).
+
+Learning mode: the words as spoken above each translation, and a tap on any word for how it sounds, what it means and the sentence it came from.
+
+Five model sizes, and Benchmark this iPhone to see which one keeps up on your phone.
+
+Three downloadable pocket-tts voices, or the iPhone's own voice with no download. Other apps are turned down while ReVox speaks.
+
+History with search, merge and .txt export, stored only on the phone.
+
+A seven-page tutorial on the first launch, and an About screen with every licence.
+
+Open source under the MIT licence: https://github.com/mchrisgm/ReVoxMobile

@@ -295,7 +295,7 @@ struct LiveView: View {
     static let preparingText = "Getting the model ready…"
     static let twoWayHintText = "Speaks what you say to the other person in their language"
     static let microphoneDescription = "Translates what this iPhone's microphone hears."
-    static let broadcastDescription = "Translates a call, a video or anything else playing on this iPhone."
+    static let broadcastDescription = "Translates a video, a podcast or another app playing on this iPhone. Some apps do not share their audio."
 
     static func title(for mode: CaptureMode) -> String {
         switch mode {

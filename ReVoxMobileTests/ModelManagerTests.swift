@@ -425,7 +425,7 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertEqual(ModelLayout.pocketTTSConstantsFolder, "constants_bin")
         XCTAssertEqual(ModelLayout.pocketTTSConstantFiles, ["text_embed_table.bin", "tokenizer.model", "bos_emb.bin", "bos_before_voice.bin"])
         XCTAssertEqual(ModelLayout.pocketTTSVoiceFile("alba"), "alba.safetensors")
-        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "javert"])
     }
 
     func testPocketTTSNotReadyWhenVoiceOrBosMissing() throws {

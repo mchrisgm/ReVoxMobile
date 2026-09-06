@@ -382,10 +382,10 @@ final class ScreenHostingTests: XCTestCase {
     }
 
     func testAboutViewHosts() {
-        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) })
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "1.0.0", buildNumber: "42")) })
         // Four project links since the privacy policy landed (Privacy policy, Support, Windows, Platform limitations) plus the
         // "Read the privacy policy" row under the privacy paragraph: the screen must still lay out at the largest accessibility size.
-        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "0.1.0", buildNumber: "42")) }.environment(\.dynamicTypeSize, .accessibility5))
+        host(NavigationStack { AboutView(info: AboutInfo(marketingVersion: "1.0.0", buildNumber: "42")) }.environment(\.dynamicTypeSize, .accessibility5))
         XCTAssertEqual(AboutInfo.privacyPolicyURL.host(), "github.com", "the About screen links to the policy in this repository")
         XCTAssertEqual(AboutInfo.supportURL.host(), "github.com", "and to its issue tracker")
     }

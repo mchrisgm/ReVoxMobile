@@ -280,7 +280,7 @@ final class ModelInstallerTests: XCTestCase {
     }
 
     func testPocketTTSInstallFailsWhenAVoiceFileIsMissingAfterDownload() async {
-        recorder.pocketTTSOmitsVoice = "cosette"
+        recorder.pocketTTSOmitsVoice = "javert"
         let installer = makeInstaller()
         let states = StateCollector()
         do {

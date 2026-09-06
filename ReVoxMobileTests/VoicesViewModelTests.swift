@@ -91,7 +91,7 @@ final class VoicesViewModelTests: XCTestCase {
         let model = makeModel()
         XCTAssertEqual(model.pocketTTSState.phase, .idle)
         XCTAssertFalse(model.isPocketTTSInstalled)
-        XCTAssertEqual(model.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertEqual(model.offeredVoices, ["alba", "azelma", "javert"])
         XCTAssertEqual(VoicesViewModel.pocketTTSSizeText, "≈ 527 MB")
 
         model.download()
@@ -161,11 +161,13 @@ final class VoicesViewModelTests: XCTestCase {
         XCTAssertNil(model.selectedSystemVoiceIdentifier)
         XCTAssertFalse(model.isSystemVoiceSelected)
 
-        model.selectPocketVoice("cosette")
-        XCTAssertEqual(store.settings.voice, "cosette")
-        XCTAssertEqual(model.selectedPocketVoice, "cosette")
+        model.selectPocketVoice("javert")
+        XCTAssertEqual(store.settings.voice, "javert")
+        XCTAssertEqual(model.selectedPocketVoice, "javert")
         model.selectPocketVoice("michael")
-        XCTAssertEqual(store.settings.voice, "cosette", "only offered voices are selectable")
+        XCTAssertEqual(store.settings.voice, "javert", "only offered voices are selectable")
+        model.selectPocketVoice("cosette")
+        XCTAssertEqual(store.settings.voice, "javert", "cosette left the offered list before 1.0.0 (CC BY-NC clip)")
 
         model.selectSystemVoice(Self.fabricatedVoices[1])
         XCTAssertEqual(store.settings.voice, "system")
@@ -283,12 +285,12 @@ final class VoicesViewModelTests: XCTestCase {
 
     /// M10: the download row names the voices from the catalog, so a catalog change can never leave a stale list.
     func testTheDownloadRowNamesTheCatalogVoices() {
-        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "azelma", "cosette", "javert"]), "Voices alba, azelma, cosette and javert.")
+        XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "azelma", "javert"]), "Voices alba, azelma and javert.")
         XCTAssertEqual(VoicesViewModel.voiceListText(["alba", "javert"]), "Voices alba and javert.")
         XCTAssertEqual(VoicesViewModel.voiceListText(["alba"]), "Voice alba.")
         XCTAssertEqual(VoicesViewModel.voiceListText([]), "No voices.")
         XCTAssertEqual(VoicesViewModel.downloadRowDescription,
-                       "Voices alba, azelma, cosette and javert. Downloaded on demand; the system voice is used until then.")
+                       "Voices alba, azelma and javert. Downloaded on demand; the system voice is used until then.")
         XCTAssertTrue(VoicesViewModel.downloadRowDescription.hasPrefix(VoicesViewModel.voiceListText(ModelCatalog.pocketTTS.offeredVoices)))
     }
 

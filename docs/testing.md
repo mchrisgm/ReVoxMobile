@@ -27,7 +27,7 @@ ReVox opens on the **Live** tab with "Ready to translate". Before the first tran
 
 ## 4. Translate from the microphone
 
-1. On **Live**, the source picker shows **Microphone** (the other-apps source arrives in a later build).
+1. On **Live**, the source picker shows **Microphone**; **Other apps** is covered in section 5.
 2. Tap **Start**. iOS asks for microphone access the first time; allow it. If you refused, the screen shows a banner with **Open Settings**.
 3. Speak a sentence in Spanish, French, German or any other language. After a short pause the English text appears with the detected language badge, and the system voice reads it aloud. The status line shows the model ("small · ready") and the voice ("System voice — pocket-tts not downloaded").
 4. Long phrases are cut at about 10 seconds; if translation falls behind, a **Falling behind** badge appears and the transcript shows "… skipped: falling behind".
@@ -36,7 +36,7 @@ ReVox opens on the **Live** tab with "Ready to translate". Before the first tran
 
 ## 5. Translate other apps (broadcast)
 
-ReVox can also translate audio from other apps: a video, a call in another app, a podcast, a game. Because of how iOS works, you must start a **screen broadcast** that sends the other apps' audio to ReVox:
+ReVox can also translate audio from other apps: a video, a podcast, a game (not phone or FaceTime calls, which iOS does not share). Because of how iOS works, you must start a **screen broadcast** that sends the other apps' audio to ReVox:
 
 1. On the **Live** tab choose **Other apps** and tap **Start**. A box with a round broadcast button appears with the text "Tap to choose ReVox and start the broadcast."
 2. Tap the round button. iOS shows a small sheet; make sure **ReVox** is selected and tap **Start Broadcast**. After a three-second countdown the status bar (or the Dynamic Island) shows a red indicator: the broadcast is running, and the box disappears.
@@ -71,7 +71,7 @@ Helpful details to include: what you were listening to (the microphone or which 
 
 ## 9. Voices and ducking (milestone 4 checks)
 
-1. **Download the pocket-tts voice.** Settings → **Voices** → **Download** (about 527 MB; keep ReVox open until the row says Installed). The four voices alba, azelma, cosette and javert appear; tap one to select it, then tap **Play sample** — you should hear "This is ReVox." in that voice. On iPhones with less than 6 GB of memory a note explains that ReVox may switch back to the system voice when memory runs low.
+1. **Download the pocket-tts voice.** Settings → **Voices** → **Download** (about 527 MB; keep ReVox open until the row says Installed). The three voices alba, azelma and javert appear; tap one to select it, then tap **Play sample** — you should hear "This is ReVox." in that voice. On iPhones with less than 6 GB of memory a note explains that ReVox may switch back to the system voice when memory runs low.
 2. **System voices.** Below the pocket-tts section, tap any English system voice to use it instead; **Play sample** works there too. Until pocket-tts is downloaded, and whenever it fails, ReVox uses this voice automatically and the Live status line says why ("System voice — pocket-tts not downloaded", "… failed to load").
 3. **Ducking.** Play music in another app, go to **Live**, tap **Start** and speak a foreign-language sentence. While ReVox speaks the English, the music should get quieter and a **Ducking** pill shows in the status line; about a quarter of a second after ReVox stops, the music returns. Tell us whether the music dropped at all, how quickly it came back, and which output you used (speaker, wired, Bluetooth headphones, car).
 4. **Settings → Ducking.** Turn the toggle off, tap Start again: the music no longer drops and the status line shows **Ducking off**. Move **Voice volume** while ReVox speaks: the next sentence is louder or quieter. The note under the slider explains that iOS chooses the ducking amount (the Windows ducked-level slider does not exist on iOS).
@@ -88,7 +88,7 @@ Please report the iPhone model and iOS version with every observation from this 
 4. Back in History, type one English word from the transcript in the search field, then a word in a different case (for example the same word in capitals). Expected: the session appears with the matching line under it; report whether the capitalised search also finds it.
 5. Search for a word that was never translated. Expected: a "No Results" screen, no crash.
 6. Swipe a row to the left and tap Delete. Expected: the row disappears with no question. Tap **Clear All**. Expected: a confirmation naming the number of sessions; after Delete, the "No Transcripts" screen.
-7. Open **Settings → About**. Expected: the app version, the privacy paragraph, five licence links (WhisperKit, FluidAudio, pocket-tts Core ML weights with the Kyutai attribution, Silero VAD, Whisper weights) that open in Safari, a **Read the privacy policy** link under the privacy paragraph, and four project links (Privacy policy, Support, ReVox for Windows, Platform limitations on iPhone).
+7. Open **Settings → About**. Expected: the app version, the privacy paragraph, five licence links (WhisperKit, FluidAudio, pocket-tts Core ML weights with the Kyutai and voice attribution, Silero VAD, Whisper weights) that open in Safari, a **Read the privacy policy** link under the privacy paragraph, and four project links (Privacy policy, Support, ReVox for Windows, Platform limitations on iPhone).
 8. With the microphone permission switched off in iOS Settings, tap **Start**. Expected: a yellow banner with **Open Settings**, no pop-up; after allowing access and coming back, the banner disappears and nothing starts until you tap **Start** again.
 9. With VoiceOver on, swipe through the Live screen while translating. Expected: the status line reads as sentences ("Model small ready. Using system voice…") and does not repeat itself every second; a download's progress reads a percentage.
 

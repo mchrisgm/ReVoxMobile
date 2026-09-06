@@ -24,7 +24,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.voiceVolume.current, 1)
         XCTAssertEqual(environment.live.voiceStatusText, SpeakerStatus.notDownloadedText)
         XCTAssertTrue(environment.speakerAssembly.voiceVolume === environment.voiceVolume)
-        XCTAssertEqual(environment.voices.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertEqual(environment.voices.offeredVoices, ["alba", "azelma", "javert"])
         XCTAssertFalse(environment.voices.isPocketTTSInstalled)
         // M11 §5: the Voices screen asks the same box the Models screen and Live's supplier do; nothing is running here.
         XCTAssertTrue(environment.voices.canDownload)

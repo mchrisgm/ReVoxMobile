@@ -62,7 +62,7 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(ModelCatalog.pocketTTS.repo, "FluidInference/pocket-tts-coreml")
         XCTAssertEqual(ModelCatalog.pocketTTS.languageFolder, "v2.1/english")
         XCTAssertEqual(ModelCatalog.pocketTTS.approximateBytes, 527_300_000)
-        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "cosette", "javert"])
+        XCTAssertEqual(ModelCatalog.pocketTTS.offeredVoices, ["alba", "azelma", "javert"])
     }
 
     func testLicences() {
@@ -76,7 +76,7 @@ final class ModelCatalogTests: XCTestCase {
             "https://github.com/openai/whisper",
         ])
         let pocketTTS = ModelCatalog.licences.first { $0.id == "pocket-tts" }
-        XCTAssertEqual(pocketTTS?.attribution, "pocket-tts by Kyutai (https://kyutai.org)")
+        XCTAssertEqual(pocketTTS?.attribution, "pocket-tts by Kyutai (https://kyutai.org). Voices: alba by Alba MacKenna (CC BY 4.0), azelma from the VCTK corpus (University of Edinburgh, CC BY 4.0), javert from the Unmute Voice Donation Project (CC0); see https://huggingface.co/kyutai/tts-voices.")
         XCTAssertEqual(ModelCatalog.licences.filter { $0.attribution != nil }.count, 1)
     }
 
