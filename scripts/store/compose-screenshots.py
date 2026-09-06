@@ -151,6 +151,16 @@ def encode_png(width, height, rows, channels=3):
             + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
+def pixels(data, points):
+    """The (r, g, b) at each (x, y) of an 8-bit RGB or RGBA PNG."""
+    width, height, channels, rows = decode_png(data)
+    return [tuple(rows[y][x * channels:x * channels + 3]) for x, y in points]
+
+
+def hex_rgb(colour):
+    return tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
+
+
 def strip_alpha(data):
     """The same image as RGB. App Store Connect refuses a PNG with an alpha channel; Chromium normally writes none,
     and this is the slow pure-Python path for a build that does."""
@@ -409,6 +419,16 @@ def self_test(chrome, spec_path):
         for path in composed:
             width, height, depth, colour = png_header(path.read_bytes())
             assert (width, height) == CANVAS and colour in (0, 2), (path, width, height, colour)
+        # 1b. The capture reaches its bottom. The screen box ends at y = 2732, so at x = 645 row 2725 is the synthetic
+        #     screen's white and row 2760 is the ink under the capture's shadow (darker than the ink, never the screen).
+        #     A viewport shorter than the canvas cuts the panel and leaves row 2725 in the bare ink.
+        for index, path in enumerate(composed):
+            if frames[index].get("presentation", "screen") != "screen":
+                continue
+            ink = hex_rgb(INKS["teal" if index % 2 == 0 else "off-white"]["background"])
+            bottom, below = pixels(path.read_bytes(), [(645, SCREEN["top"] + SCREEN["height"] - 7), (645, 2760)])
+            assert all(v >= 250 for v in bottom), f"{path.name}: the capture is cut before its bottom: row 2725 is {bottom}"
+            assert all(v <= i + 1 for v, i in zip(below, ink)), f"{path.name}: row 2760 should be the ink, got {below}"
         # 2. A missing capture with a fallback composes from the stand-in; one without is refused.
         with_fallback = next(f for f in frames if "fallback" in f)
         (partial / f"{with_fallback['capture']}.png").unlink()
